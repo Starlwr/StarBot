@@ -6,6 +6,9 @@ import json
 import os
 from typing import Dict
 
+from . import config
+from .Credential import Credential
+
 
 def get_api(field: str) -> Dict:
     """
@@ -21,3 +24,16 @@ def get_api(field: str) -> Dict:
     if os.path.exists(path):
         with open(path, encoding="utf8") as f:
             return json.loads(f.read())
+
+
+def get_credential() -> Credential:
+    """
+    获取登录凭据
+
+    Returns:
+        Credential 实例
+    """
+    sessdata = config.get("SESSDATA")
+    bili_jct = config.get("BILI_JCT")
+    buvid3 = config.get("BUVID3")
+    return Credential(sessdata, bili_jct, buvid3)
