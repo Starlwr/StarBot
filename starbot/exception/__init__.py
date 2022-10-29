@@ -5,5 +5,6 @@ from .CredentialNoSessdataException import *
 from .DataSourceException import *
 from .LiveException import *
 from .NetworkException import *
+from .RedisException import *
 from .ResponseCodeException import *
 from .ResponseException import *

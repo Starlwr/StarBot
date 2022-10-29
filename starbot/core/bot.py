@@ -2,8 +2,10 @@ import sys
 
 from loguru import logger
 
-from starbot.core.datasource import DataSource
-from starbot.exception.DataSourceException import DataSourceException
+from .datasource import DataSource
+from ..exception.DataSourceException import DataSourceException
+from ..exception.RedisException import RedisException
+from ..utils import redis
 
 
 class StarBot:
@@ -54,5 +56,12 @@ class StarBot:
         try:
             await self.__datasource.load()
         except DataSourceException as ex:
+            logger.error(ex.msg)
+            return
+
+        # 连接 Redis
+        try:
+            await redis.init()
+        except RedisException as ex:
             logger.error(ex.msg)
             return
