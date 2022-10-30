@@ -30,6 +30,9 @@ SIMPLE_CONFIG = {
     # MySQL 数据库名
     "MYSQL_DB": "starbot",
 
+    # Mirai HTTP 及 Websocket 端口
+    "MIRAI_PORT": 7827,
+
     # 登录 B 站账号所需 Cookie 数据 ( 不登录账号将有部分功能不可用 ) 各字段获取方式查看：https://bili.moyu.moe/#/get-credential.md
     "SESSDATA": None,
     "BILI_JCT": None,
@@ -89,6 +92,9 @@ FULL_CONFIG = {
     # MySQL 数据库名
     "MYSQL_DB": "starbot",
 
+    # Mirai HTTP 及 Websocket 端口
+    "MIRAI_PORT": 7827,
+
     # 登录 B 站账号所需 Cookie 数据 ( 不登录账号将有部分功能不可用 ) 各字段获取方式查看：https://bili.moyu.moe/#/get-credential.md
     "SESSDATA": None,
     "BILI_JCT": None,
@@ -141,6 +147,9 @@ def use_simple_config():
     自动检测最新版本
     使用 Redis 默认连接配置 (host: "localhost", port: 6379, db: 0, username: "", password: "")
     使用 MySQL 默认连接配置 (host: "localhost", port: 3306, db: "starbot", username: "root", password: "123456")
+    Mirai 连接端口 7827
+    未设置登录 B 站账号所需 Cookie 数据
+    未设置 Bot 主人 QQ
     不使用 HTTP 代理
     不开启 HTTP API 推送
     无命令触发前缀
@@ -158,6 +167,9 @@ def use_full_config():
     自动检测最新版本
     使用 Redis 默认连接配置 (host: "localhost", port: 6379, db: 0, username: "", password: "")
     使用 MySQL 默认连接配置 (host: "localhost", port: 3306, db: "starbot", username: "root", password: "123456")
+    Mirai 连接端口 7827
+    未设置登录 B 站账号所需 Cookie 数据
+    未设置 Bot 主人 QQ
     不使用 HTTP 代理
     开启 HTTP API 推送
     无命令触发前缀

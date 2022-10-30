@@ -3,7 +3,7 @@
 """
 
 import asyncio
-from typing import Any, Coroutine
+from typing import Any, Coroutine, Optional, Dict
 
 
 class AsyncEvent:
@@ -12,6 +12,8 @@ class AsyncEvent:
 
     特殊事件：__ALL__ 所有事件均触发
     """
+
+    __handlers: Optional[Dict] = {}
 
     def __init__(self):
         self.__handlers = {}

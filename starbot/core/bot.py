@@ -1,5 +1,8 @@
 import sys
 
+from creart import create
+from graia.ariadne import Ariadne
+from graia.broadcast import Broadcast
 from loguru import logger
 
 from .datasource import DataSource
@@ -34,20 +37,10 @@ class StarBot:
         """
         self.__datasource = datasource
 
-    async def run(self):
+    async def __main(self):
         """
-        启动 StarBot
+        StarBot 入口
         """
-
-        # 设置日志格式
-        logger_format = (
-            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
-            "<level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{line}</cyan> | "
-            "<level>{message}</level>"
-        )
-        logger.remove()
-        logger.add(sys.stderr, format=logger_format, level="INFO")
 
         logger.opt(colors=True, raw=True).info(f"<yellow>{self.STARBOT_ASCII_LOGO}</>")
         logger.info("开始启动 StarBot")
@@ -65,3 +58,34 @@ class StarBot:
         except RedisException as ex:
             logger.error(ex.msg)
             return
+
+        # 启动 Bot
+        logger.info("开始启动 Ariadne 消息推送模块")
+        Ariadne.options["default_account"] = 1499887988
+        try:
+            Ariadne.launch_blocking()
+        except RuntimeError as ex:
+            if "This event loop is already running" in str(ex):
+                pass
+            else:
+                logger.error(ex)
+                return
+
+    def run(self):
+        """
+        启动 StarBot
+        """
+
+        logger_format = (
+            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{line}</cyan> | "
+            "<level>{message}</level>"
+        )
+        logger.remove()
+        logger.add(sys.stderr, format=logger_format, level="INFO")
+
+        bcc = create(Broadcast)
+        loop = bcc.loop
+        loop.create_task(self.__main())
+        loop.run_forever()
