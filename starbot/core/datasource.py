@@ -91,7 +91,6 @@ class DictDataSource(DataSource):
             dict_config: 配置字典
         """
         super().__init__()
-        logger.info("已选用 Dict 作为 Bot 数据源")
         self.__config = dict_config
 
         if isinstance(self.__config, dict):
@@ -104,7 +103,11 @@ class DictDataSource(DataSource):
         Raises:
             DataSourceException: 配置字典格式错误或缺少必要参数
         """
-        logger.info("开始从 Dict 中初始化 Bot 配置")
+        if not self.bots:
+            logger.info("已选用 Dict 作为 Bot 数据源")
+            logger.info("开始从 Dict 中初始化 Bot 配置")
+        else:
+            logger.info("开始从 Dict 中更新 Bot 配置")
 
         for bot in self.__config:
             if "qq" not in bot:
@@ -115,7 +118,7 @@ class DictDataSource(DataSource):
                 raise DataSourceException(f"提供的配置字典中缺少必须的 {ex.errors()[0].get('loc')[-1]} 参数")
 
         super().format_data()
-        logger.success(f"成功从 Dict 中初始化了 {len(self.get_up_list())} 个 UP 主")
+        logger.success(f"成功从 Dict 中导入 {len(self.get_up_list())} 个 UP 主")
 
 
 class MySQLDataSource(DataSource):
@@ -138,7 +141,6 @@ class MySQLDataSource(DataSource):
             db: MySQL 数据库名。默认：config.get("MYSQL_DB") = "starbot"
         """
         super().__init__()
-        logger.info("已选用 MySQL 作为 Bot 数据源")
         self.__username = username or config.get("MYSQL_USERNAME")
         self.__password = password or str(config.get("MYSQL_PASSWORD"))
         self.__host = host or config.get("MYSQL_HOST")
@@ -194,7 +196,11 @@ class MySQLDataSource(DataSource):
         """
         从 MySQL 中读取配置
         """
-        logger.info("开始从 MySQL 中初始化 Bot 配置")
+        if not self.bots:
+            logger.info("已选用 MySQL 作为 Bot 数据源")
+            logger.info("开始从 MySQL 中初始化 Bot 配置")
+        else:
+            logger.info("开始从 MySQL 中更新 Bot 配置")
         if not self.__pool:
             await self.__connect()
 
@@ -278,4 +284,4 @@ class MySQLDataSource(DataSource):
             self.bots.update({bot: Bot(qq=bot, ups=ups)})
 
         super().format_data()
-        logger.success(f"成功从 MySQL 中初始化了 {len(self.get_up_list())} 个 UP 主")
+        logger.success(f"成功从 MySQL 中导入了 {len(self.get_up_list())} 个 UP 主")
