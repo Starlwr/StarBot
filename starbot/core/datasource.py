@@ -7,7 +7,9 @@ import pymysql
 from loguru import logger
 from pydantic import ValidationError
 
-from .model import LiveOn, LiveOff, LiveReport, DynamicUpdate, PushTarget, Up, Bot
+from .model import LiveOn, LiveOff, LiveReport, DynamicUpdate, PushTarget
+from .room import Up
+from .sender import Bot
 from ..exception.DataSourceException import DataSourceException
 from ..utils import config
 
