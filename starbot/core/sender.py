@@ -51,10 +51,16 @@ class Bot(BaseModel, AsyncEvent):
         )
         self.__queue = []
 
+        # 注入 Bot 实例引用
+        for up in self.ups:
+            up.inject_bot(self)
+
+        # 发送消息方法
         @self.on("SEND_MESSAGE")
         async def send_message(msg: Message):
             self.__queue.append(msg)
 
+        # Ariadne 启动成功后启动消息发送模块
         @self.__bot.broadcast.receiver(ApplicationLaunched)
         async def start_sender():
             logger.success(f"Bot [{self.qq}] 已启动")

@@ -1,4 +1,5 @@
 import asyncio
+import typing
 from asyncio import AbstractEventLoop
 from typing import Optional, Union, List, Dict, Any
 
@@ -6,6 +7,9 @@ from pydantic import BaseModel, PrivateAttr
 
 from .live import LiveDanmaku
 from .model import PushTarget
+
+if typing.TYPE_CHECKING:
+    from .sender import Bot
 
 
 class Up(BaseModel):
@@ -34,6 +38,9 @@ class Up(BaseModel):
     __loop: Optional[AbstractEventLoop] = PrivateAttr()
     """asyncio 事件循环"""
 
+    __bot: Optional["Bot"] = PrivateAttr()
+    """主播所关联 Bot 实例"""
+
     def __init__(self, **data: Any):
         super().__init__(**data)
         if isinstance(self.targets, list):
@@ -41,6 +48,10 @@ class Up(BaseModel):
         self.__room = None
         self.__is_reconnect = False
         self.__loop = asyncio.get_event_loop()
+        self.__bot = None
+
+    def inject_bot(self, bot):
+        self.__bot = bot
 
     def __eq__(self, other):
         if isinstance(other, Up):
