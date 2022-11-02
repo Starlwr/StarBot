@@ -1,7 +1,7 @@
 import asyncio
 import typing
 from asyncio import AbstractEventLoop
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, List, Any
 
 from pydantic import BaseModel, PrivateAttr
 
@@ -20,7 +20,7 @@ class Up(BaseModel):
     uid: int
     """主播 UID"""
 
-    targets: Union[List[PushTarget], Dict[int, PushTarget]]
+    targets: List[PushTarget]
     """主播所需推送的所有好友或群"""
 
     uname: Optional[str] = None
@@ -43,8 +43,6 @@ class Up(BaseModel):
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-        if isinstance(self.targets, list):
-            self.targets = dict(zip(map(lambda t: t.id, self.targets), self.targets))
         self.__room = None
         self.__is_reconnect = False
         self.__loop = asyncio.get_event_loop()

@@ -1,8 +1,6 @@
 from typing import Any
 
 SIMPLE_CONFIG = {
-    # 是否展示 StarBot Logo
-    "SHOW_LOGO": True,
     # 是否检测最新 StarBot 版本
     "CHECK_VERSION": True,
 
@@ -38,6 +36,11 @@ SIMPLE_CONFIG = {
     "BILI_JCT": None,
     "BUVID3": None,
 
+    # 是否自动判断仅连接必要的直播间，即当某直播间的开播、下播、直播报告开关均未开启时，自动跳过连接直播间，以节省性能
+    "ONLY_CONNECT_NECESSARY_ROOM": False,
+    # 是否自动判断仅处理必要的直播事件，例如当某直播间的下播推送和直播报告中均不包含弹幕相关功能，则不再处理此直播间的弹幕事件，以节省性能
+    "ONLY_HANDLE_NECESSARY_EVENT": False,
+
     # Bot 主人 QQ，用于接收部分 Bot 异常通知等
     "MASTER_QQ": None,
 
@@ -46,8 +49,8 @@ SIMPLE_CONFIG = {
 
     # 是否使用 HTTP API 推送
     "USE_HTTP_API": False,
-    # HTTP API 调用地址模板
-    "HTTP_API_TEMPLATE": "",
+    # HTTP API 端口
+    "HTTP_API_PORT": 8088,
 
     # 命令触发前缀
     "COMMAND_PREFIX": "",
@@ -63,8 +66,6 @@ SIMPLE_CONFIG = {
 }
 
 FULL_CONFIG = {
-    # 是否展示 StarBot Logo
-    "SHOW_LOGO": True,
     # 是否检测最新 StarBot 版本
     "CHECK_VERSION": True,
 
@@ -100,6 +101,11 @@ FULL_CONFIG = {
     "BILI_JCT": None,
     "BUVID3": None,
 
+    # 是否自动判断仅连接必要的直播间，即当某直播间的开播、下播、直播报告开关均未开启时，自动跳过连接直播间，以节省性能
+    "ONLY_CONNECT_NECESSARY_ROOM": False,
+    # 是否自动判断仅处理必要的直播事件，例如当某直播间的下播推送和直播报告中均不包含弹幕相关功能，则不再处理此直播间的弹幕事件，以节省性能
+    "ONLY_HANDLE_NECESSARY_EVENT": False,
+
     # Bot 主人 QQ，用于接收 Bot 异常通知等
     "MASTER_QQ": None,
 
@@ -108,8 +114,8 @@ FULL_CONFIG = {
 
     # 是否使用 HTTP API 推送
     "USE_HTTP_API": True,
-    # HTTP API 调用地址模板
-    "HTTP_API_TEMPLATE": "http://localhost/send?key={key}&data={data}",
+    # HTTP API 端口
+    "HTTP_API_PORT": 8088,
 
     # 命令触发前缀
     "COMMAND_PREFIX": "",
@@ -143,12 +149,12 @@ def use_simple_config():
     """
     使用最简配置，默认配置如下：
 
-    展示 StarBot Logo
     自动检测最新版本
     使用 Redis 默认连接配置 (host: "localhost", port: 6379, db: 0, username: "", password: "")
     使用 MySQL 默认连接配置 (host: "localhost", port: 3306, db: "starbot", username: "root", password: "123456")
     Mirai 连接端口 7827
     未设置登录 B 站账号所需 Cookie 数据
+    不启用节省性能优化
     未设置 Bot 主人 QQ
     不使用 HTTP 代理
     不开启 HTTP API 推送
@@ -163,15 +169,15 @@ def use_full_config():
     """
     使用推荐配置，默认配置如下：
 
-    展示 StarBot Logo
     自动检测最新版本
     使用 Redis 默认连接配置 (host: "localhost", port: 6379, db: 0, username: "", password: "")
     使用 MySQL 默认连接配置 (host: "localhost", port: 3306, db: "starbot", username: "root", password: "123456")
     Mirai 连接端口 7827
     未设置登录 B 站账号所需 Cookie 数据
+    不启用节省性能优化
     未设置 Bot 主人 QQ
     不使用 HTTP 代理
-    开启 HTTP API 推送
+    开启 HTTP API 推送 (port: 8088)
     无命令触发前缀
     开启风控消息补发 仅补发推送消息
     """

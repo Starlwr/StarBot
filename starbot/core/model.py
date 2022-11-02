@@ -173,17 +173,15 @@ class PushTarget(BaseModel):
     def __init__(self, **data: Any):
         super().__init__(**data)
         if not self.key:
-            self.key = str(self.id)
+            self.key = "-".join([str(self.id), str(self.type.value)])
 
     def __eq__(self, other):
         if isinstance(other, PushTarget):
-            return self.id == other.id
-        elif isinstance(other, int):
-            return self.id == other
+            return self.id == other.id and self.type == other.type
         return False
 
     def __hash__(self):
-        return hash(self.id)
+        return hash(self.key)
 
 
 class Message(BaseModel):
