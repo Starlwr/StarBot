@@ -52,6 +52,9 @@ SIMPLE_CONFIG = {
     # HTTP API 端口
     "HTTP_API_PORT": 8088,
 
+    # 消息发送间隔，消息发送过快容易被风控，单位：秒
+    "MESSAGE_SEND_INTERVAL": 0.5,
+    
     # 命令触发前缀
     "COMMAND_PREFIX": "",
 
@@ -117,6 +120,9 @@ FULL_CONFIG = {
     # HTTP API 端口
     "HTTP_API_PORT": 8088,
 
+    # 消息发送间隔，消息发送过快容易被风控，单位：秒
+    "MESSAGE_SEND_INTERVAL": 0.5,
+
     # 命令触发前缀
     "COMMAND_PREFIX": "",
 
@@ -158,6 +164,7 @@ def use_simple_config():
     未设置 Bot 主人 QQ
     不使用 HTTP 代理
     不开启 HTTP API 推送
+    消息发送间隔 0.5 秒
     无命令触发前缀
     不开启风控消息补发
     """
@@ -178,6 +185,7 @@ def use_full_config():
     未设置 Bot 主人 QQ
     不使用 HTTP 代理
     开启 HTTP API 推送 (port: 8088)
+    消息发送间隔 0.5 秒
     无命令触发前缀
     开启风控消息补发 仅补发推送消息
     """

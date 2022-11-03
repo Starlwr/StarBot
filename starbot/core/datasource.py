@@ -20,10 +20,13 @@ class DataSource(metaclass=abc.ABCMeta):
     """
 
     def __init__(self):
-        self.bots = {}
-        self.__up_list = []
-        self.__uid_list = []
-        self.__up_map = {}
+        self.bots: List[Bot] = []
+        self.__up_list: List[Up] = []
+        self.__up_map: Dict[int, Up] = {}
+        self.__uid_list: List[int] = []
+        self.__target_list: List[PushTarget] = []
+        self.__target_key_map: Dict[str, PushTarget] = {}
+        self.__target_bot_map: Dict[str, Bot] = {}
 
     @abc.abstractmethod
     async def load(self):
@@ -39,11 +42,18 @@ class DataSource(metaclass=abc.ABCMeta):
         Raises:
             DataSourceException: 配置中包含重复 uid
         """
-        self.__up_list = [x for up in map(lambda bot: bot.ups, self.bots.values()) for x in up]
-        self.__uid_list = list(map(lambda up: up.uid, self.__up_list))
+        self.__up_list = [x for up in map(lambda bot: bot.ups, self.bots) for x in up]
+        self.__up_map = dict(zip(map(lambda up: up.uid, self.__up_list), self.__up_list))
+        self.__uid_list = list(self.__up_map.keys())
         if len(set(self.__uid_list)) < len(self.__uid_list):
             raise DataSourceException("配置中不可含有重复的 UID")
-        self.__up_map = dict(zip(map(lambda up: up.uid, self.__up_list), self.__up_list))
+        self.__target_list = [x for target in map(lambda up: up.targets, self.__up_list) for x in target]
+        self.__target_key_map = dict(zip(map(lambda target: target.key, self.__target_list), self.__target_list))
+
+        for bot in self.bots:
+            for up in bot.ups:
+                for target in up.targets:
+                    self.__target_bot_map[target.key] = bot
 
     def get_up_list(self) -> List[Up]:
         """
@@ -81,6 +91,42 @@ class DataSource(metaclass=abc.ABCMeta):
             raise DataSourceException(f"不存在的 UID: {uid}")
         return up
 
+    def get_target_by_key(self, key: str) -> PushTarget:
+        """
+        根据推送 key 获取 PushTarget 实例，用于 HTTP API 推送
+
+        Args:
+            key: 需要获取 PushTarget 的推送 key
+
+        Returns:
+            PushTarget 实例
+
+        Raises:
+            DataSourceException: key 不存在
+        """
+        target = self.__target_key_map.get(key)
+        if target is None:
+            raise DataSourceException(f"不存在的推送 key: {key}")
+        return target
+
+    def get_bot_by_key(self, key: str) -> Bot:
+        """
+        根据推送 key 获取其所在的 Bot 实例，用于 HTTP API 推送
+
+        Args:
+            key: 需要获取所在 Bot 的推送 key
+
+        Returns:
+            Bot 实例
+
+        Raises:
+            DataSourceException: key 不存在
+        """
+        bot = self.__target_bot_map.get(key)
+        if bot is None:
+            raise DataSourceException(f"不存在的推送 key: {key}")
+        return bot
+
 
 class DictDataSource(DataSource):
     """
@@ -105,22 +151,22 @@ class DictDataSource(DataSource):
         Raises:
             DataSourceException: 配置字典格式错误或缺少必要参数
         """
-        if not self.bots:
-            logger.info("已选用 Dict 作为 Bot 数据源")
-            logger.info("开始从 Dict 中初始化 Bot 配置")
-        else:
-            logger.info("开始从 Dict 中更新 Bot 配置")
+        if self.bots:
+            return
+
+        logger.info("已选用 Dict 作为 Bot 数据源")
+        logger.info("开始从 Dict 中初始化 Bot 配置")
 
         for bot in self.__config:
             if "qq" not in bot:
                 raise DataSourceException("提供的配置字典中未提供 Bot 的 QQ 号参数")
             try:
-                self.bots.update({bot["qq"]: Bot(**bot)})
+                self.bots.append(Bot(**bot))
             except ValidationError as ex:
                 raise DataSourceException(f"提供的配置字典中缺少必须的 {ex.errors()[0].get('loc')[-1]} 参数")
 
         super().format_data()
-        logger.success(f"成功从 Dict 中导入 {len(self.get_up_list())} 个 UP 主")
+        logger.success(f"成功从 Dict 中导入了 {len(self.get_up_list())} 个 UP 主")
 
 
 class MySQLDataSource(DataSource):
@@ -196,13 +242,14 @@ class MySQLDataSource(DataSource):
 
     async def load(self):
         """
-        从 MySQL 中读取配置
+        从 MySQL 中初始化配置
         """
-        if not self.bots:
-            logger.info("已选用 MySQL 作为 Bot 数据源")
-            logger.info("开始从 MySQL 中初始化 Bot 配置")
-        else:
-            logger.info("开始从 MySQL 中更新 Bot 配置")
+        if self.bots:
+            return
+
+        logger.info("已选用 MySQL 作为 Bot 数据源")
+        logger.info("开始从 MySQL 中初始化 Bot 配置")
+
         if not self.__pool:
             await self.__connect()
 
@@ -283,7 +330,7 @@ class MySQLDataSource(DataSource):
 
                 ups.append(Up(uid=uid, targets=targets))
 
-            self.bots.update({bot: Bot(qq=bot, ups=ups)})
+            self.bots.append(Bot(qq=bot, ups=ups))
 
         super().format_data()
         logger.success(f"成功从 MySQL 中导入了 {len(self.get_up_list())} 个 UP 主")

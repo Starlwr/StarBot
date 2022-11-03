@@ -4,7 +4,6 @@ from typing import List, Optional, Any
 
 from graia.ariadne import Ariadne
 from graia.ariadne.connection.config import config as AriadneConfig, HttpClientConfig, WebsocketClientConfig
-from graia.ariadne.event.lifecycle import ApplicationLaunched
 from graia.ariadne.message.chain import MessageChain
 from graia.ariadne.message.element import At, AtAll
 from graia.ariadne.model import LogConfig, MemberPerm
@@ -55,11 +54,9 @@ class Bot(BaseModel, AsyncEvent):
         for up in self.ups:
             up.inject_bot(self)
 
-        # Ariadne 启动成功后启动消息发送模块
-        @self.__bot.broadcast.receiver(ApplicationLaunched)
-        async def start_sender():
-            logger.success(f"Bot [{self.qq}] 已启动")
-            self.__loop.create_task(self.__sender())
+    def start_sender(self):
+        self.__loop.create_task(self.__sender())
+        logger.success(f"Bot [{self.qq}] 已启动")
 
     def send_message(self, msg: Message):
         self.__queue.append(msg)
@@ -68,6 +65,8 @@ class Bot(BaseModel, AsyncEvent):
         """
         消息发送模块
         """
+        interval = config.get("MESSAGE_SEND_INTERVAL")
+
         while True:
             if self.__queue:
                 msg = self.__queue[0]
@@ -80,6 +79,7 @@ class Bot(BaseModel, AsyncEvent):
                         logger.info(f"{self.qq} -> 群[{msg.id}] : {message}")
                         await self.__bot.send_group_message(msg.id, message)
                 self.__queue.pop(0)
+                await asyncio.sleep(interval)
             else:
                 await asyncio.sleep(0.1)
 
