@@ -51,5 +51,9 @@ async def http_init(source: DataSource):
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, 'localhost', config.get("HTTP_API_PORT"))
-    await site.start()
+    try:
+        await site.start()
+    except OSError:
+        logger.error(f"设定的 HTTP API 端口 {config.get('HTTP_API_PORT')} 已被占用, HTTP API 推送服务启动失败")
+        return
     logger.success("成功启动 HTTP API 推送服务")
