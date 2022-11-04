@@ -8,9 +8,11 @@ from loguru import logger
 
 from .datasource import DataSource
 from .server import http_init
+from ..exception import LiveException
 from ..exception.DataSourceException import DataSourceException
 from ..exception.RedisException import RedisException
 from ..utils import redis, config
+from ..utils.network import request
 
 
 class StarBot:
@@ -60,6 +62,44 @@ class StarBot:
         except RedisException as ex:
             logger.error(ex.msg)
             return
+
+        # 通过 UID 列表批量获取信息
+        uids = list(map(lambda u: str(u), self.__datasource.get_uid_list()))
+        info_url = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?uids[]=" + "&uids[]=".join(uids)
+        info = await request("GET", info_url)
+        for uid in info:
+            base = info[uid]
+            uid = int(uid)
+            up = self.__datasource.get_up(uid)
+            up.uname = base["uname"]
+            up.room_id = base["room_id"]
+            status = base["live_status"]
+            logger.opt(colors=True).info(f"初始化 <cyan>{up.uname}</> "
+                                         f"(UID: <cyan>{up.uid}</>, "
+                                         f"房间号: <cyan>{up.room_id}</>) 的直播间状态: "
+                                         f"{'<green>直播中</>' if status == 1 else '<red>未开播</>'}")
+
+            await redis.hset("LiveStatus", up.room_id, status)
+            await redis.hset("StartTime", up.room_id, base["live_time"])
+            await redis.hset_ifnotexists("EndTime", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomDanmuCount", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomDanmuTotal", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomBoxCount", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomBoxTotal", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomBoxProfit", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomBoxProfitTotal", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomGiftProfit", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomGiftTotal", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomScProfit", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomScTotal", up.room_id, 0)
+            await redis.hset_ifnotexists("RoomGuardCount", up.room_id, "0-0-0")
+            await redis.hset_ifnotexists("RoomGuardTotal", up.room_id, "0-0-0")
+
+        for up in self.__datasource.get_up_list():
+            try:
+                await up.connect()
+            except LiveException as ex:
+                logger.error(ex.msg)
 
         # 启动 HTTP API 服务
         if config.get("USE_HTTP_API"):
