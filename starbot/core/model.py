@@ -6,6 +6,8 @@ from graia.ariadne.message.chain import MessageChain
 from graia.ariadne.message.element import Plain, At, AtAll, Image
 from pydantic import BaseModel, PrivateAttr
 
+from ..exception import DataSourceException
+
 
 class LiveOn(BaseModel):
     """
@@ -20,13 +22,11 @@ class LiveOn(BaseModel):
     enabled: Optional[bool] = False
     """是否启用开播推送。默认：False"""
 
-    at_all: Optional[bool] = False
-    """是否 @全体成员。默认：False"""
-
     message: Optional[str] = ""
     """
     开播推送内容模板。
-    可用占位符：{uname}主播昵称，{title}直播间标题，{url}直播间链接，{cover}直播间封面图，{next}消息分条。
+    专用占位符：{uname} 主播昵称，{title} 直播间标题，{url} 直播间链接，{cover} 直播间封面图。
+    通用占位符：{next} 消息分条，{atall} @全体成员，{at114514} @指定QQ号，{urlpic=链接} 网络图片，{pathpic=路径} 本地图片。
     默认：""
     """
 
@@ -34,12 +34,12 @@ class LiveOn(BaseModel):
     def default(cls):
         """
         获取功能全部开启的默认 LiveOn 实例
-        默认配置：启用开播推送，启用 @全体成员，推送内容模板为 "{uname} 正在直播 {title}\n{url}{next}{cover}"
+        默认配置：启用开播推送，推送内容模板为 "{uname} 正在直播 {title}\n{url}{next}{cover}"
         """
-        return LiveOn(enabled=True, at_all=True, message=LiveOn.DEFAULT_MESSAGE)
+        return LiveOn(enabled=True, message=LiveOn.DEFAULT_MESSAGE)
 
     def __str__(self):
-        return f"启用: {self.enabled}\n@全体: {self.at_all}\n推送内容:\n{self.message}"
+        return f"启用: {self.enabled}\n推送内容:\n{self.message}"
 
 
 class LiveOff(BaseModel):
@@ -49,7 +49,7 @@ class LiveOff(BaseModel):
     或使用 LiveOff.default() 获取功能全部开启的默认配置
     """
 
-    DEFAULT_MESSAGE: Optional[str] = "{uname} 直播结束了\n{time}{next}{danmu_count}{danmu_mvp}{box_profit}"
+    DEFAULT_MESSAGE: Optional[str] = "{uname} 直播结束了"
     """默认消息模板"""
 
     enabled: Optional[bool] = False
@@ -58,7 +58,8 @@ class LiveOff(BaseModel):
     message: Optional[str] = ""
     """
     下播推送内容模板。
-    可用占位符：{uname}主播昵称，{time}本次直播时长，{danmu_count}弹幕总数，{danmu_mvp}弹幕MVP，{box_profit}宝盒盈亏，{next}消息分条。
+    专用占位符：{uname}主播昵称。
+    通用占位符：{next} 消息分条，{atall} @全体成员，{at114514} @指定QQ号，{urlpic=链接} 网络图片，{pathpic=路径} 本地图片。
     默认：""
     """
 
@@ -115,7 +116,8 @@ class DynamicUpdate(BaseModel):
     message: Optional[str] = ""
     """
     动态推送内容模板。
-    可用占位符：{uname}主播昵称，{action}动态操作类型（发表了新动态，转发了新动态，投稿了新视频...），{url}动态链接（若为发表视频、专栏等则为视频、专栏等对应的链接）。
+    专用占位符：{uname}主播昵称，{action}动态操作类型（发表了新动态，转发了新动态，投稿了新视频...），{url}动态链接（若为发表视频、专栏等则为视频、专栏等对应的链接）。
+    通用占位符：{next} 消息分条，{atall} @全体成员，{at114514} @指定QQ号，{urlpic=链接} 网络图片，{pathpic=路径} 本地图片。
     默认：""
     """
 
@@ -174,6 +176,15 @@ class PushTarget(BaseModel):
         super().__init__(**data)
         if not self.key:
             self.key = "-".join([str(self.id), str(self.type.value)])
+        self.__raise_for_not_invalid_placeholders()
+
+    def __raise_for_not_invalid_placeholders(self):
+        """
+        使用不合法的占位符时抛出异常
+        """
+        if self.type == PushType.Friend:
+            if "{at" in self.live_on.message or "{at" in self.live_off.message or "{at" in self.dynamic_update.message:
+                raise DataSourceException(f"好友类型的推送目标 (QQ: {self.id}) 推送内容中不能含有 @ 消息, 请检查配置后重试")
 
     def __eq__(self, other):
         if isinstance(other, PushTarget):
@@ -267,6 +278,7 @@ class Message(BaseModel):
                             chain.append(Plain(msg[:code_end + 1]))
                         msg = msg[code_end + 1:]
                         next_code = msg.find("{")
-            chains.append(chain)
+            if len(chain) != 0:
+                chains.append(chain)
 
-            return chains
+        return chains

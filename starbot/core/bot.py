@@ -81,20 +81,8 @@ class StarBot:
 
             await redis.hset("LiveStatus", up.room_id, status)
             await redis.hset("StartTime", up.room_id, base["live_time"])
-            await redis.hset_ifnotexists("EndTime", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomDanmuCount", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomDanmuTotal", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomBoxCount", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomBoxTotal", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomBoxProfit", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomBoxProfitTotal", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomGiftProfit", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomGiftTotal", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomScProfit", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomScTotal", up.room_id, 0)
-            await redis.hset_ifnotexists("RoomGuardCount", up.room_id, "0-0-0")
-            await redis.hset_ifnotexists("RoomGuardTotal", up.room_id, "0-0-0")
 
+        # 连接直播间
         for up in self.__datasource.get_up_list():
             try:
                 await up.connect()
@@ -105,7 +93,7 @@ class StarBot:
         if config.get("USE_HTTP_API"):
             asyncio.get_event_loop().create_task(http_init(self.__datasource))
 
-        # 启动 Bot
+        # 启动消息推送模块
         if not self.__datasource.bots:
             logger.error("不存在需要启动的 Bot 账号, 请先在数据源中配置完毕后再重新运行")
             return
@@ -113,8 +101,6 @@ class StarBot:
         Ariadne.options["default_account"] = self.__datasource.bots[0].qq
 
         logger.info("开始运行 Ariadne 消息推送模块")
-        logger.disable("graia.ariadne.service")
-        logger.disable("launart")
 
         for bot in self.__datasource.bots:
             bot.start_sender()
@@ -141,6 +127,9 @@ class StarBot:
         )
         logger.remove()
         logger.add(sys.stderr, format=logger_format, level="INFO")
+        logger.disable("graia.ariadne.model")
+        logger.disable("graia.ariadne.service")
+        logger.disable("launart")
 
         bcc = create(Broadcast)
         loop = bcc.loop

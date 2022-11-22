@@ -1,4 +1,4 @@
-from typing import Any, Union
+from typing import Any, Union, Optional, List
 
 import aioredis
 from loguru import logger
@@ -27,12 +27,14 @@ async def init():
 
 # String
 
-async def get(key: str) -> str:
-    return str(await __redis.get(key))
+async def delete(key: str):
+    await __redis.delete(key)
 
 
-async def geti(key: str) -> int:
-    return int(await __redis.get(key))
+# List
+
+async def rpush(key: str, value: Any):
+    await __redis.rpush(key, value)
 
 
 # Hash
@@ -41,18 +43,36 @@ async def hexists(key: str, hkey: Union[str, int]) -> bool:
     return await __redis.hexists(key, hkey)
 
 
-async def hget(key: str, hkey: Union[str, int]) -> str:
-    return str(await __redis.hget(key, hkey))
-
-
 async def hgeti(key: str, hkey: Union[str, int]) -> int:
-    return int(await __redis.hget(key, hkey))
+    result = await __redis.hget(key, hkey)
+    if result is None:
+        return 0
+    return int(result)
+
+
+async def hgetf1(key: str, hkey: Union[str, int]) -> float:
+    result = await __redis.hget(key, hkey)
+    if result is None:
+        return 0.0
+    return float("{:.1f}".format(float(result)))
 
 
 async def hset(key: str, hkey: Union[str, int], value: Any):
     await __redis.hset(key, hkey, value)
 
 
-async def hset_ifnotexists(key: str, hkey: Union[str, int], value: Any):
-    if not await hexists(key, hkey):
-        await hset(key, hkey, value)
+async def hincrby(key: str, hkey: Union[str, int], value: Optional[int] = 1) -> int:
+    return await __redis.hincrby(key, hkey, value)
+
+
+async def hincrbyfloat(key: str, hkey: Union[str, int], value: Optional[float] = 1.0) -> float:
+    return await __redis.hincrbyfloat(key, hkey, value)
+
+
+# Zset
+
+async def zunionstore(dest: str, source: Union[str, List[str]]):
+    if isinstance(source, str):
+        await __redis.zunionstore(dest, [dest, source])
+    if isinstance(source, list):
+        await __redis.zunionstore(dest, source)

@@ -42,7 +42,7 @@ class DataSource(metaclass=abc.ABCMeta):
         Raises:
             DataSourceException: 配置中包含重复 uid
         """
-        self.__up_list = [x for up in map(lambda bot: bot.ups, self.bots) for x in up]
+        self.__up_list = [x for up in map(lambda b: b.ups, self.bots) for x in up]
         self.__up_map = dict(zip(map(lambda up: up.uid, self.__up_list), self.__up_list))
         self.__uid_list = list(self.__up_map.keys())
         if len(set(self.__uid_list)) < len(self.__uid_list):
@@ -195,7 +195,6 @@ class MySQLDataSource(DataSource):
         self.__port = port or int(config.get("MYSQL_PORT"))
         self.__db = db or config.get("MYSQL_DB")
         self.__pool: Optional[aiomysql.pool.Pool] = None
-        self.__loop = asyncio.get_event_loop()
 
     async def __connect(self):
         """
@@ -205,6 +204,7 @@ class MySQLDataSource(DataSource):
             DataSourceException: 连接数据库失败
         """
         try:
+            self.__loop = asyncio.get_event_loop()
             self.__pool = await aiomysql.create_pool(host=self.__host,
                                                      port=self.__port,
                                                      user=self.__username,
@@ -265,7 +265,7 @@ class MySQLDataSource(DataSource):
                 uid = now_user.get("uid")
 
                 live_on = await self.__query(
-                    "SELECT g.`uid`, g.`uname`, g.`room_id`, `key`, `type`, `num`, `enabled`, `at_all`, `message` "
+                    "SELECT g.`uid`, g.`uname`, g.`room_id`, `key`, `type`, `num`, `enabled`, `message` "
                     "FROM `groups` AS `g` LEFT JOIN `live_on` AS `l` "
                     "ON g.`uid` = l.`uid` AND g.`index` = l.`index` "
                     f"WHERE g.`uid` = {uid} "
@@ -295,9 +295,8 @@ class MySQLDataSource(DataSource):
 
                 targets = []
                 for i, target in enumerate(live_on):
-                    if all((live_on[i]["enabled"], live_on[i]["at_all"], live_on[i]["message"])):
+                    if all((live_on[i]["enabled"], live_on[i]["message"])):
                         on = LiveOn(enabled=live_on[i]["enabled"],
-                                    at_all=live_on[i]["at_all"],
                                     message=live_on[i]["message"])
                     else:
                         on = LiveOn()
