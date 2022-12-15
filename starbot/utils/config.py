@@ -46,6 +46,22 @@ SIMPLE_CONFIG = {
     # 视为主播网络波动断线重连时，需发送的额外提示消息
     "UP_DISCONNECT_CONNECT_MESSAGE": "检测到下播后短时间内重新开播,可能是由于主播网络波动引起,本次开播不再重复通知",
 
+    # 绘图器普通字体路径，如需自定义，请将字体放入 font 文件夹中后，修改配置中的 normal.ttf 为您的字体文件名
+    "PAINTER_NORMAL_FONT": "normal.ttf",
+    # 绘图器粗体字体路径，如需自定义，请将字体放入 font 文件夹中后，修改配置中的 bold.ttf 为您的字体文件名
+    "PAINTER_BOLD_FONT": "bold.ttf",
+    # 绘图器自适应不覆盖已绘制图形的间距，单位：像素
+    "PAINTER_AUTO_SIZE_BY_LIMIT_MARGIN": 10,
+
+    # 弹幕词云字体路径，如需自定义，请将字体放入 font 文件夹中后，修改配置中的 normal.ttf 为您的字体文件名
+    "DANMU_CLOUD_FONT": "normal.ttf",
+    # 弹幕词云图片背景色
+    "DANMU_CLOUD_BACKGROUND_COLOR": "white",
+    # 弹幕词云最大字号
+    "DANMU_CLOUD_MAX_FONT_SIZE": 300,
+    # 弹幕词云最多词数
+    "DANMU_CLOUD_MAX_WORDS": 100,
+
     # Bot 主人 QQ，用于接收部分 Bot 异常通知等
     "MASTER_QQ": None,
 
@@ -118,6 +134,22 @@ FULL_CONFIG = {
     "UP_DISCONNECT_CONNECT_INTERVAL": 120,
     # 视为主播网络波动断线重连时，需发送的额外提示消息
     "UP_DISCONNECT_CONNECT_MESSAGE": "检测到下播后短时间内重新开播,可能是由于主播网络波动引起,本次开播不再重复通知",
+
+    # 绘图器普通字体路径，如需自定义，请将字体放入 font 文件夹中后，修改配置中的 normal.ttf 为您的字体文件名
+    "PAINTER_NORMAL_FONT": "normal.ttf",
+    # 绘图器粗体字体路径，如需自定义，请将字体放入 font 文件夹中后，修改配置中的 bold.ttf 为您的字体文件名
+    "PAINTER_BOLD_FONT": "bold.ttf",
+    # 绘图器自适应不覆盖已绘制图形的间距，单位：像素
+    "PAINTER_AUTO_SIZE_BY_LIMIT_MARGIN": 10,
+
+    # 弹幕词云字体路径，如需自定义，请将字体放入 font 文件夹中后，修改配置中的 normal.ttf 为您的字体文件名
+    "DANMU_CLOUD_FONT": "normal.ttf",
+    # 弹幕词云图片背景色
+    "DANMU_CLOUD_BACKGROUND_COLOR": "white",
+    # 弹幕词云最大字号
+    "DANMU_CLOUD_MAX_FONT_SIZE": 200,
+    # 弹幕词云最多词数
+    "DANMU_CLOUD_MAX_WORDS": 80,
 
     # Bot 主人 QQ，用于接收 Bot 异常通知等
     "MASTER_QQ": None,

@@ -4,6 +4,7 @@
 
 import json
 import os
+import time
 from typing import Dict
 
 from . import config
@@ -37,3 +38,16 @@ def get_credential() -> Credential:
     bili_jct = config.get("BILI_JCT")
     buvid3 = config.get("BUVID3")
     return Credential(sessdata, bili_jct, buvid3)
+
+
+def timestamp_format(timestamp: int) -> str:
+    """
+    时间戳格式化为形如 11/04 00:00:00 的字符串形式
+
+    Args:
+        timestamp: 时间戳
+
+    Returns:
+        格式化后的字符串
+    """
+    return time.strftime("%m/%d %H:%M:%S", time.localtime(timestamp))

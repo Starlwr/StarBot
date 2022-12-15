@@ -14,6 +14,7 @@ from .model import LiveOn, LiveOff, DynamicUpdate, Message, PushType, PushTarget
 from .room import Up
 from ..utils import config
 from ..utils.AsyncEvent import AsyncEvent
+from ..utils.Painter import LiveReportGenerator
 
 
 class Bot(BaseModel, AsyncEvent):
@@ -145,7 +146,7 @@ class Bot(BaseModel, AsyncEvent):
 
     def __send_push_message(self, up: Up,
                             type_selector: Callable[[PushTarget], Union[LiveOn, LiveOff, DynamicUpdate]],
-                            args: Dict):
+                            args: Dict[str, Any]):
         """
         发送推送消息至 UP 主下启用此推送类型的推送目标
 
@@ -167,7 +168,7 @@ class Bot(BaseModel, AsyncEvent):
                     select.message = select.message.replace(arg, str(val))
                 self.send_message(Message(id=target.id, content=select.message, type=target.type))
 
-    def send_live_on(self, up: Up, args: Dict):
+    def send_live_on(self, up: Up, args: Dict[str, Any]):
         """
         发送开播消息至 UP 主下启用开播推送的推送目标
 
@@ -177,7 +178,7 @@ class Bot(BaseModel, AsyncEvent):
         """
         self.__send_push_message(up, lambda t: t.live_on, args)
 
-    def send_live_off(self, up: Up, args: Dict):
+    def send_live_off(self, up: Up, args: Dict[str, Any]):
         """
         发送下播消息至 UP 主下启用下播推送的推送目标
 
@@ -187,7 +188,19 @@ class Bot(BaseModel, AsyncEvent):
         """
         self.__send_push_message(up, lambda t: t.live_off, args)
 
-    def send_dynamic_update(self, up: Up, args: Dict):
+    def send_live_report(self, up: Up, param: Dict[str, Any]):
+        """
+        发送直播报告消息至 UP 主下启用直播报告推送的推送目标
+
+        Args:
+            up: 要发送的 UP 主实例
+            param: 直播报告参数
+        """
+        for target in filter(lambda t: t.live_report.enabled, up.targets):
+            base64str = LiveReportGenerator.generate(param, target.live_report)
+            self.send_message(Message(id=target.id, content="".join(["{base64pic=", base64str, "}"]), type=target.type))
+
+    def send_dynamic_update(self, up: Up, args: Dict[str, Any]):
         """
         发送动态消息至 UP 主下启用动态推送的推送目标
 
