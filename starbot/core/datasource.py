@@ -279,7 +279,9 @@ class MySQLDataSource(DataSource):
                     "ORDER BY g.`index`"
                 )
                 live_report = await self.__query(
-                    "SELECT g.`uid`, g.`uname`, g.`room_id`, `key`, `type`, `num`, `enabled`, `cloud` "
+                    "SELECT g.`uid`, g.`uname`, g.`room_id`, `key`, `type`, `num`, "
+                    "`enabled`, `logo`, `time`, `fans_change`, `fans_medal_change`, `guard_change`, "
+                    "`danmu`, `box`, `gift`, `sc`, `guard`, `danmu_cloud` "
                     "FROM `groups` AS `g` LEFT JOIN `live_report` AS `l` "
                     "ON g.`uid` = l.`uid` AND g.`index` = l.`index` "
                     f"WHERE g.`uid` = {uid} "
@@ -305,9 +307,19 @@ class MySQLDataSource(DataSource):
                                       message=live_off[i]["message"])
                     else:
                         off = LiveOff()
-                    if all((live_report[i]["enabled"], live_report[i]["cloud"])):
+                    if live_report[i]["enabled"]:
                         report = LiveReport(enabled=live_report[i]["enabled"],
-                                            cloud=live_report[i]["cloud"])
+                                            logo=live_report[i]["logo"],
+                                            time=live_report[i]["time"],
+                                            fans_change=live_report[i]["fans_change"],
+                                            fans_medal_change=live_report[i]["fans_medal_change"],
+                                            guard_change=live_report[i]["guard_change"],
+                                            danmu=live_report[i]["danmu"],
+                                            box=live_report[i]["box"],
+                                            gift=live_report[i]["gift"],
+                                            sc=live_report[i]["sc"],
+                                            guard=live_report[i]["guard"],
+                                            danmu_cloud=live_report[i]["danmu_cloud"])
                     else:
                         report = LiveReport()
                     if all((dynamic_update[i]["enabled"], dynamic_update[i]["message"])):

@@ -85,8 +85,38 @@ class LiveReport(BaseModel):
     enabled: Optional[bool] = False
     """是否启用直播报告。默认：False"""
 
+    logo: Optional[str] = None
+    """主播立绘的 Base64 字符串，会绘制在直播报告右上角合适位置。默认：None"""
+
+    time: Optional[bool] = False
+    """是否展示本场直播直播时间段和直播时长。默认：False"""
+
+    fans_change: Optional[bool] = False
+    """是否展示本场直播粉丝变动。默认：False"""
+
+    fans_medal_change: Optional[bool] = False
+    """是否展示本场直播粉丝团（粉丝勋章数）变动。默认：False"""
+
+    guard_change: Optional[bool] = False
+    """是否展示本场直播大航海变动。默认：False"""
+
+    danmu: Optional[bool] = False
+    """是否展示本场直播收到弹幕数、发送弹幕人数。默认：False"""
+
+    box: Optional[bool] = False
+    """是否展示本场直播收到盲盒数、送出盲盒人数、盲盒盈亏。默认：False"""
+
+    gift: Optional[bool] = False
+    """是否展示本场直播礼物收益、送礼物人数。默认：False"""
+
+    sc: Optional[bool] = False
+    """是否展示本场直播SC（醒目留言）收益、发送SC（醒目留言）人数。默认：False"""
+
+    guard: Optional[bool] = False
+    """是否展示本场直播开通大航海数。默认：False"""
+
     danmu_cloud: Optional[bool] = False
-    """是否生成弹幕词云。默认：False"""
+    """是否生成本场直播弹幕词云。默认：False。默认：False"""
 
     @classmethod
     def default(cls):
@@ -94,10 +124,15 @@ class LiveReport(BaseModel):
         获取功能全部开启的默认 LiveReport 实例
         默认配置：启用直播报告，生成弹幕词云
         """
-        return LiveReport(enabled=True, danmu_cloud=True)
+        return LiveReport(enabled=True, logo=None,
+                          time=True, fans_change=True, fans_medal_change=True,guard_change=True,
+                          danmu=True, box=True, gift=True, sc=True, guard=True, danmu_cloud=True)
 
     def __str__(self):
-        return f"启用: {self.enabled}\n生成弹幕词云: {self.danmu_cloud}"
+        return (f"启用: {self.enabled}\n直播时长数据: {self.time}\n粉丝变动数据: {self.fans_change}\n"
+                f"粉丝团变动数据: {self.fans_medal_change}\n大航海变动数据: {self.guard_change}\n"
+                f"弹幕相关数据: {self.danmu}\n盲盒相关数据: {self.box}\n礼物相关数据: {self.gift}\n"
+                f"SC相关数据: {self.sc}\n大航海相关数据: {self.guard}\n生成弹幕词云: {self.danmu_cloud}")
 
 
 class DynamicUpdate(BaseModel):
@@ -107,7 +142,7 @@ class DynamicUpdate(BaseModel):
     或使用 DynamicUpdate.default() 获取功能全部开启的默认配置
     """
 
-    DEFAULT_MESSAGE: Optional[str] = "{uname} {action}\n{url}"
+    DEFAULT_MESSAGE: Optional[str] = "{uname} {action}\n{url}{next}{picture}"
     """默认消息模板"""
 
     enabled: Optional[bool] = False
@@ -116,7 +151,7 @@ class DynamicUpdate(BaseModel):
     message: Optional[str] = ""
     """
     动态推送内容模板。
-    专用占位符：{uname}主播昵称，{action}动态操作类型（发表了新动态，转发了新动态，投稿了新视频...），{url}动态链接（若为发表视频、专栏等则为视频、专栏等对应的链接）。
+    专用占位符：{uname}主播昵称，{action}动态操作类型（发表了新动态，转发了新动态，投稿了新视频...），{url}动态链接（若为发表视频、专栏等则为视频、专栏等对应的链接），{picture}动态图片。
     通用占位符：{next} 消息分条，{atall} @全体成员，{at114514} @指定QQ号，{urlpic=链接} 网络图片，{pathpic=路径} 本地图片。
     默认：""
     """
@@ -170,7 +205,7 @@ class PushTarget(BaseModel):
     """动态推送配置。默认：DynamicUpdate()"""
 
     key: Optional[str] = None
-    """推送 Key，可选功能，可使用此 Key 通过 HTTP API 向对应的好友或群推送消息。默认：str(id)"""
+    """推送 Key，可选功能，可使用此 Key 通过 HTTP API 向对应的好友或群推送消息。默认：str(id)-str(type)"""
 
     def __init__(self, **data: Any):
         super().__init__(**data)
@@ -274,6 +309,10 @@ class Message(BaseModel):
                             pic_path = msg[9:code_end]
                             if pic_path != "":
                                 chain.append(Image(path=pic_path))
+                        elif msg[1:10] == "base64pic":
+                            pic_base64 = msg[11:code_end]
+                            if pic_base64 != "":
+                                chain.append(Image(base64=pic_base64))
                         else:
                             chain.append(Plain(msg[:code_end + 1]))
                         msg = msg[code_end + 1:]
