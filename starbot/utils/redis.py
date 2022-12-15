@@ -33,6 +33,10 @@ async def delete(key: str):
 
 # List
 
+async def lrange(key: str, start: int, end: int) -> List:
+    return list(map(lambda x: x.decode(), await __redis.lrange(key, start, end)))
+
+
 async def rpush(key: str, value: Any):
     await __redis.rpush(key, value)
 
@@ -70,6 +74,25 @@ async def hincrbyfloat(key: str, hkey: Union[str, int], value: Optional[float] =
 
 
 # Zset
+
+async def zcard(key: str) -> int:
+    return await __redis.zcard(key)
+
+
+async def zrank(key: str, member: str) -> int:
+    rank = await __redis.zrank(key, member)
+    if rank is None:
+        return 0
+    return rank
+
+
+async def zadd(key: str, member: str, score: Union[int, float]):
+    await __redis.zadd(key, {member: score})
+
+
+async def zincrby(key: str, member: Union[str, int], score: Optional[Union[int, float]] = 1) -> float:
+    return await __redis.zincrby(key, score, member)
+
 
 async def zunionstore(dest: str, source: Union[str, List[str]]):
     if isinstance(source, str):

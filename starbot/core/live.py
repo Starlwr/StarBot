@@ -749,7 +749,8 @@ class LiveDanmaku(AsyncEvent):
                     break
 
             except Exception as e:
-                logger.exception(e)
+                logger.warning(f'直播间 {self.room_display_id} 连接失败 : {e}')
+
                 if len(available_hosts) == 0:
                     logger.error(f'无法连接直播间 {self.room_display_id} 的服务器')
                     self.err_reason = '无法连接服务器'
