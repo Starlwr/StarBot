@@ -342,11 +342,9 @@ class PicGenerator:
                         texts: Union[str, List[str]],
                         colors: Optional[Union[Color, Tuple[int, int, int],
                                                List[Union[Color, Tuple[int, int, int]]]]] = None,
-                        xy_limit: Optional[Tuple[int, int]] = (0, 0),
-                        xy: Optional[Tuple[int, int]] = None):
+                        xy_limit: Optional[Tuple[int, int]] = (0, 0)):
         """
         在当前绘图坐标绘制一行右对齐文本，会自动移动绘图坐标保证不会覆盖指定的点，会自动移动绘图坐标至下次绘图适合位置
-        也可手动传入绘图坐标，手动传入时不会移动绘图坐标
         传入文本列表和颜色列表可将一行文本绘制为不同颜色，文本列表和颜色列表需一一对应
         颜色列表少于文本列表时将使用默认黑色 (0, 0, 0)，颜色列表多于文本列表时将舍弃多余颜色
 
@@ -355,10 +353,8 @@ class PicGenerator:
             texts: 文本内容
             colors: 字体颜色。默认：黑色 (0, 0, 0)
             xy_limit: 指定不可被覆盖的点。默认：(0, 0)
-            xy: 绘图坐标。默认：自适应绘图坐标
         """
-        if xy is None:
-            xy = self.__xy
+        xy = self.__xy
 
         x = self.width - self.__draw.textlength("".join(texts), self.__text_font) - margin_right
 
@@ -367,7 +363,8 @@ class PicGenerator:
         y = max(xy[1], xy_limit[1])
 
         self.draw_text(texts, colors, (x, y))
-        self.move_pos(0, self.__text_font.size + self.__ROW_SPACE)
+        self.set_pos(xy[0], y + self.__text_font.size + self.__ROW_SPACE)
+
         return self
 
     def show(self):
