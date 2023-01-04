@@ -164,9 +164,10 @@ class Bot(BaseModel, AsyncEvent):
                 return
 
             if select.enabled:
+                message = select.message
                 for arg, val in args.items():
-                    select.message = select.message.replace(arg, str(val))
-                self.send_message(Message(id=target.id, content=select.message, type=target.type))
+                    message = message.replace(arg, str(val))
+                self.send_message(Message(id=target.id, content=message, type=target.type))
 
     def send_live_on(self, up: Up, args: Dict[str, Any]):
         """
