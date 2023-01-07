@@ -127,6 +127,17 @@ class DataSource(metaclass=abc.ABCMeta):
             raise DataSourceException(f"不存在的推送 key: {key}")
         return bot
 
+    async def wait_for_connects(self):
+        """
+        等待所有 Up 实例连接直播间完毕
+        """
+        while True:
+            await asyncio.sleep(1)
+
+            flags = [u.is_connecting() for u in self.__up_list]
+            if not any(flags):
+                break
+
 
 class DictDataSource(DataSource):
     """

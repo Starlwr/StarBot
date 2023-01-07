@@ -36,6 +36,9 @@ SIMPLE_CONFIG = {
     "BILI_JCT": None,
     "BUVID3": None,
 
+    # 成功连接所有主播直播间的最大等待时长，可使得日志输出顺序更加易读，一般无需修改此处，单位：秒
+    "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 60,
+
     # 是否自动判断仅连接必要的直播间，即当某直播间的开播、下播、直播报告开关均未开启时，自动跳过连接直播间，以节省性能
     "ONLY_CONNECT_NECESSARY_ROOM": False,
     # 是否自动判断仅处理必要的直播事件，例如当某直播间的下播推送和直播报告中均不包含弹幕相关功能，则不再处理此直播间的弹幕事件，以节省性能
@@ -127,6 +130,9 @@ FULL_CONFIG = {
     "SESSDATA": None,
     "BILI_JCT": None,
     "BUVID3": None,
+
+    # 成功连接所有主播直播间的最大等待时长，可使得日志输出顺序更加易读，一般无需修改此处，单位：秒
+    "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 60,
 
     # 是否自动判断仅连接必要的直播间，即当某直播间的开播、下播、直播报告开关均未开启时，自动跳过连接直播间，以节省性能
     "ONLY_CONNECT_NECESSARY_ROOM": False,

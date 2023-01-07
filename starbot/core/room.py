@@ -75,6 +75,9 @@ class Up(BaseModel):
     def dispatch(self, name, data):
         self.__room.dispatch(name, data)
 
+    def is_connecting(self):
+        return (self.__room is not None) and (self.__room.get_status() != 2)
+
     def __any_live_on_enabled(self):
         return any(map(lambda conf: conf.enabled, map(lambda group: group.live_on, self.targets)))
 
@@ -104,14 +107,16 @@ class Up(BaseModel):
             if user_info["live_room"] is None:
                 raise LiveException(f"UP 主 {self.uname} ( UID: {self.uid} ) 还未开通直播间")
             self.room_id = user_info["live_room"]["roomid"]
-        self.__live_room = LiveRoom(self.room_id, get_credential())
-        self.__room = LiveDanmaku(self.room_id, credential=get_credential())
 
         # 开播推送开关和下播推送开关均处于关闭状态时跳过连接直播间，以节省性能
         if config.get("ONLY_CONNECT_NECESSARY_ROOM"):
-            if not any([self.__any_live_on_enabled(), self.__any_live_off_enabled(), self.__any_live_report_enabled()]):
+            if not any([self.__any_live_on_enabled(), self.__any_live_off_enabled(),
+                        self.__any_live_report_enabled()]):
                 logger.warning(f"{self.uname} 的开播, 下播和直播报告开关均处于关闭状态, 跳过连接直播间")
                 return
+
+        self.__live_room = LiveRoom(self.room_id, get_credential())
+        self.__room = LiveDanmaku(self.room_id, credential=get_credential())
 
         logger.opt(colors=True).info(f"准备连接到 <cyan>{self.uname}</> 的直播间 <cyan>{self.room_id}</>")
 
