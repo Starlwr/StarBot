@@ -18,6 +18,7 @@ from .model import PushTarget
 from .user import User
 from ..exception import LiveException
 from ..utils import config, redis
+from ..utils.Painter import DynamicPicGenerator
 from ..utils.utils import get_credential, timestamp_format
 
 if typing.TYPE_CHECKING:
@@ -71,6 +72,9 @@ class Up(BaseModel):
     def inject_bot(self, bot):
         self.__bot = bot
 
+    def dispatch(self, name, data):
+        self.__room.dispatch(name, data)
+
     def __any_live_on_enabled(self):
         return any(map(lambda conf: conf.enabled, map(lambda group: group.live_on, self.targets)))
 
@@ -84,6 +88,9 @@ class Up(BaseModel):
         if isinstance(attribute, list):
             return any([self.__any_live_report_item_enabled(a) for a in attribute])
         return any(map(lambda t: t.live_report.enabled and t.live_report.__getattribute__(attribute), self.targets))
+
+    def __any_dynamic_update_enabled(self):
+        return any(map(lambda conf: conf.enabled, map(lambda group: group.dynamic_update, self.targets)))
 
     async def connect(self):
         """
@@ -306,6 +313,48 @@ class Up(BaseModel):
                 await redis.hincrby(f"Room{type_mapping[guard_type]}Count", self.room_id, month)
                 await redis.zincrby(f"User{type_mapping[guard_type]}Count:{self.room_id}", uid, month)
 
+        if self.__any_dynamic_update_enabled():
+            @self.__room.on("DYNAMIC_UPDATE")
+            async def dynamic_update(event):
+                """
+                动态更新事件
+                """
+                logger.debug(f"{self.uname} (DYNAMIC_UPDATE): {event}")
+
+                dynamic_id = event["desc"]["dynamic_id"]
+                dynamic_type = event["desc"]["type"]
+                bvid = event['desc']['bvid'] if dynamic_type == 8 else ""
+                rid = event['desc']['rid'] if dynamic_type in (64, 256) else ""
+
+                action_map = {
+                    1: "转发了动态",
+                    2: "发表了新动态",
+                    4: "发表了新动态",
+                    8: "投稿了新视频",
+                    64: "投稿了新专栏",
+                    256: "投稿了新音频",
+                    2048: "发表了新动态"
+                }
+                url_map = {
+                    1: f"https://t.bilibili.com/{dynamic_id}",
+                    2: f"https://t.bilibili.com/{dynamic_id}",
+                    4: f"https://t.bilibili.com/{dynamic_id}",
+                    8: f"https://www.bilibili.com/video/{bvid}",
+                    64: f"https://www.bilibili.com/read/cv{rid}",
+                    256: f"https://www.bilibili.com/audio/au{rid}",
+                    2048: f"https://t.bilibili.com/{dynamic_id}"
+                }
+                base64str = await DynamicPicGenerator.generate(event)
+
+                # 推送动态消息
+                dynamic_update_args = {
+                    "{uname}": self.uname,
+                    "{action}": action_map.get(dynamic_type, "发表了新动态"),
+                    "{url}": url_map.get(dynamic_type, f"https://t.bilibili.com/{dynamic_id}"),
+                    "{picture}": "".join(["{base64pic=", base64str, "}"])
+                }
+                self.__bot.send_dynamic_update(self, dynamic_update_args)
+
     async def __accumulate_data(self):
         """
         累计直播间数据
@@ -403,8 +452,8 @@ class Up(BaseModel):
         hour, minute = divmod(minute, 60)
 
         live_report_param.update({
-            "start_time": timestamp_format(start_time),
-            "end_time": timestamp_format(end_time),
+            "start_time": timestamp_format(start_time, "%m/%d %H:%M:%S"),
+            "end_time": timestamp_format(end_time, "%m/%d %H:%M:%S"),
             "hour": hour,
             "minute": minute,
             "second": second
@@ -490,7 +539,7 @@ class Up(BaseModel):
                 io = BytesIO()
                 word_cloud = WordCloud(width=900,
                                        height=450,
-                                       font_path=f"{font_base_path}/font/{config.get('DANMU_CLOUD_FONT')}",
+                                       font_path=f"{font_base_path}/resource/{config.get('DANMU_CLOUD_FONT')}",
                                        background_color=config.get("DANMU_CLOUD_BACKGROUND_COLOR"),
                                        max_font_size=config.get("DANMU_CLOUD_MAX_FONT_SIZE"),
                                        max_words=config.get("DANMU_CLOUD_MAX_WORDS"))

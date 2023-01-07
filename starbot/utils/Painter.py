@@ -1,11 +1,17 @@
+import asyncio
 import base64
+import json
 import os
 from enum import Enum
 from io import BytesIO
 from typing import Optional, Union, Tuple, List, Dict, Any
 
 from PIL import Image, ImageDraw, ImageFont
+from PIL.Image import Resampling
+from emoji import is_emoji
 
+from .network import request
+from .utils import open_url_image, timestamp_format, split_list, limit_str_length, mask_round, mask_rounded_rectangle
 from ..core.model import LiveReport
 from ..utils import config
 
@@ -17,22 +23,26 @@ class Color(Enum):
     + BLACK: 黑色
     + WHITE: 白色
     + GRAY: 灰色
+    + LIGHTGRAY: 淡灰色
     + RED: 红色
     + GREEN: 绿色
     + CRIMSON: 总督红
     + FUCHSIA: 提督紫
     + DEEPSKYBLUE: 舰长蓝
     + LINK: 超链接蓝
+    + PINK: 大会员粉
     """
     BLACK = (0, 0, 0)
     WHITE = (255, 255, 255)
     GRAY = (169, 169, 169)
+    LIGHTGRAY = (244, 244, 244)
     RED = (150, 0, 0)
     GREEN = (0, 150, 0)
     CRIMSON = (220, 20, 60)
     FUCHSIA = (255, 0, 255)
     DEEPSKYBLUE = (0, 191, 255)
-    LINK = (6, 69, 173)
+    LINK = (23, 139, 207)
+    PINK = (251, 114, 153)
 
 
 class PicGenerator:
@@ -54,21 +64,57 @@ class PicGenerator:
             normal_font: 普通字体路径。默认：config.get("PAINTER_NORMAL_FONT") = "normal.ttf"
             bold_font: 粗体字体路径。默认：config.get("PAINTER_BOLD_FONT") = "bold.ttf"
         """
-        self.width = width
-        self.height = height
+        self.__width = width
+        self.__height = height
         self.__canvas = Image.new("RGBA", (self.width, self.height))
         self.__draw = ImageDraw.Draw(self.__canvas)
 
-        font_base_path = os.path.dirname(os.path.dirname(__file__))
-        self.__chapter_font = ImageFont.truetype(f"{font_base_path}/font/{bold_font}", 50)
-        self.__section_font = ImageFont.truetype(f"{font_base_path}/font/{bold_font}", 40)
-        self.__tip_font = ImageFont.truetype(f"{font_base_path}/font/{normal_font}", 25)
-        self.__text_font = ImageFont.truetype(f"{font_base_path}/font/{normal_font}", 30)
+        resource_base_path = os.path.dirname(os.path.dirname(__file__))
+        self.__chapter_font = ImageFont.truetype(f"{resource_base_path}/resource/{bold_font}", 50)
+        self.__section_font = ImageFont.truetype(f"{resource_base_path}/resource/{bold_font}", 40)
+        self.__tip_font = ImageFont.truetype(f"{resource_base_path}/resource/{normal_font}", 25)
+        self.__text_font = ImageFont.truetype(f"{resource_base_path}/resource/{normal_font}", 30)
 
         self.__xy = 0, 0
         self.__ROW_SPACE = 25
 
-    def set_pos(self, x: int, y: int):
+        self.__bottom_pic = None
+
+    @property
+    def width(self):
+        return self.__width
+
+    @property
+    def height(self):
+        return self.__height
+
+    @property
+    def x(self):
+        return self.__xy[0]
+
+    @property
+    def y(self):
+        return self.__xy[1]
+
+    @property
+    def xy(self):
+        return self.__xy
+
+    @property
+    def row_space(self):
+        return self.__ROW_SPACE
+
+    def set_row_space(self, row_space: int):
+        """
+        设置默认行距
+
+        Args:
+            row_space: 行距
+        """
+        self.__ROW_SPACE = row_space
+        return self
+
+    def set_pos(self, x: Optional[int] = None, y: Optional[int] = None):
         """
         设置绘图坐标
 
@@ -76,6 +122,8 @@ class PicGenerator:
             x: X 坐标
             y: Y 坐标
         """
+        x = x if x is not None else self.x
+        y = y if y is not None else self.y
         self.__xy = x, y
         return self
 
@@ -87,7 +135,53 @@ class PicGenerator:
             x: X 偏移量
             y: Y 偏移量
         """
-        self.__xy = self.__xy[0] + x, self.__xy[1] + y
+        self.__xy = self.x + x, self.y + y
+        return self
+
+    def copy_bottom(self, height: int):
+        """
+        拷贝指定高度的画布底部图片
+        与 crop_and_paste_bottom() 函数配合
+        在事先不能确定画布高度时，先创建一个高度极大的画布，内容绘制结束时剪裁底部多余区域并将底部图片粘贴回原位
+
+        Args:
+            height: 拷贝高度，从图片底部计算
+        """
+        self.__bottom_pic = self.__canvas.crop((0, self.height - height, self.width, self.height))
+        return self
+
+    def crop_and_paste_bottom(self):
+        """
+        内容绘图结束后，根据当前绘图坐标剪裁多余的底部区域，并将事先拷贝的底部图片粘贴回底部
+        """
+        if self.__bottom_pic is None:
+            self.__canvas = self.__canvas.crop((0, 0, self.width, self.y))
+            return self
+
+        self.__canvas = self.__canvas.crop((0, 0, self.width, self.y + self.__bottom_pic.height))
+        self.draw_img(self.__bottom_pic, (0, self.y))
+        return self
+
+    def draw_rectangle(self,
+                       x: int,
+                       y: int,
+                       width: int,
+                       height: int,
+                       color: Union[Color, Tuple[int, int, int]]):
+        """
+        绘制一个矩形，此方法不会移动绘图坐标
+
+        Args:
+            x: 矩形左上角的 x 坐标
+            y: 矩形左上角的 y 坐标
+            width: 矩形的宽度
+            height: 矩形的高度
+            color: 矩形的背景颜色
+        """
+        if isinstance(color, Color):
+            color = color.value
+
+        self.__draw.rectangle(((x, y), (x + width, y + height)), color)
         return self
 
     def draw_rounded_rectangle(self,
@@ -205,7 +299,7 @@ class PicGenerator:
             img: 图片路径或 Image 图片实例
             xy: 绘图坐标。默认：自适应绘图坐标
             color: 边框颜色。默认：黑色 (0, 0, 0)
-            radius: 边框圆角半径。默认：20
+            radius: 边框圆角半径。默认：10
             width: 边框粗细。默认：1
         """
         if isinstance(img, str):
@@ -326,11 +420,11 @@ class PicGenerator:
                 colors[i] = colors[i].value
 
         if xy is None:
-            x = self.__xy[0]
+            x = self.x
             for i in range(len(texts)):
                 self.__draw.text(self.__xy, texts[i], colors[i], self.__text_font)
                 self.move_pos(int(self.__draw.textlength(texts[i], self.__text_font)), 0)
-            self.move_pos(x - self.__xy[0], self.__text_font.size + self.__ROW_SPACE)
+            self.move_pos(x - self.x, self.__text_font.size + self.__ROW_SPACE)
         else:
             for i in range(len(texts)):
                 self.__draw.text(xy, texts[i], colors[i], self.__text_font)
@@ -415,12 +509,13 @@ class LiveReportGenerator:
             直播报告图片的 Base64 字符串
         """
         width = 1000
-        height = cls.__calc_height(param, model)
+        height = 10000
         top_blank = 75
 
         generator = PicGenerator(width, height)
         pic = (generator.set_pos(50, 125)
-               .draw_rounded_rectangle(0, top_blank, width, height - top_blank, 35, Color.WHITE))
+               .draw_rounded_rectangle(0, top_blank, width, height - top_blank, 35, Color.WHITE)
+               .copy_bottom(35))
 
         # 标题
         pic.draw_chapter("直播报告")
@@ -570,132 +665,12 @@ class LiveReportGenerator:
                 pic.draw_img_with_border(img)
 
         # 底部信息
+        pic.set_row_space(10)
         pic.draw_text_right(50, "Designed By StarBot", Color.GRAY, logo_limit)
         pic.draw_text_right(50, "https://github.com/Starlwr/StarBot", Color.LINK, logo_limit)
+        pic.crop_and_paste_bottom()
 
         return pic.base64()
-
-    @classmethod
-    def __calc_height(cls, param: Dict[str, Any], model: LiveReport) -> int:
-        """
-        根据传入直播报告参数计算直播报告图片高度
-
-        Args:
-            param: 直播报告参数
-            model: 直播报告配置实例
-
-        Returns:
-            直播报告图片高度
-        """
-        x = 50
-        y = 0
-        width = 1000
-        height = 0
-
-        chapter_font_size = 50
-        section_font_size = 40
-        tip_font_size = 25
-        text_font_size = 30
-        text_row_space = 25
-
-        # 图片上边距
-        top_blank = 75
-        top_base_margin = 50
-        y += (top_blank + top_base_margin)
-        height = max(height, y)
-
-        # 标题
-        y += (chapter_font_size + text_row_space)
-        height = max(height, y)
-
-        # 主播立绘
-        logo_limit = (0, 0)
-        if model.logo:
-            logo = cls.__get_logo(model)
-            height = max(height, logo.height)
-
-            base_left = 650
-            logo_left = base_left + int((width - base_left - logo.width) / 2)
-            if logo_left < base_left:
-                logo_left = base_left
-            logo_limit = (logo_left, logo.height)
-
-        # 主播信息
-        y += (tip_font_size + text_row_space)
-        height = max(height, y)
-
-        # 直播时长
-        if model.time:
-            y += (tip_font_size + text_row_space)
-            height = max(height, y)
-
-        # 基础数据
-        if model.fans_change or model.fans_medal_change or model.guard_change:
-            y += (section_font_size + text_row_space)
-            height = max(height, y)
-
-            if model.fans_change:
-                y += (text_font_size + text_row_space)
-                height = max(height, y)
-
-            if model.fans_medal_change:
-                y += (text_font_size + text_row_space)
-                height = max(height, y)
-
-            if model.guard_change:
-                y += (text_font_size + text_row_space)
-                height = max(height, y)
-
-        # 直播数据
-        if model.danmu or model.box or model.gift or model.sc or model.guard:
-            (danmu_count, danmu_person_count,
-             box_count, box_person_count, box_profit, box_beat_percent,
-             gift_profit, gift_person_count,
-             sc_profit, sc_person_count,
-             captain_count, commander_count, governor_count) = cls.__get_live_params(param)
-
-            if any([danmu_count > 0, box_count > 0, gift_profit > 0, sc_profit > 0,
-                    captain_count > 0, commander_count > 0, governor_count > 0]):
-                y += (section_font_size + text_row_space)
-                height = max(height, y)
-
-                if model.danmu and danmu_count > 0:
-                    y += (text_font_size + text_row_space)
-                    height = max(height, y)
-
-                if model.box and box_count > 0:
-                    y += (text_font_size + text_row_space) * 2
-                    height = max(height, y)
-
-                if model.gift and gift_profit > 0:
-                    y += (text_font_size + text_row_space)
-                    height = max(height, y)
-
-                if model.sc and sc_profit > 0:
-                    y += (text_font_size + text_row_space)
-                    height = max(height, y)
-
-                if model.guard and any([captain_count > 0, commander_count > 0, governor_count > 0]):
-                    y += (text_font_size + text_row_space)
-                    height = max(height, y)
-
-        # 弹幕词云
-        if model.danmu_cloud:
-            base64_str = param.get('danmu_cloud', "")
-            if base64_str != "":
-                y += (section_font_size + text_row_space)
-                height = max(height, y)
-
-                img_bytes = BytesIO(base64.b64decode(base64_str))
-                img = PicGenerator.auto_size_img_by_limit_cls(Image.open(img_bytes), logo_limit, (x, y))
-
-                y += (img.height + text_row_space)
-                height = max(height, y)
-
-        # 底部信息
-        height += (text_font_size + text_row_space) * 2
-
-        return height
 
     @classmethod
     def __get_logo(cls, model: LiveReport) -> Image:
@@ -753,3 +728,739 @@ class LiveReportGenerator:
                 gift_profit, gift_person_count,
                 sc_profit, sc_person_count,
                 captain_count, commander_count, governor_count)
+
+
+class DynamicPicGenerator:
+    """
+    动态图片生成器
+    """
+    __resource_base_path = os.path.dirname(os.path.dirname(__file__))
+
+    @classmethod
+    async def generate(cls, param: Dict[str, Any]) -> str:
+        """
+        根据传入动态信息生成动态图片
+
+        Args:
+            param: 动态信息
+
+        Returns:
+            动态图片的 Base64 字符串
+        """
+        width = 740
+        height = 10000
+        text_margin = 25
+        img_margin = 10
+        generator = PicGenerator(width, height)
+        pic = generator.set_pos(175, 60).draw_rounded_rectangle(0, 0, width, height, 35, Color.WHITE).copy_bottom(35)
+
+        # 提取参数
+        desc = param["desc"]
+        dynamic_id = desc["dynamic_id"]
+        origin_dynamic_id = desc["orig_dy_id"] if "orig_dy_id" in desc else None
+        dynamic_type = desc["type"]
+
+        user_profile = desc["user_profile"]
+        card = json.loads(param["card"])
+        display = param["display"]
+
+        # 动态头部
+        face, pendant = await asyncio.gather(open_url_image(user_profile["info"]["face"]),
+                                             open_url_image(user_profile["pendant"]["image"]))
+        official = user_profile["card"]["official_verify"]["type"]
+        vip = user_profile["vip"]["nickname_color"] != ""
+        uname = user_profile["info"]["uname"]
+        timestamp = desc["timestamp"]
+
+        await cls.__draw_header(pic, face, pendant, official, vip, uname, timestamp)
+
+        # 动态主体
+        pic.set_pos(x=text_margin)
+        pic.set_row_space(10)
+
+        await cls.__draw_by_type(pic, dynamic_type, card, dynamic_id, display,
+                                 text_margin, img_margin, False, origin_dynamic_id)
+
+        # 底部信息
+        pic.move_pos(0, 15)
+        pic.draw_text_right(25, "Designed By StarBot", Color.GRAY)
+        pic.draw_text_right(25, "https://github.com/Starlwr/StarBot", Color.LINK)
+        pic.crop_and_paste_bottom()
+
+        return pic.base64()
+
+    @classmethod
+    async def __draw_by_type(cls,
+                             pic: PicGenerator,
+                             dynamic_type: int,
+                             card: Dict[str, Any],
+                             dynamic_id: int,
+                             display: Dict[str, Any],
+                             text_margin: int,
+                             img_margin: int,
+                             forward: bool,
+                             origin_dynamic_id: Optional[int] = None):
+        """
+        根据动态类型绘制动态图片
+
+        Args:
+            pic: 绘图器实例
+            dynamic_type: 动态类型
+            card: 动态信息
+            dynamic_id: 动态 ID
+            display: 动态绘制附加信息
+            text_margin: 文字外边距
+            img_margin: 图片外边距
+            forward: 当前是否为转发动态的源动态
+        """
+        async def download_img(mod: Dict[str, Any]):
+            """
+            下载表情图片
+
+            Args:
+                mod: 表情区块字典
+            """
+            mod["img"] = await open_url_image(mod["emoji"]["icon_url"])
+
+        modules_url = f"https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?timezone_offset=-480&id={dynamic_id}"
+        modules = (await request("GET", modules_url))["item"]["modules"]["module_dynamic"]["desc"]
+        modules = modules["rich_text_nodes"] if modules else []
+
+        # 下载表情
+        download_picture_tasks = []
+        for module in modules:
+            if module["type"] == "RICH_TEXT_NODE_TYPE_EMOJI":
+                download_picture_tasks.append(download_img(module))
+        await asyncio.gather(*download_picture_tasks)
+
+        if dynamic_type == 1:
+            # 转发动态
+            await cls.__draw_content(pic, modules, text_margin, forward)
+
+            origin = json.loads(card["origin"])
+            origin_type = card["item"]["orig_type"]
+            origin_display = display["origin"]
+
+            origin_name = card["origin_user"]["info"]["uname"]
+            origin_name_at_param = [{"type": "RICH_TEXT_NODE_TYPE_AT", "text": f"@{origin_name}"}]
+            await cls.__draw_content(pic, origin_name_at_param, text_margin, True)
+
+            await cls.__draw_by_type(pic, origin_type, origin, origin_dynamic_id, origin_display,
+                                     text_margin, img_margin, True)
+        elif dynamic_type == 2:
+            # 带图动态
+            await cls.__draw_content(pic, modules, text_margin, forward)
+            await cls.__draw_picture_area(pic, card["item"]["pictures"], img_margin, forward)
+        elif dynamic_type == 4:
+            # 纯文字动态
+            await cls.__draw_content(pic, modules, text_margin, forward)
+        elif dynamic_type == 8:
+            # 视频
+            await cls.__draw_content(pic, modules, text_margin, forward)
+            await cls.__draw_video_cover(pic, card["pic"], card["duration"], img_margin, forward)
+            title_param = [{"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": card["title"]}]
+            await cls.__draw_content(pic, title_param, img_margin, forward)
+        elif dynamic_type == 64:
+            # 专栏
+            title_param = [{"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": card["title"]}]
+            await cls.__draw_content(pic, title_param, text_margin, forward)
+            await cls.__draw_article_cover(pic, card["origin_image_urls"], img_margin, forward)
+            summary_param = [{"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": limit_str_length(card['summary'], 60)}]
+            await cls.__draw_content(pic, summary_param, text_margin, forward)
+        elif dynamic_type == 256:
+            # 音频
+            await cls.__draw_content(pic, modules, text_margin, forward)
+            title = limit_str_length(card["title"], 15)
+            await cls.__draw_audio_area(pic, card["cover"], title, card["typeInfo"], text_margin, forward)
+        elif dynamic_type == 4200:
+            # 直播
+            title = limit_str_length(card["title"], 15)
+            await cls.__draw_live_area(pic, card["cover"], title, card["area_v2_name"], text_margin, forward)
+        else:
+            notice_param = [{"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": "暂不支持的动态类型"}]
+            await cls.__draw_content(pic, notice_param, text_margin, forward)
+
+        # 附加卡片
+        add_on_card = display["add_on_card_info"] if "add_on_card_info" in display else []
+
+        await cls.__draw_add_on_card(pic, add_on_card, text_margin, forward)
+
+    @classmethod
+    async def __draw_header(cls,
+                            pic: PicGenerator,
+                            face: Image.Image,
+                            pendant: Image.Image,
+                            official: int,
+                            vip: bool,
+                            uname: str,
+                            timestamp: int) -> PicGenerator:
+        """
+        绘制动态头部
+
+        Args:
+            pic: 绘图器实例
+            face: 头像图片
+            pendant: 头像挂件图片
+            official: 认证类型
+            vip: 是否为大会员
+            uname: 昵称
+            timestamp: 动态时间戳
+        """
+        face_size = (100, 100)
+        face = face.resize(face_size, Resampling.LANCZOS)
+        face = mask_round(face)
+        pic.draw_img_alpha(face, (50, 50))
+
+        if pendant is not None:
+            pendant_size = (170, 170)
+            pendant = pendant.resize(pendant_size, Resampling.LANCZOS).convert('RGBA')
+            pic.draw_img_alpha(pendant, (15, 15))
+            pic.move_pos(15, 0)
+
+        if official == 0:
+            pic.draw_img_alpha(Image.open(f"{cls.__resource_base_path}/resource/personal.png"), (118, 118))
+        elif official == 1:
+            pic.draw_img_alpha(Image.open(f"{cls.__resource_base_path}/resource/business.png"), (118, 118))
+        elif vip:
+            pic.draw_img_alpha(Image.open(f"{cls.__resource_base_path}/resource/vip.png"), (118, 118))
+
+        if vip:
+            pic.draw_text(uname, Color.PINK)
+        else:
+            pic.draw_text(uname, Color.BLACK)
+        pic.draw_tip(timestamp_format(timestamp, "%Y-%m-%d %H:%M"))
+
+        pic.set_pos(y=200)
+
+        return pic
+
+    @classmethod
+    async def __get_content_line_imgs(cls, modules: List[Dict[str, Any]], width: int) -> List[Image.Image]:
+        """
+        逐行绘制动态内容主体
+
+        Args:
+            modules: 动态内容各区块信息列表
+            width: 每行最大宽度
+
+        Returns:
+            绘制好的每行文字的透明背景图片列表
+        """
+        imgs = []
+
+        if not modules:
+            return imgs
+
+        line_height = 40
+        text_img_size = (40, 40)
+
+        img = Image.new("RGBA", (width, line_height))
+        draw = ImageDraw.Draw(img)
+        normal_font = config.get("PAINTER_NORMAL_FONT")
+        font = ImageFont.truetype(f"{cls.__resource_base_path}/resource/{normal_font}", 30)
+        emoji_font = ImageFont.truetype(f"{cls.__resource_base_path}/resource/emoji.ttf", 109)
+        x, y = 0, 0
+
+        def next_line():
+            """
+            换行
+            """
+            nonlocal img, draw, x, y
+
+            imgs.append(img)
+            img = Image.new("RGBA", (width, line_height))
+            draw = ImageDraw.Draw(img)
+            x, y = 0, 0
+
+        def auto_next_line(next_element_width: int):
+            """
+            超出画布宽度自动换行
+
+            Args:
+                next_element_width: 下一绘制元素宽度
+            """
+            if x + next_element_width > width:
+                next_line()
+
+        def draw_pic(pic: Image, size: Optional[Tuple[int, int]] = None):
+            """
+            绘制图片
+
+            Args:
+                pic: 要绘制的图片
+                size: 图片尺寸
+            """
+            nonlocal img, draw, x, y
+
+            if size is None:
+                size = pic.size
+            else:
+                pic = pic.resize(size, Resampling.LANCZOS).convert('RGBA')
+
+            auto_next_line(size[0])
+            img.paste(pic, (x, y), pic)
+            x = int(x + size[0])
+
+        def draw_char(c: str, color: Union[Color, Tuple[int, int, int]] = Color.BLACK):
+            """
+            绘制字符
+
+            Args:
+                c: 要绘制的字符
+                color: 字符颜色
+            """
+            nonlocal x
+
+            if isinstance(color, Color):
+                color = color.value
+
+            if c == "\n":
+                next_line()
+            else:
+                if is_emoji(c):
+                    emoji_img = Image.new("RGBA", (130, 130))
+                    emoji_draw = ImageDraw.Draw(emoji_img)
+                    emoji_draw.text((0, 0), c, font=emoji_font, embedded_color=True)
+                    emoji_img = emoji_img.resize((30, 30), Resampling.LANCZOS)
+                    draw_pic(emoji_img)
+                else:
+                    text_width = draw.textlength(c, font)
+                    auto_next_line(text_width)
+                    draw.text((x, y), c, color, font)
+                    x = int(x + text_width)
+
+        for module in modules:
+            module_type = module["type"]
+
+            if module_type == "RICH_TEXT_NODE_TYPE_TEXT":
+                for char in module["text"]:
+                    draw_char(char)
+            elif module_type == "RICH_TEXT_NODE_TYPE_EMOJI":
+                draw_pic(module["img"], text_img_size)
+            elif module_type in ["RICH_TEXT_NODE_TYPE_AT", "RICH_TEXT_NODE_TYPE_WEB", "RICH_TEXT_NODE_TYPE_BV",
+                                 "RICH_TEXT_NODE_TYPE_TOPIC", "RICH_TEXT_NODE_TYPE_LOTTERY",
+                                 "RICH_TEXT_NODE_TYPE_VOTE", "RICH_TEXT_NODE_TYPE_GOODS"]:
+                if module_type == "RICH_TEXT_NODE_TYPE_WEB":
+                    draw_pic(Image.open(f"{cls.__resource_base_path}/resource/link.png"), text_img_size)
+                elif module_type == "RICH_TEXT_NODE_TYPE_BV":
+                    draw_pic(Image.open(f"{cls.__resource_base_path}/resource/video.png"), text_img_size)
+                elif module_type == "RICH_TEXT_NODE_TYPE_LOTTERY":
+                    draw_pic(Image.open(f"{cls.__resource_base_path}/resource/box.png"), text_img_size)
+                elif module_type == "RICH_TEXT_NODE_TYPE_VOTE":
+                    draw_pic(Image.open(f"{cls.__resource_base_path}/resource/tick.png"), text_img_size)
+                elif module_type == "RICH_TEXT_NODE_TYPE_GOODS":
+                    draw_pic(Image.open(f"{cls.__resource_base_path}/resource/tb.png"), text_img_size)
+                for char in module["text"]:
+                    draw_char(char, Color.LINK)
+
+        imgs.append(img)
+
+        return imgs
+
+    @classmethod
+    async def __draw_content(cls,
+                             pic: PicGenerator,
+                             modules: List[Dict[str, Any]],
+                             text_margin: int,
+                             forward: bool) -> PicGenerator:
+        """
+        绘制动态主体内容
+
+        Args:
+            pic: 绘图器实例
+            modules: @ 信息
+            text_margin: 文字外边距
+            forward: 当前是否为转发动态的源动态
+        """
+        pic.set_pos(x=text_margin)
+
+        content_imgs = await cls.__get_content_line_imgs(modules, pic.width - (text_margin * 2))
+
+        if forward and content_imgs:
+            heights = (content_imgs[0].height + pic.row_space) * len(content_imgs)
+            pic.draw_rectangle(0, pic.y, pic.width, heights, Color.LIGHTGRAY)
+
+        for img in content_imgs:
+            pic.draw_img_alpha(img)
+        return pic
+
+    @classmethod
+    async def __draw_picture_area(cls,
+                                  pic: PicGenerator,
+                                  pictures: List[Dict[str, Any]],
+                                  img_margin: int,
+                                  forward: bool) -> PicGenerator:
+        """
+        绘制动态主体下方图片区域
+
+        Args:
+            pic: 绘图器实例
+            pictures: 图片信息字典
+            img_margin: 图片外边距
+            forward: 当前是否为转发动态的源动态
+        """
+        pic.set_pos(x=img_margin)
+
+        # 下载图片
+        picture_count = len(pictures)
+        if picture_count == 1:
+            line_count = 1
+        elif picture_count == 2 or picture_count == 4:
+            line_count = 2
+        else:
+            line_count = 3
+
+        download_picture_tasks = []
+        for picture in pictures:
+            if line_count == 1:
+                download_picture_tasks.append(open_url_image(f"{picture['img_src']}@518w.webp"))
+            elif line_count == 2:
+                src = picture['img_src']
+                size = int((pic.width - (img_margin * 3)) / 2)
+                if picture["img_height"] / picture["img_width"] >= 3:
+                    download_picture_tasks.append(open_url_image(f"{src}@{size}w_{size}h_!header.webp"))
+                else:
+                    download_picture_tasks.append(open_url_image(f"{src}@{size}w_{size}h_1e_1c.webp"))
+            else:
+                src = picture['img_src']
+                size = int((pic.width - (img_margin * 4)) / 3)
+                if picture["img_height"] / picture["img_width"] >= 3:
+                    download_picture_tasks.append(open_url_image(f"{src}@{size}w_{size}h_!header.webp"))
+                else:
+                    download_picture_tasks.append(open_url_image(f"{src}@{size}w_{size}h_1e_1c.webp"))
+        imgs = await asyncio.gather(*download_picture_tasks)
+
+        if picture_count == 1:
+            img = imgs[0]
+            img = img.resize(((pic.width - (img_margin * 2)),
+                              int((pic.width - (img_margin * 4)) / (img.size[0] / img.size[1]))),
+                             Resampling.LANCZOS)
+            imgs = [img]
+
+        # 绘制图片
+        imgs = split_list(imgs, line_count)
+
+        if forward:
+            heights = (imgs[0][0].height + pic.row_space) * len(imgs)
+            pic.draw_rectangle(0, pic.y, pic.width, heights, Color.LIGHTGRAY)
+
+        for line in imgs:
+            for index, img in enumerate(line):
+                if index == len(line) - 1:
+                    pic.draw_img(img).set_pos(x=img_margin)
+                else:
+                    pic.draw_img(img, (pic.x, pic.y)).move_pos(img.width + img_margin, 0)
+        return pic
+
+    @classmethod
+    async def __draw_video_cover(cls,
+                                 pic: PicGenerator,
+                                 url: str,
+                                 duration: int,
+                                 img_margin: int,
+                                 forward: bool) -> PicGenerator:
+        """
+        绘制视频封面
+
+        Args:
+            pic: 绘图器实例
+            url: 视频封面 URL
+            duration: 视频时长
+            img_margin: 图片外边距
+            forward: 当前是否为转发动态的源动态
+        """
+        pic.set_pos(x=img_margin)
+
+        cover = await open_url_image(f"{url}@480w.webp")
+        cover = cover.resize(((pic.width - (img_margin * 2)),
+                              int((pic.width - (img_margin * 4)) / (cover.size[0] / cover.size[1]))),
+                             Resampling.LANCZOS)
+        cover = mask_rounded_rectangle(cover)
+
+        mask = Image.open(f"{cls.__resource_base_path}/resource/mask.png")
+        mask = mask.crop((0, 0, cover.width, mask.height))
+        time = Image.open(f"{cls.__resource_base_path}/resource/time.png")
+        tv = Image.open(f"{cls.__resource_base_path}/resource/tv.png")
+
+        cover.paste(mask, (0, cover.height - mask.height - 1), mask)
+        cover.paste(time, (13, cover.height - time.height - 14), time)
+        cover.paste(tv, (cover.width - tv.width - 16, cover.height - tv.height - 5), tv)
+
+        cover_draw = ImageDraw.Draw(cover)
+        normal_font = config.get("PAINTER_NORMAL_FONT")
+        time_font = ImageFont.truetype(f"{cls.__resource_base_path}/resource/{normal_font}", 25)
+        cover_draw.text((21, cover.height - time.height - 11),
+                        timestamp_format(duration + 57600, "%H:%M:%S"), Color.WHITE.value, time_font)
+
+        if forward:
+            cover_height = cover.height + pic.row_space
+            pic.draw_rectangle(0, pic.y, pic.width, cover_height, Color.LIGHTGRAY)
+
+        pic.draw_img_alpha(cover)
+        return pic
+
+    @classmethod
+    async def __draw_article_cover(cls,
+                                   pic: PicGenerator,
+                                   urls: List[str],
+                                   img_margin: int,
+                                   forward: bool) -> PicGenerator:
+        """
+        绘制专栏封面
+
+        Args:
+            pic: 绘图器实例
+            urls: 专栏封面 URL 列表
+            img_margin: 图片外边距
+            forward: 当前是否为转发动态的源动态
+        """
+        pic.set_pos(x=img_margin)
+
+        img_count = len(urls)
+
+        download_picture_tasks = []
+        for url in urls:
+            if img_count == 1:
+                download_picture_tasks.append(open_url_image(f"{url}@518w.webp"))
+            else:
+                size = int((pic.width - (img_margin * 4)) / 3)
+                download_picture_tasks.append(open_url_image(f"{url}@{size}w_{size}h_1e_1c.webp"))
+        imgs = await asyncio.gather(*download_picture_tasks)
+
+        if img_count == 1:
+            img = imgs[0]
+            img = img.resize(((pic.width - (img_margin * 2)),
+                              int((pic.width - (img_margin * 4)) / (img.size[0] / img.size[1]))),
+                             Resampling.LANCZOS)
+            imgs = [img]
+
+        if forward:
+            heights = imgs[0].height + pic.row_space
+            pic.draw_rectangle(0, pic.y, pic.width, heights, Color.LIGHTGRAY)
+
+        for index, img in enumerate(imgs):
+            if index == len(imgs) - 1:
+                pic.draw_img(img).set_pos(x=img_margin)
+            else:
+                pic.draw_img(img, (pic.x, pic.y)).move_pos(img.width + img_margin, 0)
+
+        return pic
+
+    @classmethod
+    async def __draw_audio_area(cls,
+                                pic: PicGenerator,
+                                cover_url: str,
+                                title: str,
+                                audio_type: str,
+                                margin: int,
+                                forward: bool) -> PicGenerator:
+        """
+        绘制音频卡片
+
+        Args:
+            pic: 绘图器实例
+            cover_url: 音频封面 URL
+            title: 音频标题
+            audio_type: 音频类型
+            margin: 外边距
+            forward: 当前是否为转发动态的源动态
+        """
+        pic.set_pos(x=margin)
+
+        cover = await open_url_image(cover_url)
+        cover_size = int(pic.width / 4)
+        cover = cover.resize((cover_size, cover_size), Resampling.LANCZOS)
+        cover = mask_rounded_rectangle(cover)
+
+        if forward:
+            heights = cover.height + pic.row_space
+            pic.draw_rectangle(0, pic.y, pic.width, heights, Color.LIGHTGRAY)
+
+        border = Image.new("RGBA", (pic.width - (margin * 2) + 2, cover_size + 2))
+        ImageDraw.Draw(border).rounded_rectangle((0, 0, border.width - 1, border.height - 1),
+                                                 10, (0, 0, 0, 0), Color.GRAY.value, 1)
+        pic.draw_img_alpha(border, (pic.x - 1, pic.y - 1))
+
+        x, y = pic.xy
+        pic.draw_img_alpha(cover)
+        pic.draw_text(title, Color.BLACK, (x + cover_size + margin, y + int(cover_size / 5)))
+        pic.draw_tip(audio_type, xy=(x + cover_size + margin, y + int(cover_size / 5 * 3)))
+
+        return pic
+
+    @classmethod
+    async def __draw_live_area(cls,
+                               pic: PicGenerator,
+                               cover_url: str,
+                               title: str,
+                               area: str,
+                               margin: int,
+                               forward: bool) -> PicGenerator:
+        """
+        绘制直播卡片
+
+        Args:
+            pic: 绘图器实例
+            cover_url: 直播封面 URL
+            title: 直播标题
+            area: 直播分区
+            margin: 外边距
+            forward: 当前是否为转发动态的源动态
+        """
+        pic.set_pos(x=margin)
+
+        cover = await open_url_image(f"{cover_url}@203w_127h_1e_1c.webp")
+
+        if forward:
+            heights = cover.height + pic.row_space
+            pic.draw_rectangle(0, pic.y, pic.width, heights, Color.LIGHTGRAY)
+
+        back = Image.new("RGBA", (pic.width - (margin * 2), cover.height))
+        ImageDraw.Draw(back).rectangle((0, 0, back.width, back.height), Color.WHITE.value)
+        pic.draw_img_alpha(back, (pic.x, pic.y))
+
+        x, y = pic.xy
+        pic.draw_img(cover)
+        pic.draw_text(title, Color.BLACK, (x + cover.width + margin, y + int(cover.height / 5)))
+        pic.draw_tip(area, xy=(x + cover.width + margin, y + int(cover.height / 5 * 3)))
+
+        return pic
+
+    @classmethod
+    async def __draw_add_on_card(cls,
+                                 pic: PicGenerator,
+                                 infos: List[Dict[str, Any]],
+                                 margin: int,
+                                 forward: bool) -> PicGenerator:
+        """
+        绘制附加卡片
+
+        Args:
+            pic: 绘图器实例
+            infos: 附加卡片信息
+            margin: 外边距
+            forward: 当前是否为转发动态的源动态
+        """
+        pic.set_pos(x=margin)
+
+        card_height = int(pic.width / 4)
+
+        padding = 10
+        img_height = card_height - padding * 2
+        edge = pic.width - margin - padding
+
+        for info in infos:
+            # 绘制背景
+            back_color = Color.LIGHTGRAY
+            if forward:
+                pic.draw_rectangle(0, pic.y, pic.width, card_height + pic.row_space + padding, Color.LIGHTGRAY)
+                back_color = Color.WHITE
+
+            pic.move_pos(0, padding)
+            back = Image.new("RGBA", (pic.width - (margin * 2), card_height))
+            ImageDraw.Draw(back).rectangle((0, 0, back.width, back.height), back_color.value)
+            back = mask_rounded_rectangle(back)
+            pic.draw_img_alpha(back, (pic.x, pic.y))
+            pic.move_pos(padding, padding)
+
+            # 根据类型绘制卡片
+            card_type = info["add_on_card_show_type"]
+            if card_type == 1:
+                # 淘宝
+                goods = json.loads(info["goods_card"])["list"]
+
+                download_picture_tasks = []
+                for good in goods:
+                    url = good["img"]
+                    download_picture_tasks.append(open_url_image(f"{url}@{img_height}w_{img_height}h_1e_1c.webp"))
+                imgs = await asyncio.gather(*download_picture_tasks)
+
+                for index, img in enumerate(imgs):
+                    overflow = False
+                    img = mask_rounded_rectangle(img)
+                    if pic.x + img.width > edge:
+                        overflow = True
+                        img = img.crop((0, 0, edge - pic.x, img.height))
+
+                    if index == len(imgs) - 1 or overflow:
+                        pic.draw_img(img).set_pos(x=margin)
+                        if overflow:
+                            break
+                    else:
+                        pic.draw_img(img, pic.xy).move_pos(img.height + margin, 0)
+            elif card_type == 2:
+                # 充电、相关装扮、相关游戏
+                base = info["attach_card"]
+
+                if base["type"] in ["decoration", "game"]:
+                    url = base["cover_url"]
+                    title = base["title"]
+                    desc_first = base["desc_first"]
+                    desc_second = base["desc_second"]
+
+                    cover = await open_url_image(f"{url}@{img_height}w_{img_height}h_1e_1c.webp")
+                    cover = mask_rounded_rectangle(cover)
+
+                    x, y = pic.xy
+                    pic.draw_img(cover)
+                    pic.draw_text(title, Color.BLACK, (x + cover.width + margin, y + int(img_height / 10)))
+                    pic.draw_tip(desc_first, xy=(x + cover.width + margin, y + int(img_height / 7 * 3)))
+                    pic.draw_tip(desc_second, xy=(x + cover.width + margin, y + int(img_height / 7 * 5)))
+                elif base["type"] == "lottery":
+                    title = base["title"]
+                    desc_first = limit_str_length(base["desc_first"], 24)
+                    icon = Image.open(f"{cls.__resource_base_path}/resource/box.png")
+
+                    x, y = pic.xy
+                    pic.draw_text(title, Color.BLACK, (x, y + int(img_height / 5)))
+                    pic.draw_img_alpha(icon, (x, y + int(img_height / 5 * 3)))
+                    pic.draw_tip(desc_first, Color.LINK, (x + icon.width + padding, y + int(img_height / 5 * 3)))
+                    pic.set_pos(x=margin).move_pos(0, img_height + pic.row_space)
+            elif card_type == 3:
+                # 投票
+                vote = json.loads(info["vote_card"])
+                desc = limit_str_length(vote["desc"], 16)
+                join_num = vote["join_num"]
+                icon = Image.open(f"{cls.__resource_base_path}/resource/tick_big.png")
+                icon = mask_rounded_rectangle(icon.resize((img_height, img_height), Resampling.LANCZOS))
+
+                x, y = pic.xy
+                pic.draw_img(icon)
+                pic.draw_text(desc, Color.BLACK, (x + img_height + margin, y + int(img_height / 5)))
+                pic.draw_tip(f"{join_num}人参与", xy=(x + img_height + margin, y + int(img_height / 5 * 3)))
+            elif card_type == 5:
+                # 视频分享
+                base = info["ugc_attach_card"]
+                url = base["image_url"]
+                title = limit_str_length(base["title"], 12)
+                desc_second = base["desc_second"]
+                cover = await open_url_image(f"{url}@480w.webp")
+                cover = cover.resize((int(img_height / cover.height * cover.width), img_height), Resampling.LANCZOS)
+                cover = mask_rounded_rectangle(cover)
+
+                x, y = pic.xy
+                pic.draw_img(cover)
+                pic.draw_text(title, Color.BLACK, (x + cover.width + margin, y + int(img_height / 5)))
+                pic.draw_tip(desc_second, xy=(x + cover.width + margin, y + int(img_height / 5 * 3)))
+            elif card_type == 6:
+                # 视频、直播预约
+                base = info["reserve_attach_card"]
+                title = base["title"]
+                desc_first = base["desc_first"]["text"]
+                desc_second = base["desc_second"]
+                desc = f"{desc_first}   {desc_second}"
+                lottery = limit_str_length(base["reserve_lottery"]["text"], 24) if "reserve_lottery" in base else None
+
+                if lottery:
+                    pic.draw_text(title, Color.BLACK, (pic.x, pic.y + int(img_height / 10)))
+                    pic.draw_tip(desc, xy=(pic.x, pic.y + int(img_height / 7 * 3)))
+                    icon = Image.open(f"{cls.__resource_base_path}/resource/box.png")
+                    pic.draw_img_alpha(icon, (pic.x, pic.y + int(img_height / 7 * 5)))
+                    pic.draw_tip(lottery, Color.LINK, (pic.x + icon.width + padding, pic.y + int(img_height / 7 * 5)))
+                else:
+                    pic.draw_text(title, Color.BLACK, (pic.x, pic.y + int(img_height / 5)))
+                    pic.draw_tip(desc, xy=(pic.x, pic.y + int(img_height / 5 * 3)))
+
+                pic.set_pos(x=margin).move_pos(0, img_height + pic.row_space)
+
+        return pic

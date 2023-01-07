@@ -5,10 +5,14 @@
 import json
 import os
 import time
-from typing import Dict
+from io import BytesIO
+from typing import List, Dict, Optional, Any
+
+from PIL import Image, ImageDraw
 
 from . import config
 from .Credential import Credential
+from .network import get_session
 
 
 def get_api(field: str) -> Dict:
@@ -40,14 +44,104 @@ def get_credential() -> Credential:
     return Credential(sessdata, bili_jct, buvid3)
 
 
-def timestamp_format(timestamp: int) -> str:
+def timestamp_format(timestamp: int, format_str: str) -> str:
     """
     时间戳格式化为形如 11/04 00:00:00 的字符串形式
 
     Args:
         timestamp: 时间戳
+        format_str: 格式化字符串
 
     Returns:
         格式化后的字符串
     """
-    return time.strftime("%m/%d %H:%M:%S", time.localtime(timestamp))
+    return time.strftime(format_str, time.localtime(timestamp))
+
+
+async def open_url_image(url: str) -> Optional[Image.Image]:
+    """
+    读取网络图片
+
+    Args:
+        url: 图片 URL
+
+    Returns:
+        读取到的图片，URL 为空时返回 None
+    """
+    if not url:
+        return None
+
+    response = await get_session().get(url)
+    image_data = await response.read()
+    image = Image.open(BytesIO(image_data))
+    response.close()
+
+    return image
+
+
+def split_list(lst: List[Any], n: int) -> List[List[Any]]:
+    """
+    将传入列表划分为若干子列表，每个子列表包含 n 个元素
+
+    Args:
+        lst: 要划分的列表
+        n: 每个子列表包含的元素数量
+
+    Returns:
+        划分后的若干子列表组成的列表
+    """
+    sub_lists = []
+    for i in range(0, len(lst), n):
+        sub_lists.append(lst[i:i+n])
+    return sub_lists
+
+
+def limit_str_length(origin_str: str, limit: int) -> str:
+    """
+    限制字符串最大长度，将超出长度的部分截去，并添加 "..."，未超出长度则返回原字符串
+
+    Args:
+        origin_str: 原字符串
+        limit: 要限制的最大长度
+
+    Returns:
+        处理后的字符串
+    """
+    return f"{origin_str[:limit]}..." if len(origin_str) > limit else origin_str
+
+
+def mask_round(img: Image.Image) -> Image.Image:
+    """
+    将图片转换为圆形
+
+    Args:
+        img: 原图片
+
+    Returns:
+        圆形图片
+    """
+    mask = Image.new("L", img.size)
+    mask_draw = ImageDraw.Draw(mask)
+    img_width, img_height = img.size
+    mask_draw.ellipse((0, 0, img_width, img_height), fill=255)
+    img.putalpha(mask)
+    return img
+
+
+def mask_rounded_rectangle(img: Image.Image, radius: int = 10) -> Image.Image:
+    """
+    对指定图片覆盖圆角矩形蒙版，使得图片圆角化
+
+    Args:
+        img: 原图片
+        radius: 圆角半径。默认：10
+
+    Returns:
+        圆角化的图片
+    """
+    mask = Image.new("L", img.size)
+    mask_draw = ImageDraw.Draw(mask)
+    img_width, img_height = img.size
+    mask_draw.rounded_rectangle((0, 0, img_width, img_height), radius, 255)
+    img.putalpha(mask)
+    return img

@@ -7,6 +7,7 @@ from graia.broadcast import Broadcast
 from loguru import logger
 
 from .datasource import DataSource
+from .dynamic import dynamic_spider
 from .server import http_init
 from ..exception import LiveException
 from ..exception.DataSourceException import DataSourceException
@@ -88,6 +89,9 @@ class StarBot:
                 await up.connect()
             except LiveException as ex:
                 logger.error(ex.msg)
+
+        # 启动动态推送模块
+        asyncio.get_event_loop().create_task(dynamic_spider(self.__datasource))
 
         # 启动 HTTP API 服务
         if config.get("USE_HTTP_API"):
