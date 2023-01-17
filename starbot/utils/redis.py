@@ -1,4 +1,4 @@
-from typing import Any, Union, Optional, List
+from typing import Any, Optional, Union, Tuple, List
 
 import aioredis
 from loguru import logger
@@ -84,6 +84,16 @@ async def zrank(key: str, member: str) -> int:
     if rank is None:
         return 0
     return rank
+
+
+async def zrevrangewithscoresi(key: str, start: int, end: int) -> List[Tuple[str, int]]:
+    return list(map(lambda x: (x[0].decode(), int(x[1])), await __redis.zrevrange(key, start, end, True)))
+
+
+async def zrevrangewithscoresf1(key: str, start: int, end: int) -> List[Tuple[str, float]]:
+    return list(map(
+        lambda x: (x[0].decode(), float("{:.1f}".format(float(x[1])))), await __redis.zrevrange(key, start, end, True)
+    ))
 
 
 async def zadd(key: str, member: str, score: Union[int, float]):

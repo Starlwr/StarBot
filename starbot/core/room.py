@@ -19,10 +19,12 @@ from .user import User
 from ..exception import LiveException
 from ..utils import config, redis
 from ..utils.Painter import DynamicPicGenerator
-from ..utils.utils import get_credential, timestamp_format
+from ..utils.utils import get_credential, timestamp_format, get_unames_and_faces_by_uids
 
 if typing.TYPE_CHECKING:
     from .sender import Bot
+
+jieba.setLogLevel(jieba.logging.INFO)
 
 
 class Up(BaseModel):
@@ -527,6 +529,124 @@ class Up(BaseModel):
             "governor_count": await redis.hgeti("RoomGovernorCount", self.room_id)
         })
 
+        # 弹幕排行
+        if self.__any_live_report_item_enabled("danmu_ranking"):
+            ranking_count = max(map(lambda t: t.live_report.danmu_ranking, self.targets))
+            danmu_ranking = await redis.zrevrangewithscoresi(f"UserDanmuCount:{self.room_id}", 0, ranking_count - 1)
+
+            if danmu_ranking:
+                uids = [x[0] for x in danmu_ranking]
+                counts = [x[1] for x in danmu_ranking]
+                unames, faces = await get_unames_and_faces_by_uids(uids)
+
+                live_report_param.update({
+                    "danmu_ranking_faces": faces,
+                    "danmu_ranking_unames": unames,
+                    "danmu_ranking_counts": counts
+                })
+
+        # 盲盒数量排行
+        if self.__any_live_report_item_enabled("box_ranking"):
+            ranking_count = max(map(lambda t: t.live_report.box_ranking, self.targets))
+            box_ranking = await redis.zrevrangewithscoresi(f"UserBoxCount:{self.room_id}", 0, ranking_count - 1)
+
+            if box_ranking:
+                uids = [x[0] for x in box_ranking]
+                counts = [x[1] for x in box_ranking]
+                unames, faces = await get_unames_and_faces_by_uids(uids)
+
+                live_report_param.update({
+                    "box_ranking_faces": faces,
+                    "box_ranking_unames": unames,
+                    "box_ranking_counts": counts
+                })
+
+        # 盲盒盈亏排行
+        if self.__any_live_report_item_enabled("box_profit_ranking"):
+            ranking_count = max(map(lambda t: t.live_report.box_profit_ranking, self.targets))
+            box_profit_ranking = await redis.zrevrangewithscoresf1(
+                f"UserBoxProfit:{self.room_id}", 0, ranking_count - 1
+            )
+
+            if box_profit_ranking:
+                uids = [x[0] for x in box_profit_ranking]
+                counts = [x[1] for x in box_profit_ranking]
+                unames, faces = await get_unames_and_faces_by_uids(uids)
+
+                live_report_param.update({
+                    "box_profit_ranking_faces": faces,
+                    "box_profit_ranking_unames": unames,
+                    "box_profit_ranking_counts": counts
+                })
+
+        # 礼物排行
+        if self.__any_live_report_item_enabled("gift_ranking"):
+            ranking_count = max(map(lambda t: t.live_report.gift_ranking, self.targets))
+            gift_ranking = await redis.zrevrangewithscoresf1(f"UserGiftProfit:{self.room_id}", 0, ranking_count - 1)
+
+            if gift_ranking:
+                uids = [x[0] for x in gift_ranking]
+                counts = [x[1] for x in gift_ranking]
+                unames, faces = await get_unames_and_faces_by_uids(uids)
+
+                live_report_param.update({
+                    "gift_ranking_faces": faces,
+                    "gift_ranking_unames": unames,
+                    "gift_ranking_counts": counts
+                })
+
+        # SC（醒目留言）排行
+        if self.__any_live_report_item_enabled("sc_ranking"):
+            ranking_count = max(map(lambda t: t.live_report.sc_ranking, self.targets))
+            sc_ranking = await redis.zrevrangewithscoresi(f"UserScProfit:{self.room_id}", 0, ranking_count - 1)
+
+            if sc_ranking:
+                uids = [x[0] for x in sc_ranking]
+                counts = [x[1] for x in sc_ranking]
+                unames, faces = await get_unames_and_faces_by_uids(uids)
+
+                live_report_param.update({
+                    "sc_ranking_faces": faces,
+                    "sc_ranking_unames": unames,
+                    "sc_ranking_counts": counts
+                })
+
+        # 开通大航海观众列表
+        if self.__any_live_report_item_enabled("guard_list"):
+            captains = await redis.zrevrangewithscoresi(f"UserCaptainCount:{self.room_id}", 0, -1)
+            commanders = await redis.zrevrangewithscoresi(f"UserCommanderCount:{self.room_id}", 0, -1)
+            governors = await redis.zrevrangewithscoresi(f"UserGovernorCount:{self.room_id}", 0, -1)
+
+            if captains:
+                uids = [x[0] for x in captains]
+                counts = [x[1] for x in captains]
+                unames, faces = await get_unames_and_faces_by_uids(uids)
+
+                captain_infos = [[faces[i], unames[i], counts[i]] for i in range(len(counts))]
+                live_report_param.update({
+                    "captain_infos": captain_infos,
+                })
+
+            if commanders:
+                uids = [x[0] for x in commanders]
+                counts = [x[1] for x in commanders]
+                unames, faces = await get_unames_and_faces_by_uids(uids)
+
+                commander_infos = [[faces[i], unames[i], counts[i]] for i in range(len(counts))]
+                live_report_param.update({
+                    "commander_infos": commander_infos,
+                })
+
+            if governors:
+                uids = [x[0] for x in governors]
+                counts = [x[1] for x in governors]
+                unames, faces = await get_unames_and_faces_by_uids(uids)
+
+                governor_infos = [[faces[i], unames[i], counts[i]] for i in range(len(counts))]
+                live_report_param.update({
+                    "governor_infos": governor_infos,
+                })
+
         # 弹幕词云
         if self.__any_live_report_item_enabled("danmu_cloud"):
             all_danmu = " ".join(await redis.lrange(f"RoomDanmu:{self.room_id}", 0, -1))
@@ -536,7 +656,6 @@ class Up(BaseModel):
                     "danmu_cloud": ""
                 })
             else:
-                jieba.setLogLevel(jieba.logging.INFO)
                 words = list(jieba.cut(all_danmu))
                 counts = dict(Counter(words))
 

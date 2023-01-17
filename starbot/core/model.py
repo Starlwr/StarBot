@@ -86,7 +86,10 @@ class LiveReport(BaseModel):
     """是否启用直播报告。默认：False"""
 
     logo: Optional[str] = None
-    """主播立绘的 Base64 字符串，会绘制在直播报告右上角合适位置。默认：None"""
+    """主播立绘的路径，会绘制在直播报告右上角合适位置。默认：None"""
+
+    logo_base64: Optional[str] = None
+    """主播立绘的 Base64 字符串，会绘制在直播报告右上角合适位置，立绘路径不为空时优先使用路径。默认：None"""
 
     time: Optional[bool] = False
     """是否展示本场直播直播时间段和直播时长。默认：False"""
@@ -110,10 +113,28 @@ class LiveReport(BaseModel):
     """是否展示本场直播礼物收益、送礼物人数。默认：False"""
 
     sc: Optional[bool] = False
-    """是否展示本场直播SC（醒目留言）收益、发送SC（醒目留言）人数。默认：False"""
+    """是否展示本场直播 SC（醒目留言）收益、发送 SC（醒目留言）人数。默认：False"""
 
     guard: Optional[bool] = False
     """是否展示本场直播开通大航海数。默认：False"""
+
+    danmu_ranking = 0
+    """展示本场直播弹幕排行榜的前多少名，0 为不展示。默认：0"""
+
+    box_ranking = 0
+    """展示本场直播盲盒数量排行榜的前多少名，0 为不展示。默认：0"""
+
+    box_profit_ranking = 0
+    """展示本场直播盲盒盈亏排行榜的前多少名，0 为不展示。默认：0"""
+
+    gift_ranking = 0
+    """展示本场直播礼物排行榜的前多少名，0 为不展示。默认：0"""
+
+    sc_ranking = 0
+    """展示本场直播 SC（醒目留言）排行榜的前多少名，0 为不展示。默认：0"""
+
+    guard_list = False
+    """是否展示本场直播开通大航海观众列表。默认：False"""
 
     danmu_cloud: Optional[bool] = False
     """是否生成本场直播弹幕词云。默认：False。默认：False"""
@@ -124,15 +145,23 @@ class LiveReport(BaseModel):
         获取功能全部开启的默认 LiveReport 实例
         默认配置：启用直播报告，生成弹幕词云
         """
-        return LiveReport(enabled=True, logo=None,
+        return LiveReport(enabled=True, logo=None, logo_base64=None,
                           time=True, fans_change=True, fans_medal_change=True,guard_change=True,
-                          danmu=True, box=True, gift=True, sc=True, guard=True, danmu_cloud=True)
+                          danmu=True, box=True, gift=True, sc=True, guard=True,
+                          danmu_ranking=3, box_ranking=3, box_profit_ranking=3, gift_ranking=3, sc_ranking=3,
+                          guard_list=True, danmu_cloud=True)
 
     def __str__(self):
         return (f"启用: {self.enabled}\n直播时长数据: {self.time}\n粉丝变动数据: {self.fans_change}\n"
                 f"粉丝团变动数据: {self.fans_medal_change}\n大航海变动数据: {self.guard_change}\n"
                 f"弹幕相关数据: {self.danmu}\n盲盒相关数据: {self.box}\n礼物相关数据: {self.gift}\n"
-                f"SC相关数据: {self.sc}\n大航海相关数据: {self.guard}\n生成弹幕词云: {self.danmu_cloud}")
+                f"SC相关数据: {self.sc}\n大航海相关数据: {self.guard}\n"
+                f"弹幕排行榜: {f'前 {self.danmu_ranking} 名' if self.danmu_ranking else False}\n"
+                f"盲盒数量排行榜: {f'前 {self.box_ranking} 名' if self.box_ranking else False}\n"
+                f"盲盒盈亏排行榜: {f'前 {self.box_profit_ranking} 名' if self.box_profit_ranking else False}\n"
+                f"礼物排行榜: {f'前 {self.gift_ranking} 名' if self.gift_ranking else False}\n"
+                f"SC 排行榜: {f'前 {self.sc_ranking} 名' if self.sc_ranking else False}\n"
+                f"开通大航海观众列表: {self.guard_list}\n生成弹幕词云: {self.danmu_cloud}")
 
 
 class DynamicUpdate(BaseModel):

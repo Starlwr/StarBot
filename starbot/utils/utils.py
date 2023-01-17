@@ -1,18 +1,18 @@
 """
 通用工具库
 """
-
+import asyncio
 import json
 import os
 import time
 from io import BytesIO
-from typing import List, Dict, Optional, Any
+from typing import Tuple, List, Dict, Sized, Optional, Any
 
 from PIL import Image, ImageDraw
 
 from . import config
 from .Credential import Credential
-from .network import get_session
+from .network import get_session, request
 
 
 def get_api(field: str) -> Dict:
@@ -79,7 +79,7 @@ async def open_url_image(url: str) -> Optional[Image.Image]:
     return image
 
 
-def split_list(lst: List[Any], n: int) -> List[List[Any]]:
+def split_list(lst: Sized, n: int) -> List[List[Any]]:
     """
     将传入列表划分为若干子列表，每个子列表包含 n 个元素
 
@@ -145,3 +145,22 @@ def mask_rounded_rectangle(img: Image.Image, radius: int = 10) -> Image.Image:
     mask_draw.rounded_rectangle((0, 0, img_width, img_height), radius, 255)
     img.putalpha(mask)
     return img
+
+
+async def get_unames_and_faces_by_uids(uids: List[str]) -> Tuple[List[str], List[Image.Image]]:
+    """
+    根据 UID 列表批量获取昵称和头像图片
+
+    Args:
+        uids: UID 列表
+
+    Returns:
+        昵称列表和头像图片列表组成的元组
+    """
+    user_info_url = f"https://api.vc.bilibili.com/account/v1/user/cards?uids={','.join(uids)}"
+    infos_list = await request("GET", user_info_url)
+    infos = dict(zip([x["mid"] for x in infos_list], infos_list))
+    unames = [infos[int(uid)]["name"] for uid in uids]
+    download_face_tasks = [open_url_image(infos[int(uid)]["face"]) for uid in uids]
+    faces = await asyncio.gather(*download_face_tasks)
+    return (unames, faces)
