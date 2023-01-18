@@ -17,8 +17,8 @@ from .live import LiveDanmaku, LiveRoom
 from .model import PushTarget
 from .user import User
 from ..exception import LiveException
+from ..painter.DynamicPicGenerator import DynamicPicGenerator
 from ..utils import config, redis
-from ..utils.Painter import DynamicPicGenerator
 from ..utils.utils import get_credential, timestamp_format, get_unames_and_faces_by_uids
 
 if typing.TYPE_CHECKING:

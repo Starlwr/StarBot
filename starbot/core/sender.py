@@ -12,9 +12,9 @@ from pydantic import BaseModel, PrivateAttr
 
 from .model import LiveOn, LiveOff, DynamicUpdate, Message, PushType, PushTarget
 from .room import Up
+from ..painter.LiveReportGenerator import LiveReportGenerator
 from ..utils import config
 from ..utils.AsyncEvent import AsyncEvent
-from ..utils.Painter import LiveReportGenerator
 
 
 class Bot(BaseModel, AsyncEvent):
