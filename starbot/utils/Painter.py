@@ -1173,6 +1173,19 @@ class DynamicPicGenerator:
         return pic.base64()
 
     @classmethod
+    def remove_illegal_char(cls, s: str) -> str:
+        """
+        移除动态中的非法字符
+
+        Args:
+            s: 源字符串
+
+        Returns:
+            移除非法字符后的字符串
+        """
+        return s.replace(chr(8203), "").replace(chr(65039), "")
+
+    @classmethod
     async def __draw_header(cls,
                             pic: PicGenerator,
                             face: Image.Image,
@@ -1194,7 +1207,7 @@ class DynamicPicGenerator:
             timestamp: 动态时间戳
         """
         face_size = (100, 100)
-        face = face.resize(face_size, Resampling.LANCZOS)
+        face = face.resize(face_size, Resampling.LANCZOS).convert("RGBA")
         face = mask_round(face)
         pic.draw_img_alpha(face, (50, 50))
 
@@ -1270,16 +1283,17 @@ class DynamicPicGenerator:
             # 转发动态
             await cls.__draw_content(pic, modules, text_margin, forward)
 
-            origin = json.loads(card["origin"])
-            origin_type = card["item"]["orig_type"]
-            origin_display = display["origin"]
+            if "origin" in card:
+                origin = json.loads(card["origin"])
+                origin_type = card["item"]["orig_type"]
+                origin_display = display["origin"]
 
-            origin_name = card["origin_user"]["info"]["uname"]
-            origin_name_at_param = [{"type": "RICH_TEXT_NODE_TYPE_AT", "text": f"@{origin_name}"}]
-            await cls.__draw_content(pic, origin_name_at_param, text_margin, True)
+                origin_name = card["origin_user"]["info"]["uname"]
+                origin_name_at_param = [{"type": "RICH_TEXT_NODE_TYPE_AT", "text": f"@{origin_name}"}]
+                await cls.__draw_content(pic, origin_name_at_param, text_margin, True)
 
-            await cls.__draw_by_type(pic, origin_type, origin, origin_dynamic_id, origin_display,
-                                     text_margin, img_margin, True)
+                await cls.__draw_by_type(pic, origin_type, origin, origin_dynamic_id, origin_display,
+                                         text_margin, img_margin, True)
         elif dynamic_type == 2:
             # 带图动态
             await cls.__draw_content(pic, modules, text_margin, forward)
@@ -1298,17 +1312,31 @@ class DynamicPicGenerator:
             title_param = [{"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": card["title"]}]
             await cls.__draw_content(pic, title_param, text_margin, forward)
             await cls.__draw_article_cover(pic, card["origin_image_urls"], img_margin, forward)
-            summary_param = [{"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": limit_str_length(card['summary'], 60)}]
+            summary = limit_str_length(card['summary'].replace("\n", " "), 60)
+            summary_param = [{"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": summary}]
             await cls.__draw_content(pic, summary_param, text_margin, forward)
         elif dynamic_type == 256:
             # 音频
             await cls.__draw_content(pic, modules, text_margin, forward)
             title = limit_str_length(card["title"], 15)
             await cls.__draw_audio_area(pic, card["cover"], title, card["typeInfo"], text_margin, forward)
+        elif dynamic_type == 2048:
+            # 分享
+            await cls.__draw_content(pic, modules, text_margin, forward)
+            title = limit_str_length(card["sketch"]["title"], 15)
+            desc = limit_str_length(card["sketch"]["desc_text"], 18)
+            await cls.__draw_share_area(pic, card["sketch"]["cover_url"], title, desc, text_margin, forward)
         elif dynamic_type == 4200:
             # 直播
-            title = limit_str_length(card["title"], 15)
-            await cls.__draw_live_area(pic, card["cover"], title, card["area_v2_name"], text_margin, forward)
+            title = limit_str_length(card["title"], 14)
+            desc = f"{card['area_v2_name']} · {card['watched_show']}"
+            await cls.__draw_live_area(pic, card["cover"], title, desc, text_margin, forward)
+        elif dynamic_type == 4308:
+            # 直播
+            base = card["live_play_info"]
+            title = limit_str_length(base["title"], 14)
+            desc = f"{base['area_name']} {base['online']}人气"
+            await cls.__draw_live_area(pic, base["cover"], title, desc, text_margin, forward)
         else:
             notice_param = [{"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": "暂不支持的动态类型"}]
             await cls.__draw_content(pic, notice_param, text_margin, forward)
@@ -1417,7 +1445,7 @@ class DynamicPicGenerator:
             module_type = module["type"]
 
             if module_type == "RICH_TEXT_NODE_TYPE_TEXT":
-                for char in module["text"]:
+                for char in cls.remove_illegal_char(module["text"]):
                     draw_char(char)
             elif module_type == "RICH_TEXT_NODE_TYPE_EMOJI":
                 draw_pic(module["img"], text_img_size)
@@ -1434,7 +1462,7 @@ class DynamicPicGenerator:
                     draw_pic(Image.open(f"{cls.__resource_base_path}/resource/tick.png"), text_img_size)
                 elif module_type == "RICH_TEXT_NODE_TYPE_GOODS":
                     draw_pic(Image.open(f"{cls.__resource_base_path}/resource/tb.png"), text_img_size)
-                for char in module["text"]:
+                for char in cls.remove_illegal_char(module["text"]):
                     draw_char(char, Color.LINK)
 
         imgs.append(img)
@@ -1489,10 +1517,13 @@ class DynamicPicGenerator:
         picture_count = len(pictures)
         if picture_count == 1:
             line_count = 1
+            size = 0
         elif picture_count == 2 or picture_count == 4:
             line_count = 2
+            size = int((pic.width - (img_margin * 3)) / 2)
         else:
             line_count = 3
+            size = int((pic.width - (img_margin * 4)) / 3)
 
         download_picture_tasks = []
         for picture in pictures:
@@ -1500,19 +1531,34 @@ class DynamicPicGenerator:
                 download_picture_tasks.append(open_url_image(f"{picture['img_src']}@518w.webp"))
             elif line_count == 2:
                 src = picture['img_src']
-                size = int((pic.width - (img_margin * 3)) / 2)
                 if picture["img_height"] / picture["img_width"] >= 3:
                     download_picture_tasks.append(open_url_image(f"{src}@{size}w_{size}h_!header.webp"))
                 else:
                     download_picture_tasks.append(open_url_image(f"{src}@{size}w_{size}h_1e_1c.webp"))
             else:
                 src = picture['img_src']
-                size = int((pic.width - (img_margin * 4)) / 3)
                 if picture["img_height"] / picture["img_width"] >= 3:
                     download_picture_tasks.append(open_url_image(f"{src}@{size}w_{size}h_!header.webp"))
                 else:
                     download_picture_tasks.append(open_url_image(f"{src}@{size}w_{size}h_1e_1c.webp"))
         imgs = await asyncio.gather(*download_picture_tasks)
+
+        img_list = []
+        for i, img in enumerate(imgs):
+            if size != 0 and (img.width != size or img.height != size):
+                if img.width == img.height:
+                    img_list.append(img.resize((size, size)))
+                elif img.width > img.height:
+                    img = img.resize((int(img.width * (size / img.height)), size))
+                    crop_area = (int((img.width - size) / 2), 0, int((img.width - size) / 2) + size, size)
+                    img_list.append(img.crop(crop_area))
+                else:
+                    img = img.resize((size, int(img.height * (size / img.width))))
+                    crop_area = (0, int((img.height - size) / 2), size, int((img.height - size) / 2) + size)
+                    img_list.append(img.crop(crop_area))
+            else:
+                img_list.append(img)
+        imgs = tuple(img_list)
 
         if picture_count == 1:
             img = imgs[0]
@@ -1649,6 +1695,27 @@ class DynamicPicGenerator:
             margin: 外边距
             forward: 当前是否为转发动态的源动态
         """
+        return await cls.__draw_share_area(pic, cover_url, title, audio_type, margin, forward)
+
+    @classmethod
+    async def __draw_share_area(cls,
+                                pic: PicGenerator,
+                                cover_url: str,
+                                title: str,
+                                desc: str,
+                                margin: int,
+                                forward: bool) -> PicGenerator:
+        """
+        绘制分享卡片
+
+        Args:
+            pic: 绘图器实例
+            cover_url: 封面 URL
+            title: 标题
+            desc: 描述
+            margin: 外边距
+            forward: 当前是否为转发动态的源动态
+        """
         pic.set_pos(x=margin)
 
         cover = await open_url_image(cover_url)
@@ -1668,7 +1735,7 @@ class DynamicPicGenerator:
         x, y = pic.xy
         pic.draw_img_alpha(cover)
         pic.draw_text(title, Color.BLACK, (x + cover_size + margin, y + int(cover_size / 5)))
-        pic.draw_tip(audio_type, xy=(x + cover_size + margin, y + int(cover_size / 5 * 3)))
+        pic.draw_tip(desc, xy=(x + cover_size + margin, y + int(cover_size / 5 * 3)))
 
         return pic
 
@@ -1759,19 +1826,31 @@ class DynamicPicGenerator:
                     download_picture_tasks.append(open_url_image(f"{url}@{img_height}w_{img_height}h_1e_1c.webp"))
                 imgs = await asyncio.gather(*download_picture_tasks)
 
-                for index, img in enumerate(imgs):
-                    overflow = False
-                    img = mask_rounded_rectangle(img)
-                    if pic.x + img.width > edge:
-                        overflow = True
-                        img = img.crop((0, 0, edge - pic.x, img.height))
+                if len(goods) == 1:
+                    img = mask_rounded_rectangle(imgs[0])
+                    x, y = pic.xy
+                    pic.draw_img(img)
 
-                    if index == len(imgs) - 1 or overflow:
-                        pic.draw_img(img).set_pos(x=margin)
-                        if overflow:
-                            break
-                    else:
-                        pic.draw_img(img, pic.xy).move_pos(img.height + margin, 0)
+                    name = limit_str_length(goods[0]["name"], 15)
+                    price = goods[0]["priceStr"]
+                    price_length = pic.get_text_length(price)
+                    pic.draw_text(name, Color.BLACK, (x + img.width + margin, y + int(img_height / 5)))
+                    pic.draw_text(price, Color.LINK, (x + img.width + margin, y + int(img_height / 5 * 3)))
+                    pic.draw_tip("起", xy=(x + img.width + margin + price_length, y + int(img_height / 5 * 3) + 5))
+                else:
+                    for index, img in enumerate(imgs):
+                        overflow = False
+                        img = mask_rounded_rectangle(img)
+                        if pic.x + img.width > edge:
+                            overflow = True
+                            img = img.crop((0, 0, edge - pic.x, img.height))
+
+                        if index == len(imgs) - 1 or overflow:
+                            pic.draw_img(img).set_pos(x=margin)
+                            if overflow:
+                                break
+                        else:
+                            pic.draw_img(img, pic.xy).move_pos(img.height + margin, 0)
             elif card_type == 2:
                 # 充电、相关装扮、相关游戏
                 base = info["attach_card"]
@@ -1803,13 +1882,13 @@ class DynamicPicGenerator:
             elif card_type == 3:
                 # 投票
                 vote = json.loads(info["vote_card"])
-                desc = limit_str_length(vote["desc"], 16)
+                desc = limit_str_length(vote["desc"], 15)
                 join_num = vote["join_num"]
                 icon = Image.open(f"{cls.__resource_base_path}/resource/tick_big.png")
                 icon = mask_rounded_rectangle(icon.resize((img_height, img_height), Resampling.LANCZOS))
 
                 x, y = pic.xy
-                pic.draw_img(icon)
+                pic.draw_img_alpha(icon)
                 pic.draw_text(desc, Color.BLACK, (x + img_height + margin, y + int(img_height / 5)))
                 pic.draw_tip(f"{join_num}人参与", xy=(x + img_height + margin, y + int(img_height / 5 * 3)))
             elif card_type == 5:
@@ -1829,7 +1908,7 @@ class DynamicPicGenerator:
             elif card_type == 6:
                 # 视频、直播预约
                 base = info["reserve_attach_card"]
-                title = base["title"]
+                title = cls.remove_illegal_char(base["title"])
                 desc_first = base["desc_first"]["text"]
                 desc_second = base["desc_second"]
                 desc = f"{desc_first}   {desc_second}"
