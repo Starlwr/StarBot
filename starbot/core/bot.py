@@ -65,7 +65,7 @@ class StarBot:
             return
 
         # 通过 UID 列表批量获取信息
-        uids = list(map(lambda u: str(u), self.__datasource.get_uid_list()))
+        uids = [str(u) for u in self.__datasource.get_uid_list()]
         info_url = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?uids[]=" + "&uids[]=".join(uids)
         info = await request("GET", info_url)
         for uid in info:
@@ -75,13 +75,17 @@ class StarBot:
             up.uname = base["uname"]
             up.room_id = base["room_id"]
             status = base["live_status"]
+            start_time = base["live_time"]
             logger.opt(colors=True).info(f"初始化 <cyan>{up.uname}</> "
                                          f"(UID: <cyan>{up.uid}</>, "
                                          f"房间号: <cyan>{up.room_id}</>) 的直播间状态: "
                                          f"{'<green>直播中</>' if status == 1 else '<red>未开播</>'}")
 
+            if status == 1 and start_time != await redis.hgeti("StartTime", up.room_id):
+                await up.accumulate_and_reset_data()
+
             await redis.hset("LiveStatus", up.room_id, status)
-            await redis.hset("StartTime", up.room_id, base["live_time"])
+            await redis.hset("StartTime", up.room_id, start_time)
 
         # 连接直播间
         for up in self.__datasource.get_up_list():
