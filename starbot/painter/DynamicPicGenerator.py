@@ -32,7 +32,7 @@ class DynamicPicGenerator:
             动态图片的 Base64 字符串
         """
         width = 740
-        height = 10000
+        height = 100000
         text_margin = 25
         img_margin = 10
         generator = PicGenerator(width, height)
