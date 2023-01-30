@@ -59,8 +59,8 @@ SIMPLE_CONFIG = {
     # 绘图器自适应不覆盖已绘制图形的间距，单位：像素
     "PAINTER_AUTO_SIZE_BY_LIMIT_MARGIN": 10,
 
-    # 弹幕词云字体路径，如需自定义，请将字体放入 resource 文件夹中后，修改配置中的 normal.ttf 为您的字体文件名
-    "DANMU_CLOUD_FONT": "normal.ttf",
+    # 弹幕词云字体路径，如需自定义，请将字体放入 resource 文件夹中后，修改配置中的 cloud.ttf 为您的字体文件名
+    "DANMU_CLOUD_FONT": "cloud.ttf",
     # 弹幕词云图片背景色
     "DANMU_CLOUD_BACKGROUND_COLOR": "white",
     # 弹幕词云最大字号
@@ -154,8 +154,8 @@ FULL_CONFIG = {
     # 绘图器自适应不覆盖已绘制图形的间距，单位：像素
     "PAINTER_AUTO_SIZE_BY_LIMIT_MARGIN": 10,
 
-    # 弹幕词云字体路径，如需自定义，请将字体放入 resource 文件夹中后，修改配置中的 normal.ttf 为您的字体文件名
-    "DANMU_CLOUD_FONT": "normal.ttf",
+    # 弹幕词云字体路径，如需自定义，请将字体放入 resource 文件夹中后，修改配置中的 cloud.ttf 为您的字体文件名
+    "DANMU_CLOUD_FONT": "cloud.ttf",
     # 弹幕词云图片背景色
     "DANMU_CLOUD_BACKGROUND_COLOR": "white",
     # 弹幕词云最大字号
