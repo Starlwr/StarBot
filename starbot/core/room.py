@@ -1,17 +1,11 @@
 import asyncio
-import base64
-import os
 import time
 import typing
 from asyncio import AbstractEventLoop
-from collections import Counter
-from io import BytesIO
 from typing import Optional, Any, Union, List
 
-import jieba
 from loguru import logger
 from pydantic import BaseModel, PrivateAttr
-from wordcloud import WordCloud
 
 from .live import LiveDanmaku, LiveRoom
 from .model import PushTarget
@@ -23,8 +17,6 @@ from ..utils.utils import get_credential, timestamp_format, get_unames_and_faces
 
 if typing.TYPE_CHECKING:
     from .sender import Bot
-
-jieba.setLogLevel(jieba.logging.INFO)
 
 
 class Up(BaseModel):
@@ -76,6 +68,10 @@ class Up(BaseModel):
 
     def dispatch(self, name, data):
         self.__room.dispatch(name, data)
+
+    async def accumulate_and_reset_data(self):
+        await self.__accumulate_data()
+        await self.__reset_data()
 
     def is_connecting(self):
         return (self.__room is not None) and (self.__room.get_status() != 2)
@@ -195,8 +191,7 @@ class Up(BaseModel):
                     await redis.hset(f"FansMedalCount:{self.room_id}", live_start_time, fans_medal_count)
                     await redis.hset(f"GuardCount:{self.room_id}", live_start_time, guard_count)
 
-                    await self.__accumulate_data()
-                    await self.__reset_data()
+                    await self.accumulate_and_reset_data()
 
                     # 推送开播消息
                     arg_base = room_info["room_info"]
@@ -230,7 +225,7 @@ class Up(BaseModel):
             self.__bot.send_live_off(self, live_off_args)
             self.__bot.send_live_report(self, live_report_param)
 
-        danmu_items = ["danmu", "danmu_cloud"]
+        danmu_items = ["danmu", "danmu_ranking", "danmu_diagram", "danmu_cloud"]
         if not config.get("ONLY_HANDLE_NECESSARY_EVENT") or self.__any_live_report_item_enabled(danmu_items):
             @self.__room.on("DANMU_MSG")
             async def on_danmu(event):
@@ -250,8 +245,12 @@ class Up(BaseModel):
                 # 弹幕词云所需弹幕记录
                 if isinstance(base[0][13], str):
                     await redis.rpush(f"RoomDanmu:{self.room_id}", content)
+                    await redis.hincrby(f"RoomDanmuTime:{self.room_id}", int(time.time()))
 
-        gift_items = ["box", "gift"]
+        gift_items = [
+            "box", "gift", "box_ranking", "box_profit_ranking", "gift_ranking",
+            "box_profit_diagram", "box_diagram", "gift_diagram"
+        ]
         if not config.get("ONLY_HANDLE_NECESSARY_EVENT") or self.__any_live_report_item_enabled(gift_items):
             @self.__room.on("SEND_GIFT")
             async def on_gift(event):
@@ -270,6 +269,8 @@ class Up(BaseModel):
                     await redis.hincrbyfloat("RoomGiftProfit", self.room_id, price)
                     await redis.zincrby(f"UserGiftProfit:{self.room_id}", uid, price)
 
+                    await redis.hincrbyfloat(f"RoomGiftTime:{self.room_id}", int(time.time()), price)
+
                 # 盲盒统计
                 if base["blind_gift"] is not None:
                     box_price = base["total_coin"] / 1000
@@ -279,10 +280,14 @@ class Up(BaseModel):
 
                     await redis.hincrby("RoomBoxCount", self.room_id, gift_num)
                     await redis.zincrby(f"UserBoxCount:{self.room_id}", uid, gift_num)
-                    await redis.hincrbyfloat("RoomBoxProfit", self.room_id, profit)
+                    box_profit_after = await redis.hincrbyfloat("RoomBoxProfit", self.room_id, profit)
                     await redis.zincrby(f"UserBoxProfit:{self.room_id}", uid, profit)
 
-        if not config.get("ONLY_HANDLE_NECESSARY_EVENT") or self.__any_live_report_item_enabled("sc"):
+                    await redis.rpush(f"RoomBoxProfitRecord:{self.room_id}", box_profit_after)
+                    await redis.hincrby(f"RoomBoxTime:{self.room_id}", int(time.time()))
+
+        sc_items = ["sc", "sc_ranking", "sc_diagram"]
+        if not config.get("ONLY_HANDLE_NECESSARY_EVENT") or self.__any_live_report_item_enabled(sc_items):
             @self.__room.on("SUPER_CHAT_MESSAGE")
             async def on_sc(event):
                 """
@@ -298,7 +303,10 @@ class Up(BaseModel):
                 await redis.hincrby("RoomScProfit", self.room_id, price)
                 await redis.zincrby(f"UserScProfit:{self.room_id}", uid, price)
 
-        if not config.get("ONLY_HANDLE_NECESSARY_EVENT") or self.__any_live_report_item_enabled("guard"):
+                await redis.hincrby(f"RoomScTime:{self.room_id}", int(time.time()), price)
+
+        guard_items = ["guard", "guard_list", "guard_diagram"]
+        if not config.get("ONLY_HANDLE_NECESSARY_EVENT") or self.__any_live_report_item_enabled(guard_items):
             @self.__room.on("GUARD_BUY")
             async def on_guard(event):
                 """
@@ -319,6 +327,8 @@ class Up(BaseModel):
                 }
                 await redis.hincrby(f"Room{type_mapping[guard_type]}Count", self.room_id, month)
                 await redis.zincrby(f"User{type_mapping[guard_type]}Count:{self.room_id}", uid, month)
+
+                await redis.hincrby(f"RoomGuardTime:{self.room_id}", int(time.time()), month)
 
         if self.__any_dynamic_update_enabled():
             @self.__room.on("DYNAMIC_UPDATE")
@@ -407,6 +417,13 @@ class Up(BaseModel):
         # 清空弹幕记录
         await redis.delete(f"RoomDanmu:{self.room_id}")
 
+        # 清空数据分布
+        await redis.delete(f"RoomDanmuTime:{self.room_id}")
+        await redis.delete(f"RoomBoxTime:{self.room_id}")
+        await redis.delete(f"RoomGiftTime:{self.room_id}")
+        await redis.delete(f"RoomScTime:{self.room_id}")
+        await redis.delete(f"RoomGuardTime:{self.room_id}")
+
         # 重置弹幕数
         await redis.hset(f"RoomDanmuCount", self.room_id, 0)
         await redis.delete(f"UserDanmuCount:{self.room_id}")
@@ -418,6 +435,9 @@ class Up(BaseModel):
         # 重置盲盒盈亏
         await redis.hset(f"RoomBoxProfit", self.room_id, 0)
         await redis.delete(f"UserBoxProfit:{self.room_id}")
+
+        # 清空盲盒盈亏记录
+        await redis.delete(f"RoomBoxProfitRecord:{self.room_id}")
 
         # 重置礼物收益
         await redis.hset(f"RoomGiftProfit", self.room_id, 0)
@@ -459,6 +479,8 @@ class Up(BaseModel):
         hour, minute = divmod(minute, 60)
 
         live_report_param.update({
+            "start_timestamp": start_time,
+            "end_timestamp": end_time,
             "start_time": timestamp_format(start_time, "%m/%d %H:%M:%S"),
             "end_time": timestamp_format(end_time, "%m/%d %H:%M:%S"),
             "hour": hour,
@@ -470,17 +492,16 @@ class Up(BaseModel):
         if self.__any_live_report_item_enabled(["fans_change", "fans_medal_change", "guard_change"]):
             room_info = await self.__live_room.get_room_info()
 
-            live_start_time = await redis.hgeti("StartTime", self.room_id)
-            if await redis.hexists(f"FansCount:{self.room_id}", live_start_time):
-                fans_count = await redis.hgeti(f"FansCount:{self.room_id}", live_start_time)
+            if await redis.hexists(f"FansCount:{self.room_id}", start_time):
+                fans_count = await redis.hgeti(f"FansCount:{self.room_id}", start_time)
             else:
                 fans_count = -1
-            if await redis.hexists(f"FansMedalCount:{self.room_id}", live_start_time):
-                fans_medal_count = await redis.hgeti(f"FansMedalCount:{self.room_id}", live_start_time)
+            if await redis.hexists(f"FansMedalCount:{self.room_id}", start_time):
+                fans_medal_count = await redis.hgeti(f"FansMedalCount:{self.room_id}", start_time)
             else:
                 fans_medal_count = -1
-            if await redis.hexists(f"GuardCount:{self.room_id}", live_start_time):
-                guard_count = await redis.hgeti(f"GuardCount:{self.room_id}", live_start_time)
+            if await redis.hexists(f"GuardCount:{self.room_id}", start_time):
+                guard_count = await redis.hgeti(f"GuardCount:{self.room_id}", start_time)
             else:
                 guard_count = -1
 
@@ -512,21 +533,27 @@ class Up(BaseModel):
             # 弹幕相关
             "danmu_count": await redis.hgeti("RoomDanmuCount", self.room_id),
             "danmu_person_count": await redis.zcard(f"UserDanmuCount:{self.room_id}"),
+            "danmu_diagram": await redis.hgetalltuplei(f"RoomDanmuTime:{self.room_id}"),
             # 盲盒相关
             "box_count": await redis.hgeti("RoomBoxCount", self.room_id),
             "box_person_count": await redis.zcard(f"UserBoxCount:{self.room_id}"),
             "box_profit": box_profit,
             "box_beat_percent": percent,
+            "box_profit_diagram": await redis.lrangef1(f"RoomBoxProfitRecord:{self.room_id}", 0, -1),
+            "box_diagram": await redis.hgetalltuplei(f"RoomBoxTime:{self.room_id}"),
             # 礼物相关
             "gift_profit": await redis.hgetf1("RoomGiftProfit", self.room_id),
             "gift_person_count": await redis.zcard(f"UserGiftProfit:{self.room_id}"),
+            "gift_diagram": await redis.hgetalltuplef1(f"RoomGiftTime:{self.room_id}"),
             # SC（醒目留言）相关
             "sc_profit": await redis.hgeti("RoomScProfit", self.room_id),
             "sc_person_count": await redis.zcard(f"UserScProfit:{self.room_id}"),
+            "sc_diagram": await redis.hgetalltuplei(f"RoomScTime:{self.room_id}"),
             # 大航海相关
             "captain_count": await redis.hgeti("RoomCaptainCount", self.room_id),
             "commander_count": await redis.hgeti("RoomCommanderCount", self.room_id),
-            "governor_count": await redis.hgeti("RoomGovernorCount", self.room_id)
+            "governor_count": await redis.hgeti("RoomGovernorCount", self.room_id),
+            "guard_diagram": await redis.hgetalltuplei(f"RoomGuardTime:{self.room_id}")
         })
 
         # 弹幕排行
@@ -649,31 +676,11 @@ class Up(BaseModel):
 
         # 弹幕词云
         if self.__any_live_report_item_enabled("danmu_cloud"):
-            all_danmu = " ".join(await redis.lrange(f"RoomDanmu:{self.room_id}", 0, -1))
+            all_danmu = await redis.lrange(f"RoomDanmu:{self.room_id}", 0, -1)
 
-            if len(all_danmu) == 0:
-                live_report_param.update({
-                    "danmu_cloud": ""
-                })
-            else:
-                words = list(jieba.cut(all_danmu))
-                counts = dict(Counter(words))
-
-                font_base_path = os.path.dirname(os.path.dirname(__file__))
-                io = BytesIO()
-                word_cloud = WordCloud(width=900,
-                                       height=450,
-                                       font_path=f"{font_base_path}/resource/{config.get('DANMU_CLOUD_FONT')}",
-                                       background_color=config.get("DANMU_CLOUD_BACKGROUND_COLOR"),
-                                       max_font_size=config.get("DANMU_CLOUD_MAX_FONT_SIZE"),
-                                       max_words=config.get("DANMU_CLOUD_MAX_WORDS"))
-                word_cloud.generate_from_frequencies(counts)
-                word_cloud.to_image().save(io, format="png")
-                base64_str = base64.b64encode(io.getvalue()).decode()
-
-                live_report_param.update({
-                    "danmu_cloud": base64_str
-                })
+            live_report_param.update({
+                "all_danmu": all_danmu
+            })
 
         return live_report_param
 

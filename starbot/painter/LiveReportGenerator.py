@@ -1,13 +1,26 @@
 import base64
+import bisect
+import io
+import math
 import os
+from collections import Counter
 from io import BytesIO
 from typing import Union, Tuple, List, Dict, Any
 
+import jieba
+import numpy as np
 from PIL import Image, ImageDraw
+from matplotlib import pyplot as plt
+from mpl_toolkits import axisartist
+from scipy.interpolate import make_interp_spline
+from wordcloud import WordCloud
 
 from .PicGenerator import Color, PicGenerator
 from ..core.model import LiveReport
-from ..utils.utils import split_list, limit_str_length, mask_round
+from ..utils import config
+from ..utils.utils import split_list, limit_str_length, mask_round, timestamp_format
+
+jieba.setLogLevel(jieba.logging.INFO)
 
 
 class LiveReportGenerator:
@@ -261,14 +274,107 @@ class LiveReportGenerator:
                 )
                 pic.draw_img_alpha(pic.auto_size_img_by_limit(guard_list_img, logo_limit))
 
+        # 盲盒盈亏曲线图
+        if model.box_profit_diagram:
+            profits = param.get("box_profit_diagram", [])
+            if profits:
+                profits.insert(0, 0.0)
+
+                pic.draw_section("盲盒盈亏曲线图")
+
+                diagram = cls.__get_box_profit_diagram(profits, pic.width - (margin * 2))
+                pic.draw_img_alpha(pic.auto_size_img_by_limit(diagram, logo_limit))
+
+        # 弹幕互动曲线图
+        if model.danmu_diagram:
+            start = param.get('start_timestamp', 0)
+            end = param.get('end_timestamp', 0)
+
+            times = param.get("danmu_diagram", [])
+
+            if end - start >= 100 and times:
+                pic.draw_section("弹幕互动曲线图")
+                pic.draw_tip("收获弹幕数量在本场直播中的分布情况")
+
+                diagram = cls.__get_interaction_diagram(times, start, end, pic.width - (margin * 2))
+                pic.draw_img_alpha(pic.auto_size_img_by_limit(diagram, logo_limit))
+
+        # 盲盒互动曲线图
+        if model.box_diagram:
+            start = param.get('start_timestamp', 0)
+            end = param.get('end_timestamp', 0)
+
+            times = param.get("box_diagram", [])
+
+            if end - start >= 100 and times:
+                pic.draw_section("盲盒互动曲线图")
+                pic.draw_tip("收获盲盒数量在本场直播中的分布情况")
+
+                diagram = cls.__get_interaction_diagram(times, start, end, pic.width - (margin * 2))
+                pic.draw_img_alpha(pic.auto_size_img_by_limit(diagram, logo_limit))
+
+        # 礼物互动曲线图
+        if model.gift_diagram:
+            start = param.get('start_timestamp', 0)
+            end = param.get('end_timestamp', 0)
+
+            times = param.get("gift_diagram", [])
+
+            if end - start >= 100 and times:
+                pic.draw_section("礼物互动曲线图")
+                pic.draw_tip("收获礼物价值在本场直播中的分布情况")
+
+                diagram = cls.__get_interaction_diagram(times, start, end, pic.width - (margin * 2))
+                pic.draw_img_alpha(pic.auto_size_img_by_limit(diagram, logo_limit))
+
+        # SC（醒目留言）互动曲线图
+        if model.sc_diagram:
+            start = param.get('start_timestamp', 0)
+            end = param.get('end_timestamp', 0)
+
+            times = param.get("sc_diagram", [])
+
+            if end - start >= 100 and times:
+                pic.draw_section("SC(醒目留言)互动曲线图")
+                pic.draw_tip("收获SC(醒目留言)价值在本场直播中的分布情况")
+
+                diagram = cls.__get_interaction_diagram(times, start, end, pic.width - (margin * 2))
+                pic.draw_img_alpha(pic.auto_size_img_by_limit(diagram, logo_limit))
+
+        # 开通大航海互动曲线图
+        if model.guard_diagram:
+            start = param.get('start_timestamp', 0)
+            end = param.get('end_timestamp', 0)
+
+            times = param.get("guard_diagram", [])
+
+            if end - start >= 100 and times:
+                pic.draw_section("开通大航海互动曲线图")
+                pic.draw_tip("收获大航海开通时长在本场直播中的分布情况")
+
+                diagram = cls.__get_interaction_diagram(times, start, end, pic.width - (margin * 2))
+                pic.draw_img_alpha(pic.auto_size_img_by_limit(diagram, logo_limit))
+
         # 弹幕词云
         if model.danmu_cloud:
-            base64_str = param.get('danmu_cloud', "")
-            if base64_str != "":
+            all_danmu = param.get('all_danmu', [])
+
+            if all_danmu:
                 pic.draw_section("弹幕词云")
 
-                img_bytes = BytesIO(base64.b64decode(base64_str))
-                img = pic.auto_size_img_by_limit(Image.open(img_bytes), logo_limit)
+                all_danmu_str = " ".join(all_danmu)
+                words = list(jieba.cut(all_danmu_str))
+                counts = dict(Counter(words))
+
+                font_base_path = os.path.dirname(os.path.dirname(__file__))
+                word_cloud = WordCloud(width=900,
+                                       height=450,
+                                       font_path=f"{font_base_path}/resource/{config.get('DANMU_CLOUD_FONT')}",
+                                       background_color=config.get("DANMU_CLOUD_BACKGROUND_COLOR"),
+                                       max_font_size=config.get("DANMU_CLOUD_MAX_FONT_SIZE"),
+                                       max_words=config.get("DANMU_CLOUD_MAX_WORDS"))
+                word_cloud.generate_from_frequencies(counts)
+                img = pic.auto_size_img_by_limit(word_cloud.to_image(), logo_limit)
                 pic.draw_img_with_border(img)
 
         # 底部版权信息，请务必保留此处
@@ -578,3 +684,205 @@ class LiveReportGenerator:
                 ).move_pos(0, -pic.row_space)
 
         return img.img
+
+    @classmethod
+    def __insert_zeros(cls, lst: List[float]) -> List[float]:
+        """
+        在列表正负变化处添加 0.0 值
+
+        Args:
+            lst: 源列表
+
+        Returns:
+            在正负变化处添加 0.0 后的列表
+        """
+        result = []
+        for i in range(len(lst)):
+            if i == 0:
+                result.append(lst[i])
+                continue
+            if (lst[i - 1] < 0 < lst[i]) or (lst[i] < 0 < lst[i - 1]):
+                result.append(0.0)
+            result.append(lst[i])
+        return result
+
+    @classmethod
+    def __smooth_xy(cls, lx: List[Any], ly: List[Any]) -> Tuple[Any, Any]:
+        """
+        平滑处理折线图数据
+
+        Args:
+            lx: x 轴数据
+            ly: y 轴数据
+
+        Returns:
+            平滑处理后的 x 和 y 轴数据组成的元组
+        """
+        x = np.array(lx)
+        y = np.array(ly)
+        x_smooth = np.linspace(0, max(x), 300)
+        y_smooth = make_interp_spline(x, y)(x_smooth)
+        return x_smooth, y_smooth
+
+    @classmethod
+    def __get_line_diagram(cls,
+                           xs: List[Any],
+                           ys: List[Any],
+                           xticks: List[Any],
+                           yticks: List[Any],
+                           xlabels: List[Any],
+                           ylabels: List[Any],
+                           xlimits: Tuple[Any, Any],
+                           ylimits: Tuple[Any, Any],
+                           width: int) -> Image:
+        """
+        绘制折线图
+
+        Args:
+            xs: x 轴数据
+            ys: y 轴数据
+            xticks: x 轴标签点
+            yticks: y 轴标签点
+            xlabels: x 轴标签
+            ylabels: y 轴标签
+            xlimits: x 轴范围
+            ylimits: y 轴范围
+            width: 折线图图片宽度
+        """
+        fig = plt.figure(figsize=(width / 100, width / 100 * 0.75))
+        ax = axisartist.Subplot(fig, 111)
+        fig.add_axes(ax)
+        ax.axis[:].set_visible(False)
+        ax.axis["x"] = ax.new_floating_axis(0, 0)
+        ax.axis["y"] = ax.new_floating_axis(1, 0)
+        ax.axis["x"].set_axis_direction('top')
+        ax.axis["y"].set_axis_direction('left')
+        ax.axis["x"].set_axisline_style("->", size=2.0)
+        ax.axis["y"].set_axisline_style("->", size=2.0)
+
+        ax.plot(xs, ys, color='red')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        for i in range(len(ys) - 1):
+            if ys[i] >= 0 and ys[i + 1] >= 0:
+                plt.fill_between(xs[i:i + 2], 0, ys[i:i + 2], facecolor='red', alpha=0.3)
+            else:
+                plt.fill_between(xs[i:i + 2], 0, ys[i:i + 2], facecolor='green', alpha=0.3)
+
+        ax.set_xticks(xticks)
+        ax.set_yticks(yticks)
+
+        if xlabels:
+            ax.set_xticklabels(xlabels)
+        if ylabels:
+            ax.set_yticklabels(ylabels)
+
+        ax.set_xlim(xlimits[0], xlimits[1])
+        ax.set_ylim(ylimits[0], ylimits[1])
+
+        buf = io.BytesIO()
+        fig.savefig(buf)
+        buf.seek(0)
+        return Image.open(buf)
+
+    @classmethod
+    def __get_box_profit_diagram(cls, profits: List[float], width: int) -> Image:
+        """
+        绘制盲盒盈亏曲线图
+
+        Args:
+            profits: 盲盒盈亏记录
+            width: 盲盒盈亏曲线图图片宽度
+        """
+        profits = cls.__insert_zeros(profits)
+        length = len(profits)
+        indexs = list(range(0, length))
+
+        abs_max = int(max(max(profits), abs(min(profits))))
+        start = -abs_max - (-abs_max % 10)
+        end = abs_max + (-abs_max % 10)
+        step = int((end - start) / 10)
+
+        yticks = list(range(start, end)[::step])
+        yticks.append(end)
+        return cls.__get_line_diagram(
+            indexs, profits, [], yticks, [], [], (-1, length), (start, end), width
+        )
+
+    @classmethod
+    def __calc_interaction_diagram_xy(cls,
+                                      times: List[Tuple[str, Union[int, float]]],
+                                      start: int,
+                                      end: int) -> Tuple[List[int], List[int]]:
+        """
+        根据互动时间列表计算互动曲线图中 x 轴和 y 轴数据
+
+        Args:
+            times: 互动时间及权重列表
+            start: 直播开始时间戳
+            end: 直播结束时间戳
+
+        Returns:
+            x 轴和 y 轴数据组成的元组
+        """
+        count = 20
+        step = (end - start) // count
+
+        times = [(int(x[0]), x[1]) for x in times]
+
+        divisions = [(start + i * step, start + (i + 1) * step - 1) for i in range(count)]
+        divisions[-1] = (divisions[-1][0], end)
+        results = [0] * count
+
+        times.sort(key=lambda x: x[0])
+        for i in range(len(times) - 1, -1, -1):
+            if times[i][0] <= end:
+                times = times[:i + 1]
+                break
+
+        for data in times:
+            index = bisect.bisect_left([d[1] for d in divisions], data[0])
+            results[index] += data[1]
+
+        result = [d[0] for d in divisions], results
+        result[0].append(start + count * step)
+        result[1].append(0)
+        return result
+
+    @classmethod
+    def __get_interaction_diagram(cls,
+                                  times: List[Tuple[str, Union[int, float]]],
+                                  start: int,
+                                  end: int,
+                                  width: int) -> Image:
+        """
+        绘制互动曲线图
+
+        Args:
+            times: 互动时间及权重列表
+            start: 直播开始时间戳
+            end: 直播结束时间戳
+            width: 互动曲线图图片宽度
+        """
+        xs, ys = cls.__calc_interaction_diagram_xy(times, start, end)
+
+        xs = [x - start for x in xs]
+        max_x = max(xs)
+
+        xs, ys = cls.__smooth_xy(xs, ys)
+        max_y = math.ceil(max(ys))
+
+        xticks = [x * max_x // 4 for x in range(1, 4)]
+        xticks.insert(0, 0)
+        xticks.append(max_x)
+
+        xlabels = [timestamp_format(start + x * (end - start) // 4, "%H:%M:%S") for x in range(1, 4)]
+        xlabels.insert(0, timestamp_format(start, "%H:%M:%S"))
+        xlabels.append(timestamp_format(end, "%H:%M:%S"))
+
+        ystep = max(max_y // 10, 1)
+        yticks = list(range(0, max_y)[::ystep])
+        yticks.append(yticks[-1] + ystep)
+
+        return cls.__get_line_diagram(
+            xs, ys, xticks, yticks, xlabels, [], (0, max_x), (0, yticks[-1]), width
+        )

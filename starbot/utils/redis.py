@@ -33,8 +33,16 @@ async def delete(key: str):
 
 # List
 
-async def lrange(key: str, start: int, end: int) -> List:
-    return list(map(lambda x: x.decode(), await __redis.lrange(key, start, end)))
+async def lrange(key: str, start: int, end: int) -> List[str]:
+    return [x.decode() for x in await __redis.lrange(key, start, end)]
+
+
+async def lrangei(key: str, start: int, end: int) -> List[float]:
+    return [int(x) for x in await __redis.lrange(key, start, end)]
+
+
+async def lrangef1(key: str, start: int, end: int) -> List[float]:
+    return [float("{:.1f}".format(float(x))) for x in await __redis.lrange(key, start, end)]
 
 
 async def rpush(key: str, value: Any):
@@ -59,6 +67,16 @@ async def hgetf1(key: str, hkey: Union[str, int]) -> float:
     if result is None:
         return 0.0
     return float("{:.1f}".format(float(result)))
+
+
+async def hgetalltuplei(key: str) -> List[Tuple[str, int]]:
+    result = await __redis.hgetall(key)
+    return [(x.decode(), int(result[x])) for x in result]
+
+
+async def hgetalltuplef1(key: str) -> List[Tuple[str, float]]:
+    result = await __redis.hgetall(key)
+    return [(x.decode(), float("{:.1f}".format(float(result[x])))) for x in result]
 
 
 async def hset(key: str, hkey: Union[str, int], value: Any):
@@ -87,13 +105,13 @@ async def zrank(key: str, member: str) -> int:
 
 
 async def zrevrangewithscoresi(key: str, start: int, end: int) -> List[Tuple[str, int]]:
-    return list(map(lambda x: (x[0].decode(), int(x[1])), await __redis.zrevrange(key, start, end, True)))
+    return [(x[0].decode(), int(x[1])) for x in await __redis.zrevrange(key, start, end, True)]
 
 
 async def zrevrangewithscoresf1(key: str, start: int, end: int) -> List[Tuple[str, float]]:
-    return list(map(
-        lambda x: (x[0].decode(), float("{:.1f}".format(float(x[1])))), await __redis.zrevrange(key, start, end, True)
-    ))
+    return [
+        (x[0].decode(), float("{:.1f}".format(float(x[1])))) for x in await __redis.zrevrange(key, start, end, True)
+    ]
 
 
 async def zadd(key: str, member: str, score: Union[int, float]):
