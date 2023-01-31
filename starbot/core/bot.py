@@ -81,11 +81,11 @@ class StarBot:
                                          f"房间号: <cyan>{up.room_id}</>) 的直播间状态: "
                                          f"{'<green>直播中</>' if status == 1 else '<red>未开播</>'}")
 
-            if status == 1 and start_time != await redis.hgeti("StartTime", up.room_id):
+            if status == 1 and start_time != await redis.get_live_start_time(up.room_id):
                 await up.accumulate_and_reset_data()
 
-            await redis.hset("LiveStatus", up.room_id, status)
-            await redis.hset("StartTime", up.room_id, start_time)
+            await redis.set_live_status(up.room_id, status)
+            await redis.set_live_start_time(up.room_id, start_time)
 
         # 连接直播间
         for up in self.__datasource.get_up_list():
