@@ -5,7 +5,7 @@ from aiohttp import ClientOSError, ServerDisconnectedError
 from loguru import logger
 
 from .datasource import DataSource
-from ..exception import ResponseCodeException, DataSourceException
+from ..exception import ResponseCodeException, DataSourceException, NetworkException
 from ..utils import config
 from ..utils.network import request
 from ..utils.utils import get_credential
@@ -31,6 +31,8 @@ async def dynamic_spider(datasource: DataSource):
             if ex.code == -6:
                 continue
             logger.error(f"动态推送任务抓取最新动态异常, HTTP 错误码: {ex.code} ({ex.msg})")
+        except NetworkException:
+            continue
         except ClientOSError:
             continue
         except ServerDisconnectedError:
