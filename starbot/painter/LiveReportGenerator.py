@@ -629,6 +629,7 @@ class LiveReportGenerator:
 
         buf = io.BytesIO()
         fig.savefig(buf)
+        plt.close(fig)
         buf.seek(0)
         return Image.open(buf)
 
