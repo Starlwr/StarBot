@@ -13,7 +13,7 @@ from pydantic import BaseModel, PrivateAttr
 from .model import LiveOn, LiveOff, DynamicUpdate, Message, PushType, PushTarget
 from .room import Up
 from ..painter.LiveReportGenerator import LiveReportGenerator
-from ..utils import config
+from ..utils import config, redis
 from ..utils.AsyncEvent import AsyncEvent
 
 
@@ -121,6 +121,15 @@ class Bot(BaseModel, AsyncEvent):
                 # 过滤已不在群内的群成员的 @ 消息
                 member_list = [member.id for member in await self.__bot.get_member_list(message.id)]
                 elements = [e for e in chain if (not isinstance(e, At)) or (e.target in member_list)]
+
+                # 移除开播 @ 列表和动态 @ 列表中的元素
+                filtered = [e for e in chain if (isinstance(e, At)) and (e.target not in member_list)]
+                for at in filtered:
+                    if await redis.exists_live_on_at(message.id, at.target):
+                        await redis.delete_live_on_at(message.id, at.target)
+                    if await redis.exists_dynamic_at(message.id, at.target):
+                        await redis.delete_dynamic_at(message.id, at.target)
+
                 chain = MessageChain(elements)
 
             if len(chain) != 0:
@@ -179,6 +188,21 @@ class Bot(BaseModel, AsyncEvent):
         """
         self.__send_push_message(up, lambda t: t.live_on, args)
 
+    async def send_live_on_at(self, up: Up):
+        """
+        发送开播 @ 我列表中的 @ 消息
+
+        Args:
+            up: 要发送的 UP 主实例
+        """
+        if not isinstance(up, Up):
+            return
+
+        for target in filter(lambda t: t.type == PushType.Group, up.targets):
+            if target.live_on.enabled:
+                ats = " ".join(["{at" + str(x) + "}" for x in await redis.range_live_on_at(target.id)])
+                self.send_message(Message(id=target.id, content=ats, type=target.type))
+
     def send_live_off(self, up: Up, args: Dict[str, Any]):
         """
         发送下播消息至 UP 主下启用下播推送的推送目标
@@ -210,6 +234,21 @@ class Bot(BaseModel, AsyncEvent):
             args: 占位符参数
         """
         self.__send_push_message(up, lambda t: t.dynamic_update, args)
+
+    async def send_dynamic_at(self, up: Up):
+        """
+        发送动态 @ 我列表中的 @ 消息
+
+        Args:
+            up: 要发送的 UP 主实例
+        """
+        if not isinstance(up, Up):
+            return
+
+        for target in filter(lambda t: t.type == PushType.Group, up.targets):
+            if target.dynamic_update.enabled:
+                ats = " ".join(["{at" + str(x) + "}" for x in await redis.range_dynamic_at(target.id)])
+                self.send_message(Message(id=target.id, content=ats, type=target.type))
 
     def __eq__(self, other):
         if isinstance(other, Bot):

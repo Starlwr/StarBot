@@ -1,9 +1,11 @@
 import asyncio
+import os
 import sys
 
 from creart import create
 from graia.ariadne import Ariadne
 from graia.broadcast import Broadcast
+from graia.saya import Saya
 from loguru import logger
 
 from .datasource import DataSource
@@ -41,6 +43,7 @@ class StarBot:
             datasource: 推送配置数据源
         """
         self.__datasource = datasource
+        Ariadne.options["StarBotDataSource"] = datasource
 
     async def __main(self):
         """
@@ -105,6 +108,19 @@ class StarBot:
         if config.get("USE_HTTP_API"):
             asyncio.get_event_loop().create_task(http_init(self.__datasource))
 
+        # 载入命令
+        logger.info("开始载入命令模块")
+        commands_path = os.path.dirname(os.path.dirname(__file__)) + "\\commands"
+
+        saya = create(Saya)
+        with saya.module_context():
+            for root, dirs, files in os.walk(commands_path, topdown=False):
+                for name in files:
+                    if name.endswith(".py"):
+                        name = name[:-3]
+                        saya.require(f"starbot.commands.{name}")
+                        logger.success(f"{name} 命令模块载入成功")
+
         # 启动消息推送模块
         if not self.__datasource.bots:
             logger.error("不存在需要启动的 Bot 账号, 请先在数据源中配置完毕后再重新运行")
@@ -141,6 +157,7 @@ class StarBot:
         logger.add(sys.stderr, format=logger_format, level="INFO")
         logger.disable("graia.ariadne.model")
         logger.disable("graia.ariadne.service")
+        logger.disable("graia.saya")
         logger.disable("launart")
 
         bcc = create(Broadcast)

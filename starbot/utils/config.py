@@ -84,6 +84,10 @@ SIMPLE_CONFIG = {
     
     # 命令触发前缀
     "COMMAND_PREFIX": "",
+    # 每个群开播 @ 我命令人数上限，单次 @ 人数过多容易被风控，不推荐修改
+    "COMMAND_LIVE_ON_AT_ME_LIMIT": 20,
+    # 每个群动态 @ 我命令人数上限，单次 @ 人数过多容易被风控，不推荐修改
+    "COMMAND_DYNAMIC_AT_ME_LIMIT": 20,
 
     # 是否启用风控消息补发
     "BAN_RESEND": False,
@@ -179,6 +183,10 @@ FULL_CONFIG = {
 
     # 命令触发前缀
     "COMMAND_PREFIX": "",
+    # 每个群开播 @ 我命令人数上限，单次 @ 人数过多容易被风控，不推荐修改
+    "COMMAND_LIVE_ON_AT_ME_LIMIT": 20,
+    # 每个群动态 @ 我命令人数上限，单次 @ 人数过多容易被风控，不推荐修改
+    "COMMAND_DYNAMIC_AT_ME_LIMIT": 20,
 
     # 是否启用风控消息补发
     "BAN_RESEND": True,

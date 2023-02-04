@@ -201,6 +201,7 @@ class Up(BaseModel):
                         "{url}": f"https://live.bilibili.com/{self.room_id}",
                         "{cover}": "".join(["{urlpic=", arg_base["cover"], "}"])
                     }
+                    await self.__bot.send_live_on_at(self)
                     self.__bot.send_live_on(self, args)
 
         @self.__room.on("PREPARING")
@@ -370,6 +371,7 @@ class Up(BaseModel):
                     "{url}": url_map.get(dynamic_type, f"https://t.bilibili.com/{dynamic_id}"),
                     "{picture}": "".join(["{base64pic=", base64str, "}"])
                 }
+                await self.__bot.send_dynamic_at(self)
                 self.__bot.send_dynamic_update(self, dynamic_update_args)
 
     async def __generate_live_report_param(self):
@@ -472,7 +474,7 @@ class Up(BaseModel):
         # 弹幕排行
         if self.__any_live_report_item_enabled("danmu_ranking"):
             ranking_count = max(map(lambda t: t.live_report.danmu_ranking, self.targets))
-            danmu_ranking = await redis.get_user_danmu_count(self.room_id, 0, ranking_count - 1)
+            danmu_ranking = await redis.rev_range_user_danmu_count(self.room_id, 0, ranking_count - 1)
 
             if danmu_ranking:
                 uids = [x[0] for x in danmu_ranking]
@@ -488,7 +490,7 @@ class Up(BaseModel):
         # 盲盒数量排行
         if self.__any_live_report_item_enabled("box_ranking"):
             ranking_count = max(map(lambda t: t.live_report.box_ranking, self.targets))
-            box_ranking = await redis.get_user_box_count(self.room_id, 0, ranking_count - 1)
+            box_ranking = await redis.rev_range_user_box_count(self.room_id, 0, ranking_count - 1)
 
             if box_ranking:
                 uids = [x[0] for x in box_ranking]
@@ -504,7 +506,7 @@ class Up(BaseModel):
         # 盲盒盈亏排行
         if self.__any_live_report_item_enabled("box_profit_ranking"):
             ranking_count = max(map(lambda t: t.live_report.box_profit_ranking, self.targets))
-            box_profit_ranking = await redis.get_user_box_profit(self.room_id, 0, ranking_count - 1)
+            box_profit_ranking = await redis.rev_range_user_box_profit(self.room_id, 0, ranking_count - 1)
 
             if box_profit_ranking:
                 uids = [x[0] for x in box_profit_ranking]
@@ -520,7 +522,7 @@ class Up(BaseModel):
         # 礼物排行
         if self.__any_live_report_item_enabled("gift_ranking"):
             ranking_count = max(map(lambda t: t.live_report.gift_ranking, self.targets))
-            gift_ranking = await redis.get_user_gift_profit(self.room_id, 0, ranking_count - 1)
+            gift_ranking = await redis.rev_range_user_gift_profit(self.room_id, 0, ranking_count - 1)
 
             if gift_ranking:
                 uids = [x[0] for x in gift_ranking]
@@ -536,7 +538,7 @@ class Up(BaseModel):
         # SC（醒目留言）排行
         if self.__any_live_report_item_enabled("sc_ranking"):
             ranking_count = max(map(lambda t: t.live_report.sc_ranking, self.targets))
-            sc_ranking = await redis.get_user_sc_profit(self.room_id, 0, ranking_count - 1)
+            sc_ranking = await redis.rev_range_user_sc_profit(self.room_id, 0, ranking_count - 1)
 
             if sc_ranking:
                 uids = [x[0] for x in sc_ranking]
@@ -551,9 +553,9 @@ class Up(BaseModel):
 
         # 开通大航海观众列表
         if self.__any_live_report_item_enabled("guard_list"):
-            captains = await redis.get_user_captain_count(self.room_id)
-            commanders = await redis.get_user_commander_count(self.room_id)
-            governors = await redis.get_user_governor_count(self.room_id)
+            captains = await redis.rev_range_user_captain_count(self.room_id)
+            commanders = await redis.rev_range_user_commander_count(self.room_id)
+            governors = await redis.rev_range_user_governor_count(self.room_id)
 
             if captains:
                 uids = [x[0] for x in captains]

@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union, Tuple, List
+from typing import Any, Optional, Union, Tuple, List, Set
 
 import aioredis
 from loguru import logger
@@ -37,7 +37,7 @@ async def lrange(key: str, start: int, end: int) -> List[str]:
     return [x.decode() for x in await __redis.lrange(key, start, end)]
 
 
-async def lrangei(key: str, start: int, end: int) -> List[float]:
+async def lrangei(key: str, start: int, end: int) -> List[int]:
     return [int(x) for x in await __redis.lrange(key, start, end)]
 
 
@@ -91,6 +91,28 @@ async def hincrbyfloat(key: str, hkey: Union[str, int], value: Optional[float] =
     return await __redis.hincrbyfloat(key, hkey, value)
 
 
+# Set
+
+async def scard(key: str) -> int:
+    return await __redis.scard(key)
+
+
+async def sismember(key: str, member: Union[str, int]) -> bool:
+    return await __redis.sismember(key, member)
+
+
+async def smembers(key: str) -> Set[int]:
+    return {int(x) for x in await __redis.smembers(key)}
+
+
+async def sadd(key: str, member: Union[str, int]):
+    await __redis.sadd(key, member)
+
+
+async def srem(key: str, member: Union[str, int]):
+    await __redis.srem(key, member)
+
+
 # Zset
 
 async def zcard(key: str) -> int:
@@ -102,6 +124,28 @@ async def zrank(key: str, member: str) -> int:
     if rank is None:
         return 0
     return rank
+
+
+async def zscore(key: str, member: Union[str, int]) -> float:
+    score = await __redis.zscore(key, member)
+    if score is None:
+        return 0.0
+    return score
+
+
+async def zrange(key: str, start: int, end: int) -> List[str]:
+    return [x.decode() for x in await __redis.zrange(key, start, end)]
+
+
+async def zrangewithscoresi(key: str, start: int, end: int) -> List[Tuple[str, int]]:
+    return [(x[0].decode(), int(x[1])) for x in await __redis.zrange(key, start, end, withscores=True)]
+
+
+async def zrangewithscoresf1(key: str, start: int, end: int) -> List[Tuple[str, float]]:
+    return [
+        (x[0].decode(), float("{:.1f}".format(float(x[1]))))
+        for x in await __redis.zrange(key, start, end, withscores=True)
+    ]
 
 
 async def zrevrangewithscoresi(key: str, start: int, end: int) -> List[Tuple[str, int]]:
@@ -219,17 +263,35 @@ async def reset_room_danmu_count(room_id: int):
 
 # 房间累计弹幕数量
 
+async def get_room_danmu_total(room_id: int) -> int:
+    return await hgeti("RoomDanmuTotal", room_id)
+
+
 async def accumulate_room_danmu_total(room_id: int) -> int:
     return await hincrby("RoomDanmuTotal", room_id, await get_room_danmu_count(room_id))
 
 
+# 房间总弹幕数量
+
+async def get_room_danmu_all(room_id: int) -> int:
+    return await get_room_danmu_count(room_id) + await get_room_danmu_total(room_id)
+
+
 # 用户弹幕数量
+
+async def get_user_danmu_count(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserDanmuCount:{room_id}", uid))
+
 
 async def len_user_danmu_count(room_id: int) -> int:
     return await zcard(f"UserDanmuCount:{room_id}")
 
 
-async def get_user_danmu_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+async def range_user_danmu_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+    return await zrangewithscoresi(f"UserDanmuCount:{room_id}", start, end)
+
+
+async def rev_range_user_danmu_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
     return await zrevrangewithscoresi(f"UserDanmuCount:{room_id}", start, end)
 
 
@@ -243,8 +305,32 @@ async def delete_user_danmu_count(room_id: int):
 
 # 用户累计弹幕数量
 
+async def get_user_danmu_total(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserDanmuTotal:{room_id}", uid))
+
+
 async def accumulate_user_danmu_total(room_id: int):
     await zunionstore(f"UserDanmuTotal:{room_id}", f"UserDanmuCount:{room_id}")
+
+
+# 用户总弹幕数量
+
+async def len_user_danmu_all(room_id: int) -> int:
+    return len(
+        set(await zrange(f"UserDanmuCount:{room_id}", 0, -1))
+        .union(set(await zrange(f"UserDanmuTotal:{room_id}", 0, -1)))
+    )
+
+
+async def get_user_danmu_all(room_id: int, uid: int) -> int:
+    return await get_user_danmu_count(room_id, uid) + await get_user_danmu_total(room_id, uid)
+
+
+async def range_user_danmu_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+    await zunionstore(f"TempDanmuTotal:{room_id}", [f"UserDanmuCount:{room_id}", f"UserDanmuTotal:{room_id}"])
+    result = await zrangewithscoresi(f"TempDanmuTotal:{room_id}", start, end)
+    await delete(f"TempDanmuTotal:{room_id}")
+    return result
 
 
 # 房间弹幕记录
@@ -291,17 +377,35 @@ async def reset_room_box_count(room_id: int):
 
 # 房间累计盲盒数量
 
+async def get_room_box_total(room_id: int) -> int:
+    return await hgeti("RoomBoxTotal", room_id)
+
+
 async def accumulate_room_box_total(room_id: int) -> int:
     return await hincrby("RoomBoxTotal", room_id, await get_room_box_count(room_id))
 
 
+# 房间总盲盒数量
+
+async def get_room_box_all(room_id: int) -> int:
+    return await get_room_box_count(room_id) + await get_room_box_total(room_id)
+
+
 # 用户盲盒数量
+
+async def get_user_box_count(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserBoxCount:{room_id}", uid))
+
 
 async def len_user_box_count(room_id: int) -> int:
     return await zcard(f"UserBoxCount:{room_id}")
 
 
-async def get_user_box_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+async def range_user_box_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+    return await zrangewithscoresi(f"UserBoxCount:{room_id}", start, end)
+
+
+async def rev_range_user_box_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
     return await zrevrangewithscoresi(f"UserBoxCount:{room_id}", start, end)
 
 
@@ -315,8 +419,32 @@ async def delete_user_box_count(room_id: int):
 
 # 用户累计盲盒数量
 
+async def get_user_box_total(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserBoxTotal:{room_id}", uid))
+
+
 async def accumulate_user_box_total(room_id: int):
     await zunionstore(f"UserBoxTotal:{room_id}", f"UserBoxCount:{room_id}")
+
+
+# 用户总盲盒数量
+
+async def len_user_box_all(room_id: int) -> int:
+    return len(
+        set(await zrange(f"UserBoxCount:{room_id}", 0, -1))
+        .union(set(await zrange(f"UserBoxTotal:{room_id}", 0, -1)))
+    )
+
+
+async def get_user_box_all(room_id: int, uid: int) -> int:
+    return await get_user_box_count(room_id, uid) + await get_user_box_total(room_id, uid)
+
+
+async def range_user_box_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+    await zunionstore(f"TempBoxTotal:{room_id}", [f"UserBoxCount:{room_id}", f"UserBoxTotal:{room_id}"])
+    result = await zrangewithscoresi(f"TempBoxTotal:{room_id}", start, end)
+    await delete(f"TempBoxTotal:{room_id}")
+    return result
 
 
 # 房间盲盒盈亏
@@ -335,13 +463,31 @@ async def reset_room_box_profit(room_id: int):
 
 # 房间累计盲盒盈亏
 
+async def get_room_box_profit_total(room_id: int) -> float:
+    return await hgetf1("RoomBoxProfitTotal", room_id)
+
+
 async def accumulate_room_box_profit_total(room_id: int) -> float:
     return await hincrbyfloat("RoomBoxProfitTotal", room_id, await get_room_box_profit(room_id))
 
 
+# 房间总盲盒盈亏
+
+async def get_room_box_profit_all(room_id: int) -> float:
+    return float("{:.1f}".format(await get_room_box_profit(room_id) + await get_room_box_profit_total(room_id)))
+
+
 # 用户盲盒盈亏
 
-async def get_user_box_profit(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
+async def get_user_box_profit(room_id: int, uid: int) -> float:
+    return float("{:.1f}".format(await zscore(f"UserBoxProfit:{room_id}", uid)))
+
+
+async def range_user_box_profit(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
+    return await zrangewithscoresf1(f"UserBoxProfit:{room_id}", start, end)
+
+
+async def rev_range_user_box_profit(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
     return await zrevrangewithscoresf1(f"UserBoxProfit:{room_id}", start, end)
 
 
@@ -355,8 +501,27 @@ async def delete_user_box_profit(room_id: int):
 
 # 用户累计盲盒盈亏
 
+async def get_user_box_profit_total(room_id: int, uid: int) -> float:
+    return float("{:.1f}".format(await zscore(f"UserBoxProfitTotal:{room_id}", uid)))
+
+
 async def accumulate_user_box_profit_total(room_id: int):
     await zunionstore(f"UserBoxProfitTotal:{room_id}", f"UserBoxProfit:{room_id}")
+
+
+# 用户总盲盒盈亏
+
+async def get_user_box_profit_all(room_id: int, uid: int) -> float:
+    return float("{:.1f}".format(
+        await get_user_box_profit(room_id, uid) + await get_user_box_profit_total(room_id, uid)
+    ))
+
+
+async def range_user_box_profit_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
+    await zunionstore(f"TempBoxProfitTotal:{room_id}", [f"UserBoxProfit:{room_id}", f"UserBoxProfitTotal:{room_id}"])
+    result = await zrangewithscoresf1(f"TempBoxProfitTotal:{room_id}", start, end)
+    await delete(f"TempBoxProfitTotal:{room_id}")
+    return result
 
 
 # 房间盲盒盈亏记录，用于绘制直播报告中盲盒盈亏曲线图
@@ -417,17 +582,35 @@ async def reset_room_gift_profit(room_id: int):
 
 # 房间累计礼物价值
 
+async def get_room_gift_total(room_id: int) -> float:
+    return await hgetf1("RoomGiftTotal", room_id)
+
+
 async def accumulate_room_gift_total(room_id: int) -> float:
     return await hincrbyfloat("RoomGiftTotal", room_id, await get_room_gift_profit(room_id))
 
 
+# 房间总礼物价值
+
+async def get_room_gift_all(room_id: int) -> float:
+    return float("{:.1f}".format(await get_room_gift_profit(room_id) + await get_room_gift_total(room_id)))
+
+
 # 用户礼物价值
+
+async def get_user_gift_profit(room_id: int, uid: int) -> float:
+    return float("{:.1f}".format(await zscore(f"UserGiftProfit:{room_id}", uid)))
+
 
 async def len_user_gift_profit(room_id: int) -> int:
     return await zcard(f"UserGiftProfit:{room_id}")
 
 
-async def get_user_gift_profit(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
+async def range_user_gift_profit(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
+    return await zrangewithscoresf1(f"UserGiftProfit:{room_id}", start, end)
+
+
+async def rev_range_user_gift_profit(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
     return await zrevrangewithscoresf1(f"UserGiftProfit:{room_id}", start, end)
 
 
@@ -441,8 +624,34 @@ async def delete_user_gift_profit(room_id: int):
 
 # 用户累计礼物价值
 
+async def get_user_gift_total(room_id: int, uid: int) -> float:
+    return float("{:.1f}".format(await zscore(f"UserGiftTotal:{room_id}", uid)))
+
+
 async def accumulate_user_gift_total(room_id: int):
     await zunionstore(f"UserGiftTotal:{room_id}", f"UserGiftProfit:{room_id}")
+
+
+# 用户总礼物价值
+
+async def len_user_gift_all(room_id: int) -> int:
+    return len(
+        set(await zrange(f"UserGiftProfit:{room_id}", 0, -1))
+        .union(set(await zrange(f"UserGiftTotal:{room_id}", 0, -1)))
+    )
+
+
+async def get_user_gift_all(room_id: int, uid: int) -> float:
+    return float("{:.1f}".format(
+        await get_user_gift_profit(room_id, uid) + await get_user_gift_total(room_id, uid)
+    ))
+
+
+async def range_user_gift_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
+    await zunionstore(f"TempGiftTotal:{room_id}", [f"UserGiftProfit:{room_id}", f"UserGiftTotal:{room_id}"])
+    result = await zrangewithscoresf1(f"TempGiftTotal:{room_id}", start, end)
+    await delete(f"TempGiftTotal:{room_id}")
+    return result
 
 
 # 房间礼物时间分布
@@ -475,17 +684,35 @@ async def reset_room_sc_profit(room_id: int):
 
 # 房间累计 SC 价值
 
+async def get_room_sc_total(room_id: int) -> int:
+    return await hgeti("RoomScTotal", room_id)
+
+
 async def accumulate_room_sc_total(room_id: int) -> int:
     return await hincrby("RoomScTotal", room_id, await get_room_sc_profit(room_id))
 
 
+# 房间总 SC 价值
+
+async def get_room_sc_all(room_id: int) -> int:
+    return await get_room_sc_profit(room_id) + await get_room_sc_total(room_id)
+
+
 # 用户 SC 价值
+
+async def get_user_sc_profit(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserScProfit:{room_id}", uid))
+
 
 async def len_user_sc_profit(room_id: int) -> int:
     return await zcard(f"UserScProfit:{room_id}")
 
 
-async def get_user_sc_profit(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+async def range_user_sc_profit(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+    return await zrangewithscoresi(f"UserScProfit:{room_id}", start, end)
+
+
+async def rev_range_user_sc_profit(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
     return await zrevrangewithscoresi(f"UserScProfit:{room_id}", start, end)
 
 
@@ -499,8 +726,32 @@ async def delete_user_sc_profit(room_id: int):
 
 # 用户累计 SC 价值
 
+async def get_user_sc_total(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserScTotal:{room_id}", uid))
+
+
 async def accumulate_user_sc_total(room_id: int):
     await zunionstore(f"UserScTotal:{room_id}", f"UserScProfit:{room_id}")
+
+
+# 用户总 SC 价值
+
+async def len_user_sc_all(room_id: int) -> int:
+    return len(
+        set(await zrange(f"UserScProfit:{room_id}", 0, -1))
+        .union(set(await zrange(f"UserScTotal:{room_id}", 0, -1)))
+    )
+
+
+async def get_user_sc_all(room_id: int, uid: int) -> int:
+    return await get_user_sc_profit(room_id, uid) + await get_user_sc_total(room_id, uid)
+
+
+async def range_user_sc_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+    await zunionstore(f"TempScTotal:{room_id}", [f"UserScProfit:{room_id}", f"UserScTotal:{room_id}"])
+    result = await zrangewithscoresi(f"TempScTotal:{room_id}", start, end)
+    await delete(f"TempScTotal:{room_id}")
+    return result
 
 
 # 房间 SC 时间分布
@@ -543,23 +794,81 @@ async def reset_room_guard_count(room_id: int):
 
 # 房间累计大航海数量
 
+async def get_room_captain_total(room_id: int) -> int:
+    return await hgeti("RoomCaptainTotal", room_id)
+
+
+async def get_room_commander_total(room_id: int) -> int:
+    return await hgeti("RoomCommanderTotal", room_id)
+
+
+async def get_room_governor_total(room_id: int) -> int:
+    return await hgeti("RoomGovernorTotal", room_id)
+
+
 async def accumulate_room_guard_total(room_id: int):
     await hincrby("RoomCaptainTotal", room_id, await get_room_captain_count(room_id))
     await hincrby("RoomCommanderTotal", room_id, await get_room_commander_count(room_id))
     await hincrby("RoomGovernorTotal", room_id, await get_room_governor_count(room_id))
 
 
+# 房间总大航海数量
+
+async def get_room_captain_all(room_id: int) -> int:
+    return await get_room_captain_count(room_id) + await get_room_captain_total(room_id)
+
+
+async def get_room_commander_all(room_id: int) -> int:
+    return await get_room_commander_count(room_id) + await get_room_commander_total(room_id)
+
+
+async def get_room_governor_all(room_id: int) -> int:
+    return await get_room_governor_count(room_id) + await get_room_governor_total(room_id)
+
+
 # 用户大航海数量
 
-async def get_user_captain_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+async def get_user_captain_count(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserCaptainCount:{room_id}", uid))
+
+
+async def get_user_commander_count(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserCommanderCount:{room_id}", uid))
+
+
+async def get_user_governor_count(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserGovernorCount:{room_id}", uid))
+
+
+async def len_user_captain_count(room_id: int) -> int:
+    return await zcard(f"UserCaptainCount:{room_id}")
+
+
+async def len_user_commander_count(room_id: int) -> int:
+    return await zcard(f"UserCommanderCount:{room_id}")
+
+
+async def len_user_governor_count(room_id: int) -> int:
+    return await zcard(f"UserGovernorCount:{room_id}")
+
+
+async def len_user_guard_count(room_id: int) -> int:
+    return len(
+        set(await zrange(f"UserCaptainCount:{room_id}", 0, -1))
+        .union(set(await zrange(f"UserCommanderCount:{room_id}", 0, -1)))
+        .union(set(await zrange(f"UserGovernorCount:{room_id}", 0, -1)))
+    )
+
+
+async def rev_range_user_captain_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
     return await zrevrangewithscoresi(f"UserCaptainCount:{room_id}", start, end)
 
 
-async def get_user_commander_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+async def rev_range_user_commander_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
     return await zrevrangewithscoresi(f"UserCommanderCount:{room_id}", start, end)
 
 
-async def get_user_governor_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+async def rev_range_user_governor_count(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
     return await zrevrangewithscoresi(f"UserGovernorCount:{room_id}", start, end)
 
 
@@ -575,10 +884,68 @@ async def delete_user_guard_count(room_id: int):
 
 # 用户累计大航海数量
 
+async def get_user_captain_total(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserCaptainTotal:{room_id}", uid))
+
+
+async def get_user_commander_total(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserCommanderTotal:{room_id}", uid))
+
+
+async def get_user_governor_total(room_id: int, uid: int) -> int:
+    return int(await zscore(f"UserGovernorTotal:{room_id}", uid))
+
+
 async def accumulate_user_guard_total(room_id: int):
     await zunionstore(f"UserCaptainTotal:{room_id}", f"UserCaptainCount:{room_id}")
     await zunionstore(f"UserCommanderTotal:{room_id}", f"UserCommanderCount:{room_id}")
     await zunionstore(f"UserGovernorTotal:{room_id}", f"UserGovernorCount:{room_id}")
+
+
+# 用户总大航海数量
+
+async def len_user_captain_all(room_id: int) -> int:
+    return len(
+        set(await zrange(f"UserCaptainCount:{room_id}", 0, -1))
+        .union(set(await zrange(f"UserCaptainTotal:{room_id}", 0, -1)))
+    )
+
+
+async def len_user_commander_all(room_id: int) -> int:
+    return len(
+        set(await zrange(f"UserCommanderCount:{room_id}", 0, -1))
+        .union(set(await zrange(f"UserCommanderTotal:{room_id}", 0, -1)))
+    )
+
+
+async def len_user_governor_all(room_id: int) -> int:
+    return len(
+        set(await zrange(f"UserGovernorCount:{room_id}", 0, -1))
+        .union(set(await zrange(f"UserGovernorTotal:{room_id}", 0, -1)))
+    )
+
+
+async def len_user_guard_all(room_id: int) -> int:
+    return len(
+        set(await zrange(f"UserCaptainCount:{room_id}", 0, -1))
+        .union(set(await zrange(f"UserCaptainTotal:{room_id}", 0, -1)))
+        .union(set(await zrange(f"UserCommanderCount:{room_id}", 0, -1)))
+        .union(set(await zrange(f"UserCommanderTotal:{room_id}", 0, -1)))
+        .union(set(await zrange(f"UserGovernorCount:{room_id}", 0, -1)))
+        .union(set(await zrange(f"UserGovernorTotal:{room_id}", 0, -1)))
+    )
+
+
+async def get_user_captain_all(room_id: int, uid: int) -> int:
+    return await get_user_captain_count(room_id, uid) + await get_user_captain_total(room_id, uid)
+
+
+async def get_user_commander_all(room_id: int, uid: int) -> int:
+    return await get_user_commander_count(room_id, uid) + await get_user_commander_total(room_id, uid)
+
+
+async def get_user_governor_all(room_id: int, uid: int) -> int:
+    return await get_user_governor_count(room_id, uid) + await get_user_governor_total(room_id, uid)
 
 
 # 房间大航海时间分布
@@ -660,3 +1027,71 @@ async def reset_data(room_id: int):
     # 重置大航海数
     await reset_room_guard_count(room_id)
     await delete_user_guard_count(room_id)
+
+
+# 用户绑定
+
+async def get_bind_uid(qq: int) -> int:
+    return await hgeti("BindUid", qq)
+
+
+async def bind_uid(qq: int, uid: int):
+    await hset("BindUid", qq, uid)
+
+
+# 开播 @ 我
+
+async def len_live_on_at(_id: int) -> int:
+    return await scard(f"LiveOnAtMe:{_id}")
+
+
+async def exists_live_on_at(_id: int, qq: int) -> bool:
+    return await sismember(f"LiveOnAtMe:{_id}", qq)
+
+
+async def range_live_on_at(_id: int) -> Set[int]:
+    return await smembers(f"LiveOnAtMe:{_id}")
+
+
+async def add_live_on_at(_id: int, qq: int):
+    await sadd(f"LiveOnAtMe:{_id}", qq)
+
+
+async def delete_live_on_at(_id: int, qq: int):
+    await srem(f"LiveOnAtMe:{_id}", qq)
+
+
+# 动态 @ 我
+
+async def len_dynamic_at(_id: int) -> int:
+    return await scard(f"DynamicAtMe:{_id}")
+
+
+async def exists_dynamic_at(_id: int, qq: int) -> bool:
+    return await sismember(f"DynamicAtMe:{_id}", qq)
+
+
+async def range_dynamic_at(_id: int) -> Set[int]:
+    return await smembers(f"DynamicAtMe:{_id}")
+
+
+async def add_dynamic_at(_id: int, qq: int):
+    await sadd(f"DynamicAtMe:{_id}", qq)
+
+
+async def delete_dynamic_at(_id: int, qq: int):
+    await srem(f"DynamicAtMe:{_id}", qq)
+
+
+# 命令禁用
+
+async def exists_disable_command(name: str, _id: int) -> bool:
+    return await sismember(name, _id)
+
+
+async def add_disable_command(name: str, _id: int):
+    await sadd(name, _id)
+
+
+async def delete_disable_command(name: str, _id: int):
+    await srem(name, _id)

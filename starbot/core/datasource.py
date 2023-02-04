@@ -7,7 +7,7 @@ import pymysql
 from loguru import logger
 from pydantic import ValidationError
 
-from .model import LiveOn, LiveOff, LiveReport, DynamicUpdate, PushTarget
+from .model import LiveOn, LiveOff, LiveReport, DynamicUpdate, PushTarget, PushType
 from .room import Up
 from .sender import Bot
 from ..exception.DataSourceException import DataSourceException
@@ -90,6 +90,27 @@ class DataSource(metaclass=abc.ABCMeta):
         if up is None:
             raise DataSourceException(f"不存在的 UID: {uid}")
         return up
+
+    def get_ups_by_target(self, target_id: int, target_type: PushType) -> List[Up]:
+        """
+        根据推送目标号码和推送目标类型获取 Up 实例列表
+
+        Args:
+            target_id: 需要获取 Up 的推送目标号码
+            target_type: 需要获取 Up 的推送目标类型
+
+        Returns:
+            Up 实例列表
+        """
+        ups = []
+
+        for up in self.__up_list:
+            for target in up.targets:
+                if target_id == target.id and target_type == target.type:
+                    ups.append(up)
+                    break
+
+        return ups
 
     def get_target_by_key(self, key: str) -> PushTarget:
         """

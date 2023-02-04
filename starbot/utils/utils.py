@@ -2,17 +2,19 @@
 通用工具库
 """
 import asyncio
+import bisect
 import json
 import os
 import time
 from io import BytesIO
-from typing import Tuple, List, Dict, Sized, Optional, Any
+from typing import Tuple, List, Dict, Sized, Optional, Any, Union
 
 from PIL import Image, ImageDraw
 
 from . import config
 from .Credential import Credential
 from .network import get_session, request
+from ..exception import ResponseCodeException
 
 
 def get_api(field: str) -> Dict:
@@ -157,10 +159,71 @@ async def get_unames_and_faces_by_uids(uids: List[str]) -> Tuple[List[str], List
     Returns:
         昵称列表和头像图片列表组成的元组
     """
+    async def illegal_face():
+        face = Image.new("RGBA", (300, 300), (255, 255, 255, 255))
+        return face
+
     user_info_url = f"https://api.vc.bilibili.com/account/v1/user/cards?uids={','.join(uids)}"
-    infos_list = await request("GET", user_info_url)
+    try:
+        infos_list = await request("GET", user_info_url)
+    except ResponseCodeException:
+        return [], []
     infos = dict(zip([x["mid"] for x in infos_list], infos_list))
-    unames = [infos[int(uid)]["name"] for uid in uids]
-    download_face_tasks = [open_url_image(infos[int(uid)]["face"]) for uid in uids]
-    faces = await asyncio.gather(*download_face_tasks)
-    return (unames, faces)
+    unames = [infos[int(uid)]["name"] if int(uid) in infos else "" for uid in uids]
+    download_face_tasks = [
+        open_url_image(infos[int(uid)]["face"]) if int(uid) in infos else illegal_face() for uid in uids
+    ]
+    faces = list(await asyncio.gather(*download_face_tasks, return_exceptions=True))
+    for i in range(len(faces)):
+        if isinstance(faces[i], Exception):
+            faces[i] = await illegal_face()
+
+    return unames, faces
+
+
+def remove_command_param_placeholder(param: str) -> str:
+    """
+    移除命令参数中括号占位符
+
+    Args:
+        param: 传入参数
+
+    Returns:
+        处理后的参数
+    """
+    return param.replace("[", "").replace("]", "").replace("［", "").replace("］", "").replace("【", "").replace("】", "")
+
+
+def get_parallel_ranking(score: Union[int, float],
+                         scores: List[Union[int, float]]) -> Tuple[int, int, Optional[Union[int, float]]]:
+    """
+    获取分数在分数列表中的排名，存在并列情况优先取高名次
+
+    Args:
+        score: 分数
+        scores: 从小到大有序分数列表
+
+    Returns:
+        名次、参与排名元素个数和距离上一名的差值组成的元组
+    """
+    index = bisect.bisect_right(scores, score)
+    total = len(scores)
+    rank = total - index + 1
+    diff = scores[index] - score if index < total else None
+    if isinstance(diff,float):
+        diff = float("{:.1f}".format(diff))
+    return rank, total, diff
+
+
+def get_ratio(count: Union[int, float], total: Union[int, float]) -> str:
+    """
+    获取数量在总数量中所占比例
+
+    Args:
+        count: 数量
+        total: 总数量
+
+    Returns:
+        百分比字符串，精确到两位小数
+    """
+    return "{:.2f}".format(count / total * 100) + " %"

@@ -506,6 +506,62 @@ class PicGenerator:
         """
         return int(self.__draw.textlength(s, self.__text_font))
 
+    def draw_text_multiline(self,
+                            margin: int,
+                            texts: Union[str, List[str]],
+                            colors: Optional[
+                                Union[Color, Tuple[int, int, int], List[Union[Color, Tuple[int, int, int]]]]
+                            ] = None,
+                            xy: Optional[Tuple[int, int]] = None):
+        """
+        在当前绘图坐标绘制多行文本，文本到达边界处会自动换行，绘制结束后会自动移动绘图坐标至下次绘图适合位置
+        也可手动传入绘图坐标，手动传入时不会移动绘图坐标
+        传入文本列表和颜色列表可将多行文本绘制为不同颜色，文本列表和颜色列表需一一对应
+        颜色列表少于文本列表时将使用默认黑色 (0, 0, 0)，颜色列表多于文本列表时将舍弃多余颜色
+
+        Args:
+            margin: 外边距
+            texts: 文本内容
+            colors: 字体颜色。默认：黑色 (0, 0, 0)
+            xy: 绘图坐标。默认：自适应绘图坐标
+        """
+        if colors is None:
+            colors = []
+
+        if isinstance(texts, str):
+            texts = [texts]
+
+        if isinstance(colors, (Color, tuple)):
+            colors = [colors]
+
+        for i in range(len(texts) - len(colors)):
+            colors.append(Color.BLACK)
+
+        for i in range(len(colors)):
+            if isinstance(colors[i], Color):
+                colors[i] = colors[i].value
+
+        if xy is None:
+            x = self.x
+            for i in range(len(texts)):
+                for c in texts[i]:
+                    length = int(self.__draw.textlength(c, self.__text_font))
+                    if self.x + length > self.width - margin:
+                        self.move_pos(x - self.x, self.__text_font.size + self.__ROW_SPACE)
+                    self.__draw.text(self.__xy, c, colors[i], self.__text_font)
+                    self.move_pos(int(self.__draw.textlength(c, self.__text_font)), 0)
+            self.move_pos(x - self.x, self.__text_font.size + self.__ROW_SPACE)
+        else:
+            x = xy[0]
+            for i in range(len(texts)):
+                for c in texts[i]:
+                    length = int(self.__draw.textlength(c, self.__text_font))
+                    if xy[0] + length > self.width - margin:
+                        xy = x, xy[1] + self.__text_font.size + self.__ROW_SPACE
+                    self.__draw.text(xy, c, colors[i], self.__text_font)
+                    xy = xy[0] + self.__draw.textlength(c, self.__text_font), xy[1]
+        return self
+
     def show(self):
         """
         显示图片
