@@ -74,7 +74,7 @@ class DynamicPicGenerator:
         return pic.base64()
 
     @classmethod
-    def remove_illegal_char(cls, s: str) -> str:
+    def __remove_illegal_char(cls, s: str) -> str:
         """
         移除动态中的非法字符
 
@@ -346,7 +346,7 @@ class DynamicPicGenerator:
             module_type = module["type"]
 
             if module_type == "RICH_TEXT_NODE_TYPE_TEXT":
-                for char in cls.remove_illegal_char(module["text"]):
+                for char in cls.__remove_illegal_char(module["text"]):
                     draw_char(char)
             elif module_type == "RICH_TEXT_NODE_TYPE_EMOJI":
                 draw_pic(module["img"], text_img_size)
@@ -363,7 +363,7 @@ class DynamicPicGenerator:
                     draw_pic(Image.open(f"{cls.__resource_base_path}/resource/tick.png"), text_img_size)
                 elif module_type == "RICH_TEXT_NODE_TYPE_GOODS":
                     draw_pic(Image.open(f"{cls.__resource_base_path}/resource/tb.png"), text_img_size)
-                for char in cls.remove_illegal_char(module["text"]):
+                for char in cls.__remove_illegal_char(module["text"]):
                     draw_char(char, Color.LINK)
 
         imgs.append(img)
@@ -809,7 +809,7 @@ class DynamicPicGenerator:
             elif card_type == 6:
                 # 视频、直播预约
                 base = info["reserve_attach_card"]
-                title = cls.remove_illegal_char(base["title"])
+                title = cls.__remove_illegal_char(base["title"])
                 desc_first = base["desc_first"]["text"]
                 desc_second = base["desc_second"]
                 desc = f"{desc_first}   {desc_second}"
