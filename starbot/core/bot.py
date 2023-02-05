@@ -130,9 +130,6 @@ class StarBot:
 
         logger.info("开始运行 Ariadne 消息推送模块")
 
-        for bot in self.__datasource.bots:
-            bot.start_sender()
-
         try:
             Ariadne.launch_blocking()
         except RuntimeError as ex:

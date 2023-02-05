@@ -1,9 +1,11 @@
 import asyncio
+import time
 from asyncio import AbstractEventLoop
 from typing import Optional, List, Dict, Any, Union, Callable
 
 from graia.ariadne import Ariadne
 from graia.ariadne.connection.config import config as AriadneConfig, HttpClientConfig, WebsocketClientConfig
+from graia.ariadne.exception import RemoteException
 from graia.ariadne.message.chain import MessageChain
 from graia.ariadne.message.element import At, AtAll
 from graia.ariadne.model import LogConfig, MemberPerm
@@ -12,6 +14,7 @@ from pydantic import BaseModel, PrivateAttr
 
 from .model import LiveOn, LiveOff, DynamicUpdate, Message, PushType, PushTarget
 from .room import Up
+from ..exception.AtAllLimitedException import AtAllLimitedException
 from ..painter.LiveReportGenerator import LiveReportGenerator
 from ..utils import config, redis
 from ..utils.AsyncEvent import AsyncEvent
@@ -34,8 +37,11 @@ class Bot(BaseModel, AsyncEvent):
     __bot: Optional[Ariadne] = PrivateAttr()
     """Ariadne 实例"""
 
+    __at_all_limited: Optional[int] = PrivateAttr()
+    """@全体成员次数用尽时所在日期"""
+
     __queue: Optional[List[Message]] = PrivateAttr()
-    """待发送消息队列"""
+    """消息补发队列"""
 
     def __init__(self, **data: Any):
         super().__init__(**data)
@@ -49,40 +55,53 @@ class Bot(BaseModel, AsyncEvent):
             ),
             log_config=LogConfig(log_level="DEBUG")
         )
+        self.__at_all_limited = time.localtime(time.time() - 86400).tm_yday
         self.__queue = []
 
         # 注入 Bot 实例引用
         for up in self.ups:
             up.inject_bot(self)
 
-    def start_sender(self):
-        self.__loop.create_task(self.__sender())
-        logger.success(f"Bot [{self.qq}] 已启动")
-
-    def send_message(self, msg: Message):
-        self.__queue.append(msg)
-
-    async def __sender(self):
+    async def send_message(self, msg: Message):
         """
-        消息发送模块
-        """
-        interval = config.get("MESSAGE_SEND_INTERVAL")
+        消息发送
 
-        while True:
-            if self.__queue:
-                msg = self.__queue[0]
-                if msg.type == PushType.Friend:
-                    for message in msg.get_message_chains():
-                        logger.info(f"{self.qq} -> 好友[{msg.id}] : {message.safe_display}")
-                        await self.__bot.send_friend_message(msg.id, message)
-                else:
-                    for message in await self.group_message_filter(msg):
-                        logger.info(f"{self.qq} -> 群[{msg.id}] : {message.safe_display}")
-                        await self.__bot.send_group_message(msg.id, message)
-                self.__queue.pop(0)
-                await asyncio.sleep(interval)
-            else:
-                await asyncio.sleep(0.1)
+        Args:
+            msg: Message 实例
+
+        Raises:
+
+        """
+        exception = None
+        if msg.type == PushType.Friend:
+            for message in msg.get_message_chains():
+                try:
+                    await self.__bot.send_friend_message(msg.id, message)
+                    logger.info(f"{self.qq} -> 好友[{msg.id}] : {message.safe_display}")
+                except RemoteException as ex:
+                    logger.exception("消息推送模块异常", ex)
+                    continue
+        else:
+            msgs = await self.group_message_filter(msg)
+
+            if any([(AtAll in x) for x in msg.get_message_chains()]) and all([(AtAll not in x) for x in msgs]):
+                exception = AtAllLimitedException()
+
+            for message in msgs:
+                try:
+                    await self.__bot.send_group_message(msg.id, message)
+                    logger.info(f"{self.qq} -> 群[{msg.id}] : {message.safe_display}")
+                except RemoteException as ex:
+                    if "AT_ALL_LIMITED" in str(ex):
+                        exception = AtAllLimitedException()
+                        self.__at_all_limited = time.localtime(time.time()).tm_yday
+                        continue
+                    else:
+                        logger.exception("消息推送模块异常", ex)
+                        continue
+
+        if exception is not None:
+            raise exception
 
     async def group_message_filter(self, message: Message) -> List[MessageChain]:
         """
@@ -107,8 +126,12 @@ class Bot(BaseModel, AsyncEvent):
         for chain in message.get_message_chains():
             if AtAll in chain:
                 # 过滤 Bot 不是群管理员时的 @全体成员 消息
-                bot_info = await self.__bot.get_member(self.qq, message.id)
+                bot_info = await self.__bot.get_member(message.id, self.qq)
                 if bot_info.permission < MemberPerm.Administrator:
+                    chain = chain.exclude(AtAll)
+
+                # 过滤已超出当日次数上限的 @全体成员 消息
+                if time.localtime(time.time()).tm_yday == self.__at_all_limited:
                     chain = chain.exclude(AtAll)
 
                 # 过滤多余的 @全体成员 消息
@@ -137,7 +160,7 @@ class Bot(BaseModel, AsyncEvent):
 
         return new_chains
 
-    def send_to_all_target(self, up: Up, msg: str, target_filter: Callable[[PushTarget], bool] = lambda t: True):
+    async def send_to_all_target(self, up: Up, msg: str, target_filter: Callable[[PushTarget], bool] = lambda t: True):
         """
         发送消息至 UP 主下所有推送目标
 
@@ -151,11 +174,11 @@ class Bot(BaseModel, AsyncEvent):
 
         for target in up.targets:
             if target_filter(target):
-                self.send_message(Message(id=target.id, content=msg, type=target.type))
+                await self.send_message(Message(id=target.id, content=msg, type=target.type))
 
-    def __send_push_message(self, up: Up,
-                            type_selector: Callable[[PushTarget], Union[LiveOn, LiveOff, DynamicUpdate]],
-                            args: Dict[str, Any]):
+    async def __send_push_message(self, up: Up,
+                                  type_selector: Callable[[PushTarget], Union[LiveOn, LiveOff, DynamicUpdate]],
+                                  args: Dict[str, Any]):
         """
         发送推送消息至 UP 主下启用此推送类型的推送目标
 
@@ -176,9 +199,9 @@ class Bot(BaseModel, AsyncEvent):
                 message = select.message
                 for arg, val in args.items():
                     message = message.replace(arg, str(val))
-                self.send_message(Message(id=target.id, content=message, type=target.type))
+                await self.send_message(Message(id=target.id, content=message, type=target.type))
 
-    def send_live_on(self, up: Up, args: Dict[str, Any]):
+    async def send_live_on(self, up: Up, args: Dict[str, Any]):
         """
         发送开播消息至 UP 主下启用开播推送的推送目标
 
@@ -186,24 +209,28 @@ class Bot(BaseModel, AsyncEvent):
             up: 要发送的 UP 主实例
             args: 占位符参数
         """
-        self.__send_push_message(up, lambda t: t.live_on, args)
+        try:
+            await self.__send_push_message(up, lambda t: t.live_on, args)
+        except AtAllLimitedException:
+            await self.send_live_on_at(up, True)
 
-    async def send_live_on_at(self, up: Up):
+    async def send_live_on_at(self, up: Up, limited: bool = False):
         """
         发送开播 @ 我列表中的 @ 消息
 
         Args:
             up: 要发送的 UP 主实例
+            limited: 是否为 @全体成员次数达到上限时发送。默认：False
         """
         if not isinstance(up, Up):
             return
 
         for target in filter(lambda t: t.type == PushType.Group, up.targets):
-            if target.live_on.enabled:
+            if target.live_on.enabled and (limited or "{atall}" not in target.live_on.message):
                 ats = " ".join(["{at" + str(x) + "}" for x in await redis.range_live_on_at(target.id)])
-                self.send_message(Message(id=target.id, content=ats, type=target.type))
+                await self.send_message(Message(id=target.id, content=ats, type=target.type))
 
-    def send_live_off(self, up: Up, args: Dict[str, Any]):
+    async def send_live_off(self, up: Up, args: Dict[str, Any]):
         """
         发送下播消息至 UP 主下启用下播推送的推送目标
 
@@ -211,9 +238,9 @@ class Bot(BaseModel, AsyncEvent):
             up: 要发送的 UP 主实例
             args: 占位符参数
         """
-        self.__send_push_message(up, lambda t: t.live_off, args)
+        await self.__send_push_message(up, lambda t: t.live_off, args)
 
-    def send_live_report(self, up: Up, param: Dict[str, Any]):
+    async def send_live_report(self, up: Up, param: Dict[str, Any]):
         """
         发送直播报告消息至 UP 主下启用直播报告推送的推送目标
 
@@ -223,9 +250,11 @@ class Bot(BaseModel, AsyncEvent):
         """
         for target in filter(lambda t: t.live_report.enabled, up.targets):
             base64str = LiveReportGenerator.generate(param, target.live_report)
-            self.send_message(Message(id=target.id, content="".join(["{base64pic=", base64str, "}"]), type=target.type))
+            await self.send_message(
+                Message(id=target.id, content="".join(["{base64pic=", base64str, "}"]), type=target.type)
+            )
 
-    def send_dynamic_update(self, up: Up, args: Dict[str, Any]):
+    async def send_dynamic_update(self, up: Up, args: Dict[str, Any]):
         """
         发送动态消息至 UP 主下启用动态推送的推送目标
 
@@ -233,22 +262,26 @@ class Bot(BaseModel, AsyncEvent):
             up: 要发送的 UP 主实例
             args: 占位符参数
         """
-        self.__send_push_message(up, lambda t: t.dynamic_update, args)
+        try:
+            await self.__send_push_message(up, lambda t: t.dynamic_update, args)
+        except AtAllLimitedException:
+            await self.send_dynamic_at(up, True)
 
-    async def send_dynamic_at(self, up: Up):
+    async def send_dynamic_at(self, up: Up, limited: bool = False):
         """
         发送动态 @ 我列表中的 @ 消息
 
         Args:
             up: 要发送的 UP 主实例
+            limited: 是否为 @全体成员次数达到上限时发送。默认：False
         """
         if not isinstance(up, Up):
             return
 
         for target in filter(lambda t: t.type == PushType.Group, up.targets):
-            if target.dynamic_update.enabled:
+            if target.dynamic_update.enabled and (limited or "{atall}" not in target.dynamic_update.message):
                 ats = " ".join(["{at" + str(x) + "}" for x in await redis.range_dynamic_at(target.id)])
-                self.send_message(Message(id=target.id, content=ats, type=target.type))
+                await self.send_message(Message(id=target.id, content=ats, type=target.type))
 
     def __eq__(self, other):
         if isinstance(other, Bot):

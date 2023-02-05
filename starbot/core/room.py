@@ -174,8 +174,8 @@ class Up(BaseModel):
                 if is_reconnect:
                     logger.opt(colors=True).info(f"<magenta>[断线重连] {self.uname} ({self.room_id})</>")
                     if config.get("UP_DISCONNECT_CONNECT_MESSAGE"):
-                        self.__bot.send_to_all_target(self, config.get("UP_DISCONNECT_CONNECT_MESSAGE"),
-                                                      lambda t: t.live_on.enabled)
+                        await self.__bot.send_to_all_target(self, config.get("UP_DISCONNECT_CONNECT_MESSAGE"),
+                                                            lambda t: t.live_on.enabled)
                 else:
                     logger.opt(colors=True).info(f"<magenta>[开播] {self.uname} ({self.room_id})</>")
 
@@ -202,7 +202,7 @@ class Up(BaseModel):
                         "{cover}": "".join(["{urlpic=", arg_base["cover"], "}"])
                     }
                     await self.__bot.send_live_on_at(self)
-                    self.__bot.send_live_on(self, args)
+                    await self.__bot.send_live_on(self, args)
 
         @self.__room.on("PREPARING")
         async def live_off(event):
@@ -223,8 +223,8 @@ class Up(BaseModel):
             live_report_param = await self.__generate_live_report_param()
 
             # 推送下播消息和直播报告
-            self.__bot.send_live_off(self, live_off_args)
-            self.__bot.send_live_report(self, live_report_param)
+            await self.__bot.send_live_off(self, live_off_args)
+            await self.__bot.send_live_report(self, live_report_param)
 
         danmu_items = ["danmu", "danmu_ranking", "danmu_diagram", "danmu_cloud"]
         if not config.get("ONLY_HANDLE_NECESSARY_EVENT") or self.__any_live_report_item_enabled(danmu_items):
@@ -372,7 +372,7 @@ class Up(BaseModel):
                     "{picture}": "".join(["{base64pic=", base64str, "}"])
                 }
                 await self.__bot.send_dynamic_at(self)
-                self.__bot.send_dynamic_update(self, dynamic_update_args)
+                await self.__bot.send_dynamic_update(self, dynamic_update_args)
 
     async def __generate_live_report_param(self):
         """

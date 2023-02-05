@@ -23,7 +23,7 @@ async def send(request: aiohttp.web.Request) -> aiohttp.web.Response:
         target = datasource.get_target_by_key(key)
         bot = datasource.get_bot_by_key(key)
         msg = Message(id=target.id, content=message, type=target.type)
-        bot.send_message(msg)
+        await bot.send_message(msg)
         return web.Response(text="success")
     except DataSourceException:
         logger.warning(f"HTTP API 推送失败, 不存在的推送 key: {key}")

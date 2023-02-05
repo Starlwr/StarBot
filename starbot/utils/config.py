@@ -37,7 +37,7 @@ SIMPLE_CONFIG = {
     "BUVID3": None,
 
     # 成功连接所有主播直播间的最大等待时长，可使得日志输出顺序更加易读，一般无需修改此处，单位：秒
-    "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 60,
+    "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 30,
 
     # 是否自动判断仅连接必要的直播间，即当某直播间的开播、下播、直播报告开关均未开启时，自动跳过连接直播间，以节省性能
     "ONLY_CONNECT_NECESSARY_ROOM": False,
@@ -78,9 +78,6 @@ SIMPLE_CONFIG = {
     "USE_HTTP_API": False,
     # HTTP API 端口
     "HTTP_API_PORT": 8088,
-
-    # 消息发送间隔，消息发送过快容易被风控，单位：秒
-    "MESSAGE_SEND_INTERVAL": 0.5,
     
     # 命令触发前缀
     "COMMAND_PREFIX": "",
@@ -94,9 +91,7 @@ SIMPLE_CONFIG = {
     # 风控发送失败消息滞留时间上限，消息因风控滞留超出此时长不会进行补发，0 为无限制，单位：秒
     "RESEND_TIME_LIMIT": 0,
     # 是否补发开播推送、下播推送、直播报告、动态推送中的 @全体成员 和 @群成员 消息，可能造成不必要的打扰，不推荐开启
-    "RESEND_AT_MESSAGE": False,
-    # 是否补发除开播推送、下播推送、直播报告、动态推送外的其他消息，如群内命令所触发的回复消息
-    "RESEND_ALL_MESSAGE": False
+    "RESEND_AT_MESSAGE": False
 }
 
 FULL_CONFIG = {
@@ -136,7 +131,7 @@ FULL_CONFIG = {
     "BUVID3": None,
 
     # 成功连接所有主播直播间的最大等待时长，可使得日志输出顺序更加易读，一般无需修改此处，单位：秒
-    "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 60,
+    "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 30,
 
     # 是否自动判断仅连接必要的直播间，即当某直播间的开播、下播、直播报告开关均未开启时，自动跳过连接直播间，以节省性能
     "ONLY_CONNECT_NECESSARY_ROOM": False,
@@ -178,9 +173,6 @@ FULL_CONFIG = {
     # HTTP API 端口
     "HTTP_API_PORT": 8088,
 
-    # 消息发送间隔，消息发送过快容易被风控，单位：秒
-    "MESSAGE_SEND_INTERVAL": 0.5,
-
     # 命令触发前缀
     "COMMAND_PREFIX": "",
     # 每个群开播 @ 我命令人数上限，单次 @ 人数过多容易被风控，不推荐修改
@@ -193,9 +185,7 @@ FULL_CONFIG = {
     # 风控发送失败消息滞留时间上限，消息因风控滞留超出此时长不会进行补发，0 为无限制，单位：秒
     "RESEND_TIME_LIMIT": 0,
     # 是否补发开播推送、下播推送、直播报告、动态推送中的 @全体成员 和 @群成员 消息，可能造成不必要的打扰，不推荐开启
-    "RESEND_AT_MESSAGE": False,
-    # 是否补发除开播推送、下播推送、直播报告、动态推送外的其他消息，如群内命令所触发的回复消息
-    "RESEND_ALL_MESSAGE": False
+    "RESEND_AT_MESSAGE": False
 }
 
 use_config = SIMPLE_CONFIG

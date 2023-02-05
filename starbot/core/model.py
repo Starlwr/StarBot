@@ -171,7 +171,7 @@ class LiveReport(BaseModel):
                 生成弹幕词云
         """
         return LiveReport(enabled=True, logo=None, logo_base64=None,
-                          time=True, fans_change=True, fans_medal_change=True,guard_change=True,
+                          time=True, fans_change=True, fans_medal_change=True, guard_change=True,
                           danmu=True, box=True, gift=True, sc=True, guard=True,
                           danmu_ranking=3, box_ranking=3, box_profit_ranking=3, gift_ranking=3, sc_ranking=3,
                           guard_list=True, box_profit_diagram=True,
