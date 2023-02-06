@@ -10,9 +10,9 @@ from graia.ariadne.util.interrupt import FunctionWaiter
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
 
-from ..utils import config, redis
-from ..utils.network import request
-from ..utils.utils import remove_command_param_placeholder
+from ....utils import config, redis
+from ....utils.network import request
+from ....utils.utils import remove_command_param_placeholder
 
 prefix = config.get("COMMAND_PREFIX")
 

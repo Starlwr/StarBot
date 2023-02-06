@@ -7,9 +7,9 @@ from graia.ariadne.model import Member, Group
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
 
-from ..core.datasource import DataSource
-from ..core.model import PushType
-from ..utils import config, redis
+from ....core.datasource import DataSource
+from ....core.model import PushType
+from ....utils import config, redis
 
 prefix = config.get("COMMAND_PREFIX")
 

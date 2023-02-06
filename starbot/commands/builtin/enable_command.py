@@ -7,8 +7,8 @@ from graia.ariadne.model import Group, Member, MemberPerm
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
 
-from ..utils import config, redis
-from ..utils.utils import remove_command_param_placeholder
+from ...utils import config, redis
+from ...utils.utils import remove_command_param_placeholder
 
 prefix = config.get("COMMAND_PREFIX")
 master = config.get("MASTER_QQ")
@@ -29,16 +29,16 @@ channel = Channel.current()
         listening_events=[GroupMessage],
         inline_dispatchers=[Twilight(
             FullMatch(prefix),
-            UnionMatch("禁用", "disable"),
+            UnionMatch("启用", "enable"),
             "name" @ ParamMatch()
         )],
     )
 )
-async def disable_command(app: Ariadne,
-                          source: Source,
-                          group: Group,
-                          member: Member,
-                          name: MessageChain = ResultValue()):
+async def enable_command(app: Ariadne,
+                         source: Source,
+                         group: Group,
+                         member: Member,
+                         name: MessageChain = ResultValue()):
     if member.permission == MemberPerm.Member and member.id != master:
         await app.send_message(group, MessageChain("您没有执行此命令的权限~"), quote=source)
         return
@@ -50,9 +50,9 @@ async def disable_command(app: Ariadne,
         )
         return
 
-    if redis.exists_disable_command(disable_map[name], group.id):
-        await app.send_message(group, "此命令已经是禁用状态~", quote=source)
+    if not redis.exists_disable_command(disable_map[name], group.id):
+        await app.send_message(group, "此命令已经是启用状态~", quote=source)
         return
 
-    await redis.add_disable_command(disable_map[name], group.id)
-    await app.send_message(group, "命令已禁用~", quote=source)
+    await redis.delete_disable_command(disable_map[name], group.id)
+    await app.send_message(group, "命令已启用~", quote=source)

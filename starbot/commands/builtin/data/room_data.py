@@ -10,11 +10,11 @@ from graia.ariadne.model import Friend, Group
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
 
-from ..core.datasource import DataSource
-from ..core.model import PushType
-from ..painter.PicGenerator import PicGenerator, Color
-from ..utils import config, redis
-from ..utils.utils import timestamp_format, get_unames_and_faces_by_uids, mask_round
+from ....core.datasource import DataSource
+from ....core.model import PushType
+from ....painter.PicGenerator import PicGenerator, Color
+from ....utils import config, redis
+from ....utils.utils import timestamp_format, get_unames_and_faces_by_uids, mask_round
 
 prefix = config.get("COMMAND_PREFIX")
 
@@ -50,8 +50,8 @@ async def room_data(app: Ariadne, source: Source, sender: Union[Friend, Group]):
         uname = uname[0]
         face = face[0]
 
-        generator = PicGenerator(width, height)
-        pic = generator.set_pos(175, 80).draw_rounded_rectangle(0, 0, width, height, 35, Color.WHITE).copy_bottom(35)
+        pic = PicGenerator(width, height)
+        pic.set_pos(175, 80).draw_rounded_rectangle(0, 0, width, height, 35, Color.WHITE).copy_bottom(35)
 
         pic.draw_img_alpha(mask_round(face.resize((face_size, face_size)).convert("RGBA")), (50, 50))
         pic.draw_section(f"{uname} 的直播间数据").set_pos(50, 150 + pic.row_space)

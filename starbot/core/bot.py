@@ -1,5 +1,4 @@
 import asyncio
-import os
 import sys
 
 from creart import create
@@ -110,16 +109,11 @@ class StarBot:
 
         # 载入命令
         logger.info("开始载入命令模块")
-        commands_path = os.path.dirname(os.path.dirname(__file__)) + "\\commands"
 
         saya = create(Saya)
         with saya.module_context():
-            for root, dirs, files in os.walk(commands_path, topdown=False):
-                for name in files:
-                    if name.endswith(".py"):
-                        name = name[:-3]
-                        saya.require(f"starbot.commands.{name}")
-                        logger.success(f"{name} 命令模块载入成功")
+            saya.require(f"starbot.commands.builtin")
+            logger.success("内置命令模块载入完毕")
 
         # 启动消息推送模块
         if not self.__datasource.bots:

@@ -10,11 +10,11 @@ from graia.ariadne.model import Friend, Group, Member
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
 
-from ..core.datasource import DataSource
-from ..core.model import PushType
-from ..painter.PicGenerator import PicGenerator, Color
-from ..utils import config, redis
-from ..utils.utils import timestamp_format, get_unames_and_faces_by_uids, mask_round, get_parallel_ranking, get_ratio
+from ....core.datasource import DataSource
+from ....core.model import PushType
+from ....painter.PicGenerator import PicGenerator, Color
+from ....utils import config, redis
+from ....utils.utils import timestamp_format, get_unames_and_faces_by_uids, mask_round, get_parallel_ranking
 
 prefix = config.get("COMMAND_PREFIX")
 
@@ -26,12 +26,12 @@ channel = Channel.current()
         listening_events=[FriendMessage, GroupMessage],
         inline_dispatchers=[Twilight(
             FullMatch(prefix),
-            FullMatch("我的总数据")
+            FullMatch("我的数据")
         )],
     )
 )
-async def user_data_total(app: Ariadne, source: Source, sender: Union[Friend, Group], member: Optional[Member]):
-    if isinstance(sender, Group) and await redis.exists_disable_command("DenyUserDataTotal", sender.id):
+async def user_data(app: Ariadne, source: Source, sender: Union[Friend, Group], member: Optional[Member]):
+    if isinstance(sender, Group) and await redis.exists_disable_command("DenyUserData", sender.id):
         await app.send_message(sender, MessageChain("此命令已被禁用~"), quote=source)
         return
 
@@ -68,97 +68,84 @@ async def user_data_total(app: Ariadne, source: Source, sender: Union[Friend, Gr
         width = 1000
         height = 100000
         face_size = 100
-        generator = PicGenerator(width, height)
-        pic = generator.set_pos(175, 80).draw_rounded_rectangle(0, 0, width, height, 35, Color.WHITE).copy_bottom(35)
+        pic = PicGenerator(width, height)
+        pic.set_pos(175, 80).draw_rounded_rectangle(0, 0, width, height, 35, Color.WHITE).copy_bottom(35)
 
         pic.draw_img_alpha(mask_round(face.resize((face_size, face_size)).convert("RGBA")), (50, 50))
-        pic.draw_section(f"{uname} 的总数据").set_pos(50, 150 + pic.row_space)
-        pic.draw_tip(f"数据自主播注册之日起开始累计")
+        pic.draw_section(f"{uname} 的数据").set_pos(50, 150 + pic.row_space)
+        pic.draw_tip("此处为在本直播间最近一场直播的数据")
+        pic.draw_tip("使用\"我的总数据\"命令可查询在本直播间的累计总数据")
         pic.draw_tip(f"查询时间: {timestamp_format(int(time.time()), '%Y/%m/%d %H:%M:%S')}")
         pic.draw_text("")
 
-        user_danmu_count = await redis.get_user_danmu_all(up.room_id, uid)
-        user_box_count = await redis.get_user_box_all(up.room_id, uid)
-        user_box_profit = await redis.get_user_box_profit_all(up.room_id, uid)
-        user_gift_profit = await redis.get_user_gift_all(up.room_id, uid)
-        user_sc_profit = await redis.get_user_sc_all(up.room_id, uid)
-        user_captain_count = await redis.get_user_captain_all(up.room_id, uid)
-        user_commander_count = await redis.get_user_commander_all(up.room_id, uid)
-        user_governor_count = await redis.get_user_governor_all(up.room_id, uid)
+        user_danmu_count = await redis.get_user_danmu_count(up.room_id, uid)
+        user_box_count = await redis.get_user_box_count(up.room_id, uid)
+        user_box_profit = await redis.get_user_box_profit(up.room_id, uid)
+        user_gift_profit = await redis.get_user_gift_profit(up.room_id, uid)
+        user_sc_profit = await redis.get_user_sc_profit(up.room_id, uid)
+        user_captain_count = await redis.get_user_captain_count(up.room_id, uid)
+        user_commander_count = await redis.get_user_commander_count(up.room_id, uid)
+        user_governor_count = await redis.get_user_governor_count(up.room_id, uid)
 
         if not any([user_danmu_count, user_box_count, user_gift_profit, user_sc_profit,
                     user_captain_count, user_commander_count, user_governor_count]):
-            pic.draw_text_multiline(50, f"未查询到 {uname} 在 {up.uname} 房间的数据")
+            pic.draw_text_multiline(50, f"未查询到 {uname} 在 {up.uname} 最近一场直播中的数据")
             pic.draw_text("请先在直播间中互动后再来查询")
+            pic.draw_text(f"或尝试使用\"{prefix}我的总数据\"命令查询总数据")
         else:
-            pic.draw_text_multiline(50, f"{uname} 在 {up.uname} 房间的总数据:")
+            pic.draw_text_multiline(50, f"{uname} 在 {up.uname} 最近一场直播中的数据:")
             if user_danmu_count:
                 pic.draw_text("")
-                user_danmu_counts = [x[1] for x in await redis.range_user_danmu_all(up.room_id)]
-                room_danmu_count = await redis.get_room_danmu_all(up.room_id)
-                ratio = get_ratio(user_danmu_count, room_danmu_count)
+                user_danmu_counts = [x[1] for x in await redis.range_user_danmu_count(up.room_id)]
                 rank, total, diff = get_parallel_ranking(user_danmu_count, user_danmu_counts)
                 pic.draw_text(
-                    ["发送弹幕总数: ", str(user_danmu_count), " 条   排名: ", f"{rank}/{total}"],
+                    ["发送弹幕数: ", str(user_danmu_count), " 条   排名: ", f"{rank}/{total}"],
                     [Color.BLACK, Color.LINK, Color.BLACK, Color.LINK]
                 )
-                pic.draw_text(["占据了弹幕总数的 ", ratio], [Color.BLACK, Color.LINK])
                 if diff is not None:
                     pic.draw_text(["距离上一名还需: ", str(diff), " 条"], [Color.BLACK, Color.LINK, Color.BLACK])
 
             if user_box_count:
                 pic.draw_text("")
-                user_box_counts = [x[1] for x in await redis.range_user_box_all(up.room_id)]
-                room_box_count = await redis.get_room_box_all(up.room_id)
-                ratio = get_ratio(user_box_count, room_box_count)
+                user_box_counts = [x[1] for x in await redis.range_user_box_count(up.room_id)]
                 rank, total, diff = get_parallel_ranking(user_box_count, user_box_counts)
                 pic.draw_text(
-                    ["开启盲盒总数: ", str(user_box_count), " 个   排名: ", f"{rank}/{total}"],
+                    ["开启盲盒数: ", str(user_box_count), " 个   排名: ", f"{rank}/{total}"],
                     [Color.BLACK, Color.LINK, Color.BLACK, Color.LINK]
                 )
-                pic.draw_text(["占据了盲盒总数的 ", ratio], [Color.BLACK, Color.LINK])
                 if diff is not None:
                     pic.draw_text(["距离上一名还需: ", str(diff), " 个"], [Color.BLACK, Color.LINK, Color.BLACK])
 
                 pic.draw_text("")
-                user_box_profits = [x[1] for x in await redis.range_user_box_profit_all(up.room_id)]
-                room_box_profit = await redis.get_room_box_profit_all(up.room_id)
+                user_box_profits = [x[1] for x in await redis.range_user_box_profit(up.room_id)]
                 rank, total, diff = get_parallel_ranking(user_box_profit, user_box_profits)
                 color = Color.RED if user_box_profit > 0 else (Color.GREEN if user_box_profit < 0 else Color.GRAY)
-                room_color = Color.RED if room_box_profit > 0 else (Color.GREEN if room_box_profit < 0 else Color.GRAY)
                 pic.draw_text(
-                    ["盲盒总盈亏: ", str(user_box_profit), " 元   排名: ", f"{rank}/{total}"],
+                    ["盲盒盈亏: ", str(user_box_profit), " 元   排名: ", f"{rank}/{total}"],
                     [Color.BLACK, color, Color.BLACK, Color.LINK]
                 )
-                pic.draw_text(["直播间盲盒总盈亏: ", str(room_box_profit), " 元"], [Color.BLACK, room_color, Color.BLACK])
                 if diff is not None:
                     pic.draw_text(["距离上一名还需: ", str(diff), " 元"], [Color.BLACK, Color.LINK, Color.BLACK])
 
             if user_gift_profit:
                 pic.draw_text("")
-                user_gift_profits = [x[1] for x in await redis.range_user_gift_all(up.room_id)]
-                room_gift_profit = await redis.get_room_gift_all(up.room_id)
-                ratio = get_ratio(user_gift_profit, room_gift_profit)
+                user_gift_profits = [x[1] for x in await redis.range_user_gift_profit(up.room_id)]
                 rank, total, diff = get_parallel_ranking(user_gift_profit, user_gift_profits)
                 pic.draw_text(
-                    ["送出礼物总价值: ", str(user_gift_profit), " 元   排名: ", f"{rank}/{total}"],
+                    ["送出礼物价值: ", str(user_gift_profit), " 元   排名: ", f"{rank}/{total}"],
                     [Color.BLACK, Color.LINK, Color.BLACK, Color.LINK]
                 )
-                pic.draw_text(["占据了礼物总价值的 ", ratio], [Color.BLACK, Color.LINK])
                 if diff is not None:
                     pic.draw_text(["距离上一名还需: ", str(diff), " 元"], [Color.BLACK, Color.LINK, Color.BLACK])
 
             if user_sc_profit:
                 pic.draw_text("")
-                user_sc_profits = [x[1] for x in await redis.range_user_sc_all(up.room_id)]
-                room_sc_profit = await redis.get_room_sc_all(up.room_id)
-                ratio = get_ratio(user_sc_profit, room_sc_profit)
+                user_sc_profits = [x[1] for x in await redis.range_user_sc_profit(up.room_id)]
                 rank, total, diff = get_parallel_ranking(user_sc_profit, user_sc_profits)
                 pic.draw_text(
-                    ["发送 SC (醒目留言) 总价值: ", str(user_sc_profit), " 元   排名: ", f"{rank}/{total}"],
+                    ["发送 SC (醒目留言) 价值: ", str(user_sc_profit), " 元   排名: ", f"{rank}/{total}"],
                     [Color.BLACK, Color.LINK, Color.BLACK, Color.LINK]
                 )
-                pic.draw_text(["占据了 SC (醒目留言) 总价值的 ", ratio], [Color.BLACK, Color.LINK])
                 if diff is not None:
                     pic.draw_text(["距离上一名还需: ", str(diff), " 元"], [Color.BLACK, Color.LINK, Color.BLACK])
 
