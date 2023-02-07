@@ -12,3 +12,5 @@ import starbot.commands.builtin.data.user_data_total
 import starbot.commands.builtin.disable_command
 import starbot.commands.builtin.enable_command
 import starbot.commands.builtin.help
+import starbot.commands.builtin.ranking.ranking
+import starbot.commands.builtin.ranking.ranking_double

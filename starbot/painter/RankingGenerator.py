@@ -1,4 +1,4 @@
-from typing import Union, Tuple, List
+from typing import Optional, Union, Tuple, List
 
 from PIL import Image, ImageDraw
 
@@ -69,6 +69,7 @@ class RankingGenerator:
                     unames: List[str],
                     counts: Union[List[int], List[float]],
                     width: int,
+                    top_count: Optional[Union[int, float]] = None,
                     start_color: Union[Color, Tuple[int, int, int]] = Color.DEEPBLUE,
                     end_color: Union[Color, Tuple[int, int, int]] = Color.LIGHTBLUE) -> Image:
         """
@@ -80,6 +81,7 @@ class RankingGenerator:
             unames: 昵称列表，按照数量列表降序排序
             counts: 数量列表，降序排序
             width: 排行榜图片宽度
+            top_count: 第一名数量，后续排行条长度会基于此数量计算长度。默认：自动取数量列表中第一名
             start_color: 排行条渐变起始颜色。默认：深蓝色 (57, 119, 230)
             end_color: 排行条渐变终止颜色。默认：浅蓝色 (55, 187, 248)
         """
@@ -93,7 +95,8 @@ class RankingGenerator:
 
         bar_x = face_size - offset
         top_bar_width = width - face_size + offset
-        top_count = counts[0]
+        if top_count is None:
+            top_count = counts[0]
 
         chart = PicGenerator(width, (face_size * count) + (row_space * (count - 1)))
         chart.set_row_space(row_space)
@@ -116,6 +119,7 @@ class RankingGenerator:
                            unames: List[str],
                            counts: Union[List[int], List[float]],
                            width: int,
+                           top_count: Optional[Union[int, float]] = None,
                            start_color: Union[Color, Tuple[int, int, int]] = Color.DEEPRED,
                            end_color: Union[Color, Tuple[int, int, int]] = Color.LIGHTRED,
                            reverse_start_color: Union[Color, Tuple[int, int, int]] = Color.DEEPGREEN,
@@ -129,6 +133,7 @@ class RankingGenerator:
             unames: 昵称列表，按照数量列表降序排序
             counts: 数量列表，降序排序
             width: 排行榜图片宽度
+            top_count: 第一名数量，后续排行条长度会基于此数量计算长度。默认：自动取数量列表中第一名
             start_color: 正向排行条渐变起始颜色，数量为正时使用。默认：深红色 (57, 119, 230)
             end_color: 正向排行条渐变终止颜色，数量为正时使用。默认：浅红色 (55, 187, 248)
             reverse_start_color: 反向排行条渐变起始颜色，数量为负时使用。默认：深绿色 (57, 119, 230)
@@ -146,7 +151,8 @@ class RankingGenerator:
         bar_x = face_x + face_size - offset
         reverse_bar_x = face_x + offset
         top_bar_width = (width - face_size) / 2 + offset
-        top_count = max(max(counts), abs(min(counts)))
+        if top_count is None:
+            top_count = max(max(counts), abs(min(counts)))
 
         chart = PicGenerator(width, (face_size * count) + (row_space * (count - 1)))
         chart.set_row_space(row_space)

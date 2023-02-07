@@ -333,6 +333,13 @@ async def range_user_danmu_all(room_id: int, start: int = 0, end: int = -1) -> L
     return result
 
 
+async def rev_range_user_danmu_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+    await zunionstore(f"TempDanmuTotal:{room_id}", [f"UserDanmuCount:{room_id}", f"UserDanmuTotal:{room_id}"])
+    result = await zrevrangewithscoresi(f"TempDanmuTotal:{room_id}", start, end)
+    await delete(f"TempDanmuTotal:{room_id}")
+    return result
+
+
 # 房间弹幕记录
 
 async def get_room_danmu(room_id: int) -> List[str]:
@@ -447,6 +454,13 @@ async def range_user_box_all(room_id: int, start: int = 0, end: int = -1) -> Lis
     return result
 
 
+async def rev_range_user_box_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+    await zunionstore(f"TempBoxTotal:{room_id}", [f"UserBoxCount:{room_id}", f"UserBoxTotal:{room_id}"])
+    result = await zrevrangewithscoresi(f"TempBoxTotal:{room_id}", start, end)
+    await delete(f"TempBoxTotal:{room_id}")
+    return result
+
+
 # 房间盲盒盈亏
 
 async def get_room_box_profit(room_id: int) -> float:
@@ -520,6 +534,13 @@ async def get_user_box_profit_all(room_id: int, uid: int) -> float:
 async def range_user_box_profit_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
     await zunionstore(f"TempBoxProfitTotal:{room_id}", [f"UserBoxProfit:{room_id}", f"UserBoxProfitTotal:{room_id}"])
     result = await zrangewithscoresf1(f"TempBoxProfitTotal:{room_id}", start, end)
+    await delete(f"TempBoxProfitTotal:{room_id}")
+    return result
+
+
+async def rev_range_user_box_profit_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
+    await zunionstore(f"TempBoxProfitTotal:{room_id}", [f"UserBoxProfit:{room_id}", f"UserBoxProfitTotal:{room_id}"])
+    result = await zrevrangewithscoresf1(f"TempBoxProfitTotal:{room_id}", start, end)
     await delete(f"TempBoxProfitTotal:{room_id}")
     return result
 
@@ -654,6 +675,13 @@ async def range_user_gift_all(room_id: int, start: int = 0, end: int = -1) -> Li
     return result
 
 
+async def rev_range_user_gift_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, float]]:
+    await zunionstore(f"TempGiftTotal:{room_id}", [f"UserGiftProfit:{room_id}", f"UserGiftTotal:{room_id}"])
+    result = await zrevrangewithscoresf1(f"TempGiftTotal:{room_id}", start, end)
+    await delete(f"TempGiftTotal:{room_id}")
+    return result
+
+
 # 房间礼物时间分布
 
 async def get_room_gift_time(room_id: int) -> List[Tuple[str, float]]:
@@ -750,6 +778,13 @@ async def get_user_sc_all(room_id: int, uid: int) -> int:
 async def range_user_sc_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
     await zunionstore(f"TempScTotal:{room_id}", [f"UserScProfit:{room_id}", f"UserScTotal:{room_id}"])
     result = await zrangewithscoresi(f"TempScTotal:{room_id}", start, end)
+    await delete(f"TempScTotal:{room_id}")
+    return result
+
+
+async def rev_range_user_sc_all(room_id: int, start: int = 0, end: int = -1) -> List[Tuple[str, int]]:
+    await zunionstore(f"TempScTotal:{room_id}", [f"UserScProfit:{room_id}", f"UserScTotal:{room_id}"])
+    result = await zrevrangewithscoresi(f"TempScTotal:{room_id}", start, end)
     await delete(f"TempScTotal:{room_id}")
     return result
 
