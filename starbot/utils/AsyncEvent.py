@@ -14,6 +14,7 @@ class AsyncEvent:
     """
 
     __handlers: Optional[Dict] = {}
+    __running_tasks = set()
 
     def __init__(self):
         self.__handlers = {}
@@ -74,7 +75,9 @@ class AsyncEvent:
         name = name.upper()
         if name in self.__handlers:
             for coroutine in self.__handlers[name]:
-                asyncio.create_task(coroutine(data))
+                task = asyncio.create_task(coroutine(data))
+                self.__running_tasks.add(task)
+                task.add_done_callback(lambda t: self.__running_tasks.remove(t))
 
         if name != '__ALL__':
             self.dispatch('__ALL__', {
