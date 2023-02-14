@@ -63,6 +63,10 @@ class Up(BaseModel):
         self.__loop = asyncio.get_event_loop()
         self.__bot = None
 
+    @property
+    def status(self):
+        return 6 if not self.__room else self.__room.get_status()
+
     def inject_bot(self, bot):
         self.__bot = bot
 

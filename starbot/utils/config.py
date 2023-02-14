@@ -64,9 +64,12 @@ SIMPLE_CONFIG = {
     # 弹幕词云图片背景色
     "DANMU_CLOUD_BACKGROUND_COLOR": "white",
     # 弹幕词云最大字号
-    "DANMU_CLOUD_MAX_FONT_SIZE": 300,
+    "DANMU_CLOUD_MAX_FONT_SIZE": 200,
     # 弹幕词云最多词数
-    "DANMU_CLOUD_MAX_WORDS": 100,
+    "DANMU_CLOUD_MAX_WORDS": 80,
+
+    # 需加载的用户自定义命令包
+    "CUSTOM_COMMANDS_PACKAGE": None,
 
     # Bot 主人 QQ，用于接收部分 Bot 异常通知等
     "MASTER_QQ": None,
@@ -161,6 +164,9 @@ FULL_CONFIG = {
     "DANMU_CLOUD_MAX_FONT_SIZE": 200,
     # 弹幕词云最多词数
     "DANMU_CLOUD_MAX_WORDS": 80,
+
+    # 需加载的用户自定义命令包
+    "CUSTOM_COMMANDS_PACKAGE": None,
 
     # Bot 主人 QQ，用于接收 Bot 异常通知等
     "MASTER_QQ": None,

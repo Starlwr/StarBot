@@ -1,3 +1,5 @@
 .idea
 venv
+
+starbot/commands/private
 main.py

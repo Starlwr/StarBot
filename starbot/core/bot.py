@@ -109,11 +109,15 @@ class StarBot:
 
         # 载入命令
         logger.info("开始载入命令模块")
+        custom_commands = config.get("CUSTOM_COMMANDS_PACKAGE")
 
         saya = create(Saya)
         with saya.module_context():
             saya.require(f"starbot.commands.builtin")
             logger.success("内置命令模块载入完毕")
+            if custom_commands:
+                saya.require(custom_commands)
+                logger.success("用户自定义命令模块载入完毕")
 
         # 启动消息推送模块
         if not self.__datasource.bots:

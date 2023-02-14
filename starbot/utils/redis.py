@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union, Tuple, List, Set
+from typing import Any, Union, Tuple, List, Set
 
 import aioredis
 from loguru import logger
@@ -26,6 +26,36 @@ async def init():
 
 
 # String
+
+async def expire(key: str, seconds: int):
+    await __redis.expire(key, seconds)
+
+
+async def exists(key: str) -> bool:
+    return await __redis.exists(key)
+
+
+async def get(key: str) -> str:
+    result = await __redis.get(key)
+    if result is None:
+        return ""
+    return result.decode()
+
+
+async def geti(key: str) -> int:
+    result = await __redis.get(key)
+    if result is None:
+        return 0
+    return int(result)
+
+
+async def incr(key: str, value: int = 1) -> int:
+    return await __redis.incr(key, value)
+
+
+async def set_(key: str, value: Union[str, int]):
+    await __redis.set(key, value)
+
 
 async def delete(key: str):
     await __redis.delete(key)
@@ -83,11 +113,11 @@ async def hset(key: str, hkey: Union[str, int], value: Any):
     await __redis.hset(key, hkey, value)
 
 
-async def hincrby(key: str, hkey: Union[str, int], value: Optional[int] = 1) -> int:
+async def hincrby(key: str, hkey: Union[str, int], value: int = 1) -> int:
     return await __redis.hincrby(key, hkey, value)
 
 
-async def hincrbyfloat(key: str, hkey: Union[str, int], value: Optional[float] = 1.0) -> float:
+async def hincrbyfloat(key: str, hkey: Union[str, int], value: float = 1.0) -> float:
     return await __redis.hincrbyfloat(key, hkey, value)
 
 
@@ -162,7 +192,7 @@ async def zadd(key: str, member: str, score: Union[int, float]):
     await __redis.zadd(key, {member: score})
 
 
-async def zincrby(key: str, member: Union[str, int], score: Optional[Union[int, float]] = 1) -> float:
+async def zincrby(key: str, member: Union[str, int], score: Union[int, float] = 1) -> float:
     return await __redis.zincrby(key, score, member)
 
 
