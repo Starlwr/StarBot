@@ -232,6 +232,11 @@ class DynamicPicGenerator:
             title = limit_str_length(card["title"], 14)
             desc = f"{card['area_v2_name']} · {card['watched_show']}"
             await cls.__draw_live_area(pic, card["cover"], title, desc, text_margin, forward)
+        elif dynamic_type == 4300:
+            # 收藏
+            title = limit_str_length(card["title"], 14)
+            desc = limit_str_length(f"{card['media_count']}个内容", 17)
+            await cls.__draw_live_area(pic, card["cover"], title, desc, text_margin, forward)
         elif dynamic_type == 4308:
             # 直播
             base = card["live_play_info"]
