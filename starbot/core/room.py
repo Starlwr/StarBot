@@ -155,6 +155,14 @@ class Up(BaseModel):
             else:
                 logger.success(f"已成功连接到 {self.uname} 的直播间 {self.room_id}")
 
+                if not await redis.exists_live_status(self.room_id):
+                    room_info = await self.__live_room.get_room_play_info()
+                    status = room_info["live_status"]
+                    await redis.set_live_status(self.room_id, status)
+                    if status == 1:
+                        start_time = room_info["live_time"]
+                        await redis.set_live_start_time(self.room_id, start_time)
+
                 self.__is_reconnect = True
 
         @self.__room.on("LIVE")

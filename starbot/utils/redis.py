@@ -207,6 +207,10 @@ async def zunionstore(dest: str, source: Union[str, List[str]]):
 
 # 直播间状态，0：未开播，1：正在直播，2：轮播
 
+async def exists_live_status(room_id: int) -> bool:
+    return await hexists("LiveStatus", room_id)
+
+
 async def get_live_status(room_id: int) -> int:
     return await hgeti("LiveStatus", room_id)
 
@@ -216,6 +220,10 @@ async def set_live_status(room_id: int, status: int):
 
 
 # 直播开始时间
+
+async def exists_live_start_time(room_id: int) -> bool:
+    return await hexists("StartTime", room_id)
+
 
 async def get_live_start_time(room_id: int) -> int:
     return await hgeti("StartTime", room_id)
