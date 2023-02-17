@@ -59,6 +59,10 @@ class StarBot:
             logger.error(ex.msg)
             return
 
+        if not self.__datasource.bots:
+            logger.error("数据源配置为空, 请先在数据源中配置完毕后再重新运行")
+            return
+
         # 连接 Redis
         try:
             await redis.init()
@@ -120,10 +124,6 @@ class StarBot:
                 logger.success("用户自定义命令模块载入完毕")
 
         # 启动消息推送模块
-        if not self.__datasource.bots:
-            logger.error("不存在需要启动的 Bot 账号, 请先在数据源中配置完毕后再重新运行")
-            return
-
         Ariadne.options["default_account"] = self.__datasource.bots[0].qq
 
         logger.info("开始运行 Ariadne 消息推送模块")

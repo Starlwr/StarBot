@@ -121,6 +121,10 @@ async def hincrbyfloat(key: str, hkey: Union[str, int], value: float = 1.0) -> f
     return await __redis.hincrbyfloat(key, hkey, value)
 
 
+async def hdel(key: str, hkey: Union[str, int]):
+    await __redis.hdel(key, hkey)
+
+
 # Set
 
 async def scard(key: str) -> int:

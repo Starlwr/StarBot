@@ -81,6 +81,8 @@ SIMPLE_CONFIG = {
     "USE_HTTP_API": False,
     # HTTP API 端口
     "HTTP_API_PORT": 8088,
+    # 默认 HTTP API 推送 Bot QQ，多 Bot 推送时必填
+    "HTTP_API_DEAFULT_BOT": None,
     
     # 命令触发前缀
     "COMMAND_PREFIX": "",
@@ -175,9 +177,11 @@ FULL_CONFIG = {
     "PROXY": "",
 
     # 是否使用 HTTP API 推送
-    "USE_HTTP_API": True,
+    "USE_HTTP_API": False,
     # HTTP API 端口
     "HTTP_API_PORT": 8088,
+    # 默认 HTTP API 推送 Bot QQ，多 Bot 推送时必填
+    "HTTP_API_DEAFULT_BOT": None,
 
     # 命令触发前缀
     "COMMAND_PREFIX": "",

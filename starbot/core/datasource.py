@@ -24,9 +24,6 @@ class DataSource(metaclass=abc.ABCMeta):
         self.__up_list: List[Up] = []
         self.__up_map: Dict[int, Up] = {}
         self.__uid_list: List[int] = []
-        self.__target_list: List[PushTarget] = []
-        self.__target_key_map: Dict[str, PushTarget] = {}
-        self.__target_bot_map: Dict[str, Bot] = {}
 
     @abc.abstractmethod
     async def load(self):
@@ -47,13 +44,6 @@ class DataSource(metaclass=abc.ABCMeta):
         self.__uid_list = list(self.__up_map.keys())
         if len(set(self.__uid_list)) < len(self.__uid_list):
             raise DataSourceException("配置中不可含有重复的 UID")
-        self.__target_list = [x for target in map(lambda up: up.targets, self.__up_list) for x in target]
-        self.__target_key_map = dict(zip(map(lambda target: target.key, self.__target_list), self.__target_list))
-
-        for bot in self.bots:
-            for up in bot.ups:
-                for target in up.targets:
-                    self.__target_bot_map[target.key] = bot
 
     def get_up_list(self) -> List[Up]:
         """
@@ -91,12 +81,12 @@ class DataSource(metaclass=abc.ABCMeta):
             raise DataSourceException(f"不存在的 UID: {uid}")
         return up
 
-    def get_bot(self, qq: int) -> Bot:
+    def get_bot(self, qq: Optional[int] = None) -> Bot:
         """
         根据 QQ 获取 Bot 实例
 
         Args:
-            qq: 需要获取 Bot 的 QQ
+            qq: 需要获取 Bot 的 QQ，单 Bot 推送时可不传入
 
         Returns:
             Bot 实例
@@ -104,6 +94,11 @@ class DataSource(metaclass=abc.ABCMeta):
         Raises:
             DataSourceException: QQ 不存在
         """
+        if qq is None:
+            if len(self.bots) != 1:
+                raise DataSourceException(f"多 Bot 推送时需明确指定要获取的 Bot QQ")
+            return self.bots[0]
+
         bot = next((b for b in self.bots if b.qq == qq), None)
         if bot is None:
             raise DataSourceException(f"不存在的 QQ: {qq}")
@@ -129,42 +124,6 @@ class DataSource(metaclass=abc.ABCMeta):
                     break
 
         return ups
-
-    def get_target_by_key(self, key: str) -> PushTarget:
-        """
-        根据推送 key 获取 PushTarget 实例，用于 HTTP API 推送
-
-        Args:
-            key: 需要获取 PushTarget 的推送 key
-
-        Returns:
-            PushTarget 实例
-
-        Raises:
-            DataSourceException: key 不存在
-        """
-        target = self.__target_key_map.get(key)
-        if target is None:
-            raise DataSourceException(f"不存在的推送 key: {key}")
-        return target
-
-    def get_bot_by_key(self, key: str) -> Bot:
-        """
-        根据推送 key 获取其所在的 Bot 实例，用于 HTTP API 推送
-
-        Args:
-            key: 需要获取所在 Bot 的推送 key
-
-        Returns:
-            Bot 实例
-
-        Raises:
-            DataSourceException: key 不存在
-        """
-        bot = self.__target_bot_map.get(key)
-        if bot is None:
-            raise DataSourceException(f"不存在的推送 key: {key}")
-        return bot
 
     async def wait_for_connects(self):
         """
@@ -301,37 +260,37 @@ class MySQLDataSource(DataSource):
             推送目标列表
         """
         live_on = await self.__query(
-            "SELECT g.`uid`, g.`uname`, g.`room_id`, `key`, `type`, `num`, `enabled`, `message` "
-            "FROM `groups` AS `g` LEFT JOIN `live_on` AS `l` "
-            "ON g.`uid` = l.`uid` AND g.`index` = l.`index` "
-            f"WHERE g.`uid` = {uid} "
-            "ORDER BY g.`index`"
+            "SELECT t.`uid`, t.`uname`, t.`room_id`, `type`, `num`, `enabled`, `message` "
+            "FROM `targets` AS `t` LEFT JOIN `live_on` AS `l` "
+            "ON t.`uid` = l.`uid` AND t.`id` = l.`id` "
+            f"WHERE t.`uid` = {uid} "
+            "ORDER BY t.`id`"
         )
         live_off = await self.__query(
-            "SELECT g.`uid`, g.`uname`, g.`room_id`, `key`, `type`, `num`, `enabled`, `message` "
-            "FROM `groups` AS `g` LEFT JOIN `live_off` AS `l` "
-            "ON g.`uid` = l.`uid` AND g.`index` = l.`index` "
-            f"WHERE g.`uid` = {uid} "
-            "ORDER BY g.`index`"
+            "SELECT t.`uid`, t.`uname`, t.`room_id`, `type`, `num`, `enabled`, `message` "
+            "FROM `targets` AS `t` LEFT JOIN `live_off` AS `l` "
+            "ON t.`uid` = l.`uid` AND t.`id` = l.`id` "
+            f"WHERE t.`uid` = {uid} "
+            "ORDER BY t.`id`"
         )
         live_report = await self.__query(
-            "SELECT g.`uid`, g.`uname`, g.`room_id`, `key`, `type`, `num`, "
+            "SELECT t.`uid`, t.`uname`, t.`room_id`, `type`, `num`, "
             "`enabled`, `logo`, `logo_base64`, `time`, `fans_change`, `fans_medal_change`, `guard_change`, "
             "`danmu`, `box`, `gift`, `sc`, `guard`, "
             "`danmu_ranking`, `box_ranking`, `box_profit_ranking`, `gift_ranking`, `sc_ranking`, "
             "`guard_list`, `box_profit_diagram`, `danmu_diagram`, `box_diagram`, `gift_diagram`, "
             "`sc_diagram`, `guard_diagram`, `danmu_cloud` "
-            "FROM `groups` AS `g` LEFT JOIN `live_report` AS `l` "
-            "ON g.`uid` = l.`uid` AND g.`index` = l.`index` "
-            f"WHERE g.`uid` = {uid} "
-            "ORDER BY g.`index`"
+            "FROM `targets` AS `t` LEFT JOIN `live_report` AS `l` "
+            "ON t.`uid` = l.`uid` AND t.`id` = l.`id` "
+            f"WHERE t.`uid` = {uid} "
+            "ORDER BY t.`id`"
         )
         dynamic_update = await self.__query(
-            "SELECT g.`uid`, g.`uname`, g.`room_id`, `key`, `type`, `num`, `enabled`, `message` "
-            "FROM `groups` AS `g` LEFT JOIN `dynamic_update` AS `d` "
-            "ON g.`uid` = d.`uid` AND g.`index` = d.`index` "
-            f"WHERE g.`uid` = {uid} "
-            "ORDER BY g.`index`"
+            "SELECT t.`uid`, t.`uname`, t.`room_id`, `type`, `num`, `enabled`, `message` "
+            "FROM `targets` AS `t` LEFT JOIN `dynamic_update` AS `d` "
+            "ON t.`uid` = d.`uid` AND t.`id` = d.`id` "
+            f"WHERE t.`uid` = {uid} "
+            "ORDER BY t.`id`"
         )
 
         targets = []
@@ -430,15 +389,20 @@ class MySQLDataSource(DataSource):
         Args:
             uid: 需要追加读取配置的 UID
         """
+        if uid in self.get_uid_list():
+            raise DataSourceException(f"载入 UID: {uid} 的推送配置失败, 不可重复载入")
+
         user = await self.__query(f"SELECT * FROM `bot` WHERE uid = {uid}")
         if len(user) == 0:
             logger.error(f"载入 UID: {uid} 的推送配置失败, UID 不存在")
             raise DataSourceException(f"载入 UID: {uid} 的推送配置失败, UID 不存在")
 
-        bot = user[0].get("bot")
+        qq = user[0].get("bot")
         targets = await self.__load_targets(uid)
         up = Up(uid=uid, targets=targets)
-        self.get_bot(bot).ups.append(up)
+        bot = self.get_bot(qq)
+        bot.ups.append(up)
+        up.inject_bot(bot)
         super().format_data()
         logger.success(f"已成功载入 UID: {uid} 的推送配置")
 

@@ -264,13 +264,8 @@ class PushTarget(BaseModel):
     dynamic_update: Optional[DynamicUpdate] = DynamicUpdate()
     """动态推送配置。默认：DynamicUpdate()"""
 
-    key: Optional[str] = None
-    """推送 Key，可选功能，可使用此 Key 通过 HTTP API 向对应的好友或群推送消息。默认：str(id)-str(type)"""
-
     def __init__(self, **data: Any):
         super().__init__(**data)
-        if not self.key:
-            self.key = "-".join([str(self.id), str(self.type.value)])
         self.__raise_for_not_invalid_placeholders()
 
     def __raise_for_not_invalid_placeholders(self):
@@ -287,7 +282,7 @@ class PushTarget(BaseModel):
         return False
 
     def __hash__(self):
-        return hash(self.key)
+        return hash(self.id) ^ hash(self.type.value)
 
 
 class Message(BaseModel):
