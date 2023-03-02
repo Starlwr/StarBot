@@ -648,7 +648,7 @@ class LiveDanmaku(AsyncEvent):
             raise LiveException('尚未连接服务器')
 
         self.__status = self.STATUS_CLOSING
-        logger.info(f'正在关闭直播间 {self.room_display_id} 的连接')
+        logger.debug(f'正在关闭直播间 {self.room_display_id} 的连接')
 
         # 取消所有任务
         while len(self.__tasks) > 0:
@@ -657,7 +657,7 @@ class LiveDanmaku(AsyncEvent):
         self.__status = self.STATUS_CLOSED
         await self.__ws.close()
 
-        logger.success(f'直播间 {self.room_display_id} 的连接已关闭')
+        logger.debug(f'直播间 {self.room_display_id} 的连接已关闭')
 
     async def __main(self):
         """
@@ -737,7 +737,7 @@ class LiveDanmaku(AsyncEvent):
                             self.__status = self.STATUS_CLOSING
 
                         elif msg.type == aiohttp.WSMsgType.CLOSED:
-                            logger.info(f'直播间 {self.room_display_id} 的连接已关闭')
+                            logger.debug(f'直播间 {self.room_display_id} 的连接已关闭')
                             self.__status = self.STATUS_CLOSED
 
                 # 正常断开情况下跳出循环

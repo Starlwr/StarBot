@@ -382,6 +382,8 @@ class MySQLDataSource(DataSource):
         super().format_data()
         logger.success(f"已成功重载 {up.uname} (UID: {up.uid}, 房间号: {up.room_id}) 的推送配置")
 
+        await up.auto_reload_connect()
+
     async def load_new(self, uid: int):
         """
         从 MySQL 中追加读取指定 UID 的用户

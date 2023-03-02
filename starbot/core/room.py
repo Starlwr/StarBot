@@ -94,9 +94,6 @@ class Up(BaseModel):
             return any([self.__any_live_report_item_enabled(a) for a in attribute])
         return any(map(lambda t: t.live_report.enabled and t.live_report.__getattribute__(attribute), self.targets))
 
-    def __any_dynamic_update_enabled(self):
-        return any(map(lambda conf: conf.enabled, map(lambda group: group.dynamic_update, self.targets)))
-
     async def connect(self):
         """
         连接直播间
@@ -343,48 +340,70 @@ class Up(BaseModel):
 
                 await redis.incr_room_guard_time(self.room_id, int(time.time()), month)
 
-        if self.__any_dynamic_update_enabled():
-            @self.__room.on("DYNAMIC_UPDATE")
-            async def dynamic_update(event):
-                """
-                动态更新事件
-                """
-                logger.debug(f"{self.uname} (DYNAMIC_UPDATE): {event}")
+        @self.__room.on("DYNAMIC_UPDATE")
+        async def dynamic_update(event):
+            """
+            动态更新事件
+            """
+            logger.debug(f"{self.uname} (DYNAMIC_UPDATE): {event}")
 
-                dynamic_id = event["desc"]["dynamic_id"]
-                dynamic_type = event["desc"]["type"]
-                bvid = event['desc']['bvid'] if dynamic_type == 8 else ""
-                rid = event['desc']['rid'] if dynamic_type in (64, 256) else ""
+            dynamic_id = event["desc"]["dynamic_id"]
+            dynamic_type = event["desc"]["type"]
+            bvid = event['desc']['bvid'] if dynamic_type == 8 else ""
+            rid = event['desc']['rid'] if dynamic_type in (64, 256) else ""
 
-                action_map = {
-                    1: "转发了动态",
-                    2: "发表了新动态",
-                    4: "发表了新动态",
-                    8: "投稿了新视频",
-                    64: "投稿了新专栏",
-                    256: "投稿了新音频",
-                    2048: "发表了新动态"
-                }
-                url_map = {
-                    1: f"https://t.bilibili.com/{dynamic_id}",
-                    2: f"https://t.bilibili.com/{dynamic_id}",
-                    4: f"https://t.bilibili.com/{dynamic_id}",
-                    8: f"https://www.bilibili.com/video/{bvid}",
-                    64: f"https://www.bilibili.com/read/cv{rid}",
-                    256: f"https://www.bilibili.com/audio/au{rid}",
-                    2048: f"https://t.bilibili.com/{dynamic_id}"
-                }
-                base64str = await DynamicPicGenerator.generate(event)
+            action_map = {
+                1: "转发了动态",
+                2: "发表了新动态",
+                4: "发表了新动态",
+                8: "投稿了新视频",
+                64: "投稿了新专栏",
+                256: "投稿了新音频",
+                2048: "发表了新动态"
+            }
+            url_map = {
+                1: f"https://t.bilibili.com/{dynamic_id}",
+                2: f"https://t.bilibili.com/{dynamic_id}",
+                4: f"https://t.bilibili.com/{dynamic_id}",
+                8: f"https://www.bilibili.com/video/{bvid}",
+                64: f"https://www.bilibili.com/read/cv{rid}",
+                256: f"https://www.bilibili.com/audio/au{rid}",
+                2048: f"https://t.bilibili.com/{dynamic_id}"
+            }
+            base64str = await DynamicPicGenerator.generate(event)
 
-                # 推送动态消息
-                dynamic_update_args = {
-                    "{uname}": self.uname,
-                    "{action}": action_map.get(dynamic_type, "发表了新动态"),
-                    "{url}": url_map.get(dynamic_type, f"https://t.bilibili.com/{dynamic_id}"),
-                    "{picture}": "".join(["{base64pic=", base64str, "}"])
-                }
-                await self.__bot.send_dynamic_at(self)
-                await self.__bot.send_dynamic_update(self, dynamic_update_args)
+            # 推送动态消息
+            dynamic_update_args = {
+                "{uname}": self.uname,
+                "{action}": action_map.get(dynamic_type, "发表了新动态"),
+                "{url}": url_map.get(dynamic_type, f"https://t.bilibili.com/{dynamic_id}"),
+                "{picture}": "".join(["{base64pic=", base64str, "}"])
+            }
+            await self.__bot.send_dynamic_at(self)
+            await self.__bot.send_dynamic_update(self, dynamic_update_args)
+
+    async def disconnect(self):
+        """
+        断开连接直播间
+        """
+        if self.__room is not None and self.__room.get_status() == 2:
+            await self.__room.disconnect()
+            self.__is_reconnect = False
+            logger.success(f"已断开连接 {self.uname} 的直播间 {self.room_id}")
+
+            await self.accumulate_and_reset_data()
+
+    async def auto_reload_connect(self):
+        """
+        自动判断仅连接必要的直播间开启时，重载配置时自动处理直播间连接状态
+        """
+        if config.get("ONLY_CONNECT_NECESSARY_ROOM"):
+            if any([self.__any_live_on_enabled(), self.__any_live_off_enabled(), self.__any_live_report_enabled()]):
+                if self.__room is None or self.__room.get_status() != 2:
+                    await self.connect()
+            else:
+                if self.__room is not None and self.__room.get_status() == 2:
+                    await self.disconnect()
 
     async def __generate_live_report_param(self):
         """
