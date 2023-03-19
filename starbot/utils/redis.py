@@ -85,6 +85,13 @@ async def hexists(key: str, hkey: Union[str, int]) -> bool:
     return await __redis.hexists(key, hkey)
 
 
+async def hget(key: str, hkey: Union[str, int]) -> str:
+    result = await __redis.hget(key, hkey)
+    if result is None:
+        return ""
+    return result.decode()
+
+
 async def hgeti(key: str, hkey: Union[str, int]) -> int:
     result = await __redis.hget(key, hkey)
     if result is None:

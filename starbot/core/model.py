@@ -220,7 +220,7 @@ class DynamicUpdate(BaseModel):
     def default(cls):
         """
         获取功能全部开启的默认 DynamicUpdate 实例
-        默认配置：启用动态推送，推送内容模板为 "{uname} {action}\n{url}"
+        默认配置：启用动态推送，推送内容模板为 "{uname} {action}\n{url}{next}{picture}"
         """
         return DynamicUpdate(enabled=True, message=DynamicUpdate.DEFAULT_MESSAGE)
 

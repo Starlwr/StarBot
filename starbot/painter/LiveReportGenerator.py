@@ -285,13 +285,13 @@ class LiveReportGenerator:
                 )
                 pic.draw_img_alpha(pic.auto_size_img_by_limit(guard_list_img, logo_limit))
 
-        # 盲盒盈亏曲线图
+        # 盲盒盈亏折线图
         if model.box_profit_diagram:
             profits = param.get("box_profit_diagram", [])
             if profits:
                 profits.insert(0, 0.0)
 
-                pic.draw_section("盲盒盈亏曲线图")
+                pic.draw_section("盲盒盈亏折线图")
 
                 diagram = cls.__get_box_profit_diagram(profits, pic.width - (margin * 2))
                 pic.draw_img_alpha(pic.auto_size_img_by_limit(diagram, logo_limit))
