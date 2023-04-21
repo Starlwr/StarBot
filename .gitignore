@@ -1,5 +1,6 @@
 .idea
 venv
+logs
 
 starbot/commands/private
 main.py
