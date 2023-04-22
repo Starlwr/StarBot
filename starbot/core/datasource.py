@@ -1,5 +1,6 @@
 import abc
 import asyncio
+import json
 from typing import Union, Tuple, List, Dict, Optional
 
 import aiomysql
@@ -176,6 +177,62 @@ class DictDataSource(DataSource):
 
         super().format_data()
         logger.success(f"成功从 Dict 中导入了 {len(self.get_up_list())} 个 UP 主")
+
+
+class JsonDataSource(DataSource):
+    """
+    从 JSON 字符串初始化的 Bot 推送配置数据源
+    """
+    def __init__(self, json_file: Optional[str] = None, json_str: Optional[str] = None):
+        """
+        Args:
+            json_file: JSON 文件路径，两个参数任选其一传入，全部传入优先使用 json_str
+            json_str: JSON 配置字符串，两个参数任选其一传入，全部传入优先使用 json_str
+        """
+        super().__init__()
+        self.__config = None
+
+        self.__json_file = json_file
+        self.__json_str = json_str
+
+    async def load(self):
+        """
+        从 JSON 字符串中初始化配置
+
+        Raises:
+            DataSourceException: JSON 格式错误或缺少必要参数
+        """
+        if self.bots:
+            return
+
+        if self.__json_file is None and self.__json_str is None:
+            raise DataSourceException("JSON 文件路径和 JSON 字符串参数需至少传入一个")
+
+        logger.info("已选用 JSON 作为 Bot 数据源")
+        logger.info("开始从 JSON 中初始化 Bot 配置")
+
+        if self.__json_str is None:
+            try:
+                with open(self.__json_file, "r") as file:
+                    self.__json_str = file.read()
+            except Exception:
+                raise DataSourceException("JSON 文件不存在, 请检查文件路径是否正确")
+
+        try:
+            self.__config = json.loads(self.__json_str)
+        except Exception:
+            raise DataSourceException("提供的 JSON 字符串格式不正确")
+
+        for bot in self.__config:
+            if "qq" not in bot:
+                raise DataSourceException("提供的 JSON 字符串中未提供 Bot 的 QQ 号参数")
+            try:
+                self.bots.append(Bot(**bot))
+            except ValidationError as ex:
+                raise DataSourceException(f"提供的 JSON 字符串中缺少必须的 {ex.errors()[0].get('loc')[-1]} 参数")
+
+        super().format_data()
+        logger.success(f"成功从 JSON 中导入了 {len(self.get_up_list())} 个 UP 主")
 
 
 class MySQLDataSource(DataSource):
