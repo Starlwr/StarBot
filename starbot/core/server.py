@@ -8,8 +8,10 @@ from loguru import logger
 
 from .datasource import DataSource
 from .model import Message, PushType
+from .user import User, RelationType
 from ..exception import DataSourceException
 from ..utils import config
+from ..utils.utils import get_credential
 
 routes = web.RouteTableDef()
 datasource: Optional[DataSource] = None
@@ -63,6 +65,17 @@ async def send_by_bot(request: aiohttp.web.Request) -> aiohttp.web.Response:
         return web.Response(text="fail")
 
     return await send(request, int(request.match_info['bot']))
+
+
+@routes.get("/user/follow/{uid}")
+async def follow(request: aiohttp.web.Request) -> aiohttp.web.Response:
+    if not str(request.match_info['uid']).isdigit():
+        logger.warning("关注用户失败, 传入的 UID 格式不正确")
+        return web.Response(text="fail")
+
+    uid = int(request.match_info['uid'])
+    u = User(uid, get_credential())
+    await u.modify_relation(RelationType.SUBSCRIBE)
 
 
 def get_routes() -> RouteTableDef:
