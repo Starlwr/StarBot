@@ -17,10 +17,9 @@ from .room import Up
 from ..exception.AtAllLimitedException import AtAllLimitedException
 from ..painter.LiveReportGenerator import LiveReportGenerator
 from ..utils import config, redis
-from ..utils.AsyncEvent import AsyncEvent
 
 
-class Bot(BaseModel, AsyncEvent):
+class Bot(BaseModel):
     """
     Bot 类，每个实例为一个 QQ 号，可用于配置多 Bot 推送
     """

@@ -15,6 +15,7 @@ from ..exception.DataSourceException import DataSourceException
 from ..exception.RedisException import RedisException
 from ..utils import redis, config
 from ..utils.network import request
+from ..utils.utils import split_list
 
 
 class StarBot:
@@ -71,9 +72,12 @@ class StarBot:
             return
 
         # 通过 UID 列表批量获取信息
+        info = {}
+        info_url = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?uids[]="
         uids = [str(u) for u in self.__datasource.get_uid_list()]
-        info_url = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?uids[]=" + "&uids[]=".join(uids)
-        info = await request("GET", info_url)
+        uid_lists = split_list(uids, 100)
+        for lst in uid_lists:
+            info.update(await request("GET", info_url + "&uids[]=".join(lst)))
         for uid in info:
             base = info[uid]
             uid = int(uid)
