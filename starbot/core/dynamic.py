@@ -61,4 +61,4 @@ async def dynamic_spider(datasource: DataSource):
             except DataSourceException:
                 continue
 
-            up.dispatch("DYNAMIC_UPDATE", detail)
+            asyncio.create_task(up.dynamic_update(detail))
