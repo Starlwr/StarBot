@@ -158,6 +158,9 @@ class StarBot:
         )
         logger.remove()
         logger.add(sys.stderr, format=logger_format, level="INFO")
+        if config.get("LOG_TO_FILE"):
+            logger.add("logs/{time:YYYY-MM}/starbot-{time:YYYY-MM-DD}.log", level="INFO",
+                       format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{line} | {message}")
         logger.disable("graia.ariadne.model")
         logger.disable("graia.ariadne.service")
         logger.disable("graia.saya")
