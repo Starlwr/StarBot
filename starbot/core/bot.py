@@ -101,10 +101,14 @@ class StarBot:
         for up in self.__datasource.get_up_list():
             try:
                 await up.connect()
+                await asyncio.sleep(0.2)
             except LiveException as ex:
                 logger.error(ex.msg)
         try:
-            await asyncio.wait_for(self.__datasource.wait_for_connects(), config.get("WAIT_FOR_ALL_CONNECTION_TIMEOUT"))
+            wait_time = config.get("WAIT_FOR_ALL_CONNECTION_TIMEOUT")
+            if wait_time == 0:
+                wait_time = len(self.__datasource.get_up_list()) // 5 * 2
+            await asyncio.wait_for(self.__datasource.wait_for_connects(), wait_time)
         except asyncio.exceptions.TimeoutError:
             logger.warning("等待连接所有直播间超时, 请检查是否存在未连接成功的直播间")
 

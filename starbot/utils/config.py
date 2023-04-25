@@ -39,8 +39,8 @@ SIMPLE_CONFIG = {
     # 是否将日志同时输出到文件中
     "LOG_TO_FILE": False,
 
-    # 成功连接所有主播直播间的最大等待时长，可使得日志输出顺序更加易读，一般无需修改此处，单位：秒
-    "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 30,
+    # 成功连接所有主播直播间的最大等待时长，可使得日志输出顺序更加易读，一般无需修改此处，设置为 0 会自适应计算，单位：秒
+    "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 0,
 
     # 是否自动判断仅连接必要的直播间，即当某直播间的开播、下播、直播报告开关均未开启时，自动跳过连接直播间，以节省性能
     "ONLY_CONNECT_NECESSARY_ROOM": False,
@@ -141,8 +141,8 @@ FULL_CONFIG = {
     # 是否将日志同时输出到文件中
     "LOG_TO_FILE": False,
 
-    # 成功连接所有主播直播间的最大等待时长，可使得日志输出顺序更加易读，一般无需修改此处，单位：秒
-    "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 30,
+    # 成功连接所有主播直播间的最大等待时长，可使得日志输出顺序更加易读，一般无需修改此处，设置为 0 会自适应计算，单位：秒
+    "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 0,
 
     # 是否自动判断仅连接必要的直播间，即当某直播间的开播、下播、直播报告开关均未开启时，自动跳过连接直播间，以节省性能
     "ONLY_CONNECT_NECESSARY_ROOM": False,
