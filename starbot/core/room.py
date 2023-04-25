@@ -13,6 +13,7 @@ from .user import User
 from ..exception import LiveException
 from ..painter.DynamicPicGenerator import DynamicPicGenerator
 from ..utils import config, redis
+from ..utils.network import request
 from ..utils.utils import get_credential, timestamp_format, get_unames_and_faces_by_uids
 
 if typing.TYPE_CHECKING:
@@ -95,14 +96,13 @@ class Up(BaseModel):
         """
         连接直播间
         """
-        self.__user = User(self.uid, get_credential())
-
         if not all([self.uname, self.room_id]):
-            user_info = await self.__user.get_user_info()
-            self.uname = user_info["name"]
-            if user_info["live_room"] is None:
+            user_info_url = f"https://api.live.bilibili.com/live_user/v1/Master/info?uid={self.uid}"
+            user_info = await request("GET", user_info_url)
+            self.uname = user_info["info"]["uname"]
+            if user_info["room_id"] == 0:
                 raise LiveException(f"UP 主 {self.uname} ( UID: {self.uid} ) 还未开通直播间")
-            self.room_id = user_info["live_room"]["roomid"]
+            self.room_id = user_info["room_id"]
 
         # 开播推送开关和下播推送开关均处于关闭状态时跳过连接直播间，以节省性能
         if config.get("ONLY_CONNECT_NECESSARY_ROOM"):
