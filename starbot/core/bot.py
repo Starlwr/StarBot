@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sys
 
 from creart import create
@@ -15,7 +16,7 @@ from ..exception import LiveException
 from ..exception.DataSourceException import DataSourceException
 from ..exception.RedisException import RedisException
 from ..utils import redis, config
-from ..utils.network import request
+from ..utils.network import request, get_session
 from ..utils.utils import split_list, get_credential
 
 
@@ -23,6 +24,7 @@ class StarBot:
     """
     StarBot 类
     """
+    VERSION = "1.0.0"
     STARBOT_ASCII_LOGO = "\n".join(
         (
             r"    _____ _             ____        _   ",
@@ -31,7 +33,7 @@ class StarBot:
             r"   \___ \| __/ _` | '__|  _ < / _ \| __|",
             r"   ____) | || (_| | |  | |_) | (_) | |_ ",
             r"  |_____/ \__\__,_|_|  |____/ \___/ \__|",
-            r"      StarBot - (v1.0.0)  2022-10-29",
+            f"      StarBot - (v{VERSION})  2022-10-29",
             r" Github: https://github.com/Starlwr/StarBot",
             r"",
             r"",
@@ -50,8 +52,17 @@ class StarBot:
         """
         StarBot 入口
         """
-
         logger.opt(colors=True, raw=True).info(f"<yellow>{self.STARBOT_ASCII_LOGO}</>")
+        if config.get("CHECK_VERSION"):
+            try:
+                response = await get_session().get("https://mirrors.aliyun.com/pypi/web/json/starbot-bilibili")
+                data = await response.text()
+                latest_version = json.loads(data)["info"]["version"]
+                if latest_version != self.VERSION:
+                    logger.warning(f"检测到 StarBot 新版本 v{latest_version}, 建议升级到最新版本, "
+                                   f"升级内容和版本间不兼容说明请参阅官网或 Github 页的迁移指南")
+            except Exception:
+                logger.error("获取 StarBot 最新版本失败")
         logger.info("开始启动 StarBot")
 
         # 从数据源中加载配置
