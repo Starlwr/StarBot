@@ -663,7 +663,7 @@ class LiveReportGenerator:
         length = len(profits)
         indexs = list(range(0, length))
 
-        abs_max = int(max(max(profits), abs(min(profits))))
+        abs_max = math.ceil(max(max(profits), abs(min(profits))))
         start = -abs_max - (-abs_max % 10)
         end = abs_max + (-abs_max % 10)
         step = int((end - start) / 10)
