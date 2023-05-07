@@ -75,6 +75,10 @@ SIMPLE_CONFIG = {
     "DANMU_CLOUD_MAX_FONT_SIZE": 200,
     # 弹幕词云最多词数
     "DANMU_CLOUD_MAX_WORDS": 80,
+    # 弹幕词云停用词路径，存储时每行一个停用词，以纯文本方式存储，可过滤这些词使其不出现在词云中
+    "DANMU_CLOUD_STOP_WORDS": "",
+    # 弹幕词云自定义词典路径，存储时每行一个词，以纯文本方式存储，在对弹幕进行切词时，词典中的词不会被切分开
+    "DANMU_CLOUD_DICT": "",
 
     # 需加载的用户自定义命令包
     "CUSTOM_COMMANDS_PACKAGE": None,
@@ -182,6 +186,10 @@ FULL_CONFIG = {
     "DANMU_CLOUD_MAX_FONT_SIZE": 200,
     # 弹幕词云最多词数
     "DANMU_CLOUD_MAX_WORDS": 80,
+    # 弹幕词云停用词路径，存储时每行一个停用词，以纯文本方式存储，可过滤这些词使其不出现在词云中
+    "DANMU_CLOUD_STOP_WORDS": "",
+    # 弹幕词云自定义词典路径，存储时每行一个词，以纯文本方式存储，在对弹幕进行切词时，词典中的词不会被切分开
+    "DANMU_CLOUD_DICT": "",
 
     # 需加载的用户自定义命令包
     "CUSTOM_COMMANDS_PACKAGE": None,

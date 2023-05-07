@@ -10,6 +10,7 @@ from typing import Union, Tuple, List, Dict, Any
 import jieba
 import numpy as np
 from PIL import Image
+from loguru import logger
 from matplotlib import pyplot as plt
 from mpl_toolkits import axisartist
 from scipy.interpolate import make_interp_spline
@@ -373,9 +374,25 @@ class LiveReportGenerator:
             if all_danmu:
                 pic.draw_section("弹幕词云")
 
+                if config.get("DANMU_CLOUD_DICT"):
+                    try:
+                        jieba.load_userdict(config.get("DANMU_CLOUD_DICT"))
+                    except Exception:
+                        logger.error("载入弹幕词云自定义词典失败, 请检查配置的词典路径是否正确")
+
                 all_danmu_str = " ".join(all_danmu)
                 words = list(jieba.cut(all_danmu_str))
                 counts = dict(Counter(words))
+
+                stop_words = {}
+                if config.get("DANMU_CLOUD_STOP_WORDS"):
+                    try:
+                        with open(config.get("DANMU_CLOUD_STOP_WORDS"), "r", encoding="utf-8") as f:
+                            stop_words = set(line.strip() for line in f)
+                    except Exception:
+                        logger.error("载入弹幕词云停用词失败, 请检查配置的停用词路径是否正确")
+                for sw in stop_words:
+                    counts.pop(sw, None)
 
                 font_base_path = os.path.dirname(os.path.dirname(__file__))
                 word_cloud = WordCloud(width=900,

@@ -1,6 +1,8 @@
 .idea
 venv
 logs
+userdict.txt
+stopword.txt
 
 starbot/commands/private
 main.py
