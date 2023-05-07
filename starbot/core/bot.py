@@ -24,7 +24,7 @@ class StarBot:
     """
     StarBot 类
     """
-    VERSION = "1.0.0"
+    VERSION = "2.0.0"
     STARBOT_ASCII_LOGO = "\n".join(
         (
             r"    _____ _             ____        _   ",
@@ -33,7 +33,7 @@ class StarBot:
             r"   \___ \| __/ _` | '__|  _ < / _ \| __|",
             r"   ____) | || (_| | |  | |_) | (_) | |_ ",
             r"  |_____/ \__\__,_|_|  |____/ \___/ \__|",
-            f"      StarBot - (v{VERSION})  2022-10-29",
+            f"      StarBot - (v{VERSION})  2023-05-13",
             r" Github: https://github.com/Starlwr/StarBot",
             r"",
             r"",
@@ -150,34 +150,33 @@ class StarBot:
                                "请使用 config.set('ACCOUNT_UID', 您的UID) 设置, 或手动关注所有需要动态推送的 UP 主, "
                                "否则无法获取未关注用户的动态更新信息, "
                                "使用 config.set('AUTO_FOLLOW_OPENED_DYNAMIC_UPDATE_UP', False) 可禁用自动关注功能和此警告")
-                return
+            else:
+                uid = int(config.get("ACCOUNT_UID"))
+                me = User(uid, get_credential())
+                follows = set()
+                page = 1
+                while True:
+                    res = await me.get_followings(page)
+                    follows = follows.union(set(map(lambda x: x["mid"], res["list"])))
+                    if len(res["list"]) < 20:
+                        break
+                    page += 1
 
-            uid = int(config.get("ACCOUNT_UID"))
-            me = User(uid, get_credential())
-            follows = set()
-            page = 1
-            while True:
-                res = await me.get_followings(page)
-                follows = follows.union(set(map(lambda x: x["mid"], res["list"])))
-                if len(res["list"]) < 20:
-                    break
-                page += 1
+                need_follow_uids = set()
+                for up in self.__datasource.get_up_list():
+                    if any(map(lambda d: d.enabled, map(lambda t: t.dynamic_update, up.targets))):
+                        need_follow_uids.add(up.uid)
+                need_follow_uids.difference_update(follows)
 
-            need_follow_uids = set()
-            for up in self.__datasource.get_up_list():
-                if any(map(lambda d: d.enabled, map(lambda t: t.dynamic_update, up.targets))):
-                    need_follow_uids.add(up.uid)
-            need_follow_uids.difference_update(follows)
+                async def follow_task(uid_set):
+                    logger.info(f"检测到 {len(uid_set)} 个打开了动态推送但未关注的 UP 主, 启动自动关注任务")
+                    for u in uid_set:
+                        follow_user = User(u, get_credential())
+                        await follow_user.modify_relation(RelationType.SUBSCRIBE)
+                        await asyncio.sleep(10)
+                    logger.success(f"已成功关注了 {len(uid_set)} 个 UP 主")
 
-            async def follow_task(uid_set):
-                logger.info(f"检测到 {len(uid_set)} 个打开了动态推送但未关注的 UP 主, 启动自动关注任务")
-                for u in uid_set:
-                    follow_user = User(u, get_credential())
-                    await follow_user.modify_relation(RelationType.SUBSCRIBE)
-                    await asyncio.sleep(10)
-                logger.success(f"已成功关注了 {len(uid_set)} 个 UP 主")
-
-            asyncio.create_task(follow_task(need_follow_uids))
+                asyncio.create_task(follow_task(need_follow_uids))
 
         # 启动消息推送模块
         Ariadne.options["default_account"] = self.__datasource.bots[0].qq
