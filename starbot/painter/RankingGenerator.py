@@ -158,12 +158,13 @@ class RankingGenerator:
         chart.set_row_space(row_space)
         for i in range(count):
             bar_width = int(abs(counts[i]) / top_count * top_bar_width)
-            if counts[i] > 0:
-                bar = cls.__get_rank_bar_pic(bar_width, bar_height, start_color, end_color)
-                chart.draw_img_alpha(bar, (bar_x, chart.y + int((face_size - bar_height) / 2)))
-            elif counts[i] < 0:
-                bar = cls.__get_rank_bar_pic(bar_width, bar_height, reverse_start_color, reverse_end_color, True)
-                chart.draw_img_alpha(bar, (reverse_bar_x - bar_width, chart.y + int((face_size - bar_height) / 2)))
+            if bar_width != 0:
+                if counts[i] > 0:
+                    bar = cls.__get_rank_bar_pic(bar_width, bar_height, start_color, end_color)
+                    chart.draw_img_alpha(bar, (bar_x, chart.y + int((face_size - bar_height) / 2)))
+                elif counts[i] < 0:
+                    bar = cls.__get_rank_bar_pic(bar_width, bar_height, reverse_start_color, reverse_end_color, True)
+                    chart.draw_img_alpha(bar, (reverse_bar_x - bar_width, chart.y + int((face_size - bar_height) / 2)))
             if counts[i] >= 0:
                 chart.draw_tip(unames[i], Color.BLACK, (bar_x + (offset * 2), chart.y))
                 count_pos = (max(face_x + bar_width, bar_x + (offset * 3) + chart.get_tip_length(unames[i])), chart.y)
