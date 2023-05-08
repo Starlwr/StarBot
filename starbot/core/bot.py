@@ -1,5 +1,6 @@
 import asyncio
 import json
+import signal
 import sys
 
 from creart import create
@@ -70,18 +71,18 @@ class StarBot:
             await self.__datasource.load()
         except DataSourceException as ex:
             logger.error(ex.msg)
-            return
+            return 1
 
         if not self.__datasource.bots:
             logger.error("数据源配置为空, 请先在数据源中配置完毕后再重新运行")
-            return
+            return 2
 
         # 连接 Redis
         try:
             await redis.init()
         except RedisException as ex:
             logger.error(ex.msg)
-            return
+            return 3
 
         # 通过 UID 列表批量获取信息
         info = {}
@@ -190,7 +191,7 @@ class StarBot:
                 pass
             else:
                 logger.error(ex)
-                return
+                return 4
 
     def run(self):
         """
@@ -215,5 +216,8 @@ class StarBot:
 
         bcc = create(Broadcast)
         loop = bcc.loop
-        loop.create_task(self.__main())
+        if loop.run_until_complete(self.__main()):
+            return
+        loop.add_signal_handler(signal.SIGINT, lambda: loop.stop())
         loop.run_forever()
+        loop.close()
