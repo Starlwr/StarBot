@@ -12,6 +12,8 @@ from ..utils.utils import get_credential
 
 
 async def dynamic_spider(datasource: DataSource):
+    running_tasks = set()
+
     logger.success("动态推送模块已启动")
 
     dynamic_url = "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/dynamic_new?type_list=268435455"
@@ -61,4 +63,6 @@ async def dynamic_spider(datasource: DataSource):
             except DataSourceException:
                 continue
 
-            asyncio.create_task(up.dynamic_update(detail))
+            task = asyncio.create_task(up.dynamic_update(detail))
+            running_tasks.add(task)
+            task.add_done_callback(lambda t: running_tasks.remove(t))
