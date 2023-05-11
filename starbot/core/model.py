@@ -58,7 +58,7 @@ class LiveOff(BaseModel):
     message: Optional[str] = ""
     """
     下播推送内容模板。
-    专用占位符：{uname}主播昵称。
+    专用占位符：{uname} 主播昵称。
     通用占位符：{next} 消息分条，{atall} @全体成员，{at114514} @指定QQ号，{urlpic=链接} 网络图片，{pathpic=路径} 本地图片，{base64pic=base64字符串} base64图片。
     默认：""
     """
@@ -67,7 +67,7 @@ class LiveOff(BaseModel):
     def default(cls):
         """
         获取功能全部开启的默认 LiveOff 实例
-        默认配置：启用下播推送，推送内容模板为 "{uname} 直播结束了\n{time}{next}{danmu_count}{danmu_mvp}{box_profit}"
+        默认配置：启用下播推送，推送内容模板为 "{uname} 直播结束了"
         """
         return LiveOff(enabled=True, message=LiveOff.DEFAULT_MESSAGE)
 
@@ -211,7 +211,7 @@ class DynamicUpdate(BaseModel):
     message: Optional[str] = ""
     """
     动态推送内容模板。
-    专用占位符：{uname}主播昵称，{action}动态操作类型（发表了新动态，转发了新动态，投稿了新视频...），{url}动态链接（若为发表视频、专栏等则为视频、专栏等对应的链接），{picture}动态图片。
+    专用占位符：{uname} 主播昵称，{action} 动态操作类型（发表了新动态，转发了新动态，投稿了新视频...），{url} 动态链接（若为发表视频、专栏等则为视频、专栏等对应的链接），{picture} 动态图片。
     通用占位符：{next} 消息分条，{atall} @全体成员，{at114514} @指定QQ号，{urlpic=链接} 网络图片，{pathpic=路径} 本地图片，{base64pic=base64字符串} base64图片。
     默认：""
     """

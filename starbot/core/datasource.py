@@ -213,10 +213,14 @@ class JsonDataSource(DataSource):
 
         if self.__json_str is None:
             try:
-                with open(self.__json_file, "r") as file:
+                with open(self.__json_file, "r", encoding="utf-8") as file:
                     self.__json_str = file.read()
-            except Exception:
+            except FileNotFoundError:
                 raise DataSourceException("JSON 文件不存在, 请检查文件路径是否正确")
+            except UnicodeDecodeError:
+                raise DataSourceException("JSON 文件编码不正确, 请将其转换为 UTF-8 格式编码后重试")
+            except Exception as ex:
+                raise DataSourceException(f"读取 JSON 文件异常 {ex}")
 
         try:
             self.__config = json.loads(self.__json_str)
