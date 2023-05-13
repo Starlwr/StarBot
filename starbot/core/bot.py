@@ -218,6 +218,9 @@ class StarBot:
         loop = bcc.loop
         if loop.run_until_complete(self.__main()):
             return
-        loop.add_signal_handler(signal.SIGINT, lambda: loop.stop())
+        try:
+            loop.add_signal_handler(signal.SIGINT, lambda: loop.stop())
+        except NotImplementedError:
+            pass
         loop.run_forever()
         loop.close()
