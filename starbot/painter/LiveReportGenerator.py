@@ -475,7 +475,9 @@ class LiveReportGenerator:
 
         icon = icon.resize((icon_size, icon_size))
         for i, x in enumerate(xs):
-            line.draw_img_alpha(mask_round(faces[i].resize((face_size, face_size))), (x + face_padding, face_padding))
+            line.draw_img_alpha(
+                mask_round(faces[i].resize((face_size, face_size)).convert("RGBA")), (x + face_padding, face_padding)
+            )
             if i != count - 1:
                 line.draw_img_alpha(icon, (x, 0))
             else:
