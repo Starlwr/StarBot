@@ -31,7 +31,7 @@ SIMPLE_CONFIG = {
     # Mirai HTTP 及 Websocket 端口
     "MIRAI_PORT": 7827,
 
-    # 登录 B 站账号所需 Cookie 数据 ( 不登录账号将有部分功能不可用 ) 各字段获取方式查看：https://bili.moyu.moe/#/get-credential.md
+    # 登录 B 站账号所需 Cookie 数据 ( 不登录账号将有部分功能不可用 ) 各字段获取方式查看：https://bot.starlwr.com/depoly/document
     "SESSDATA": None,
     "BILI_JCT": None,
     "BUVID3": None,
@@ -142,7 +142,7 @@ FULL_CONFIG = {
     # Mirai HTTP 及 Websocket 端口
     "MIRAI_PORT": 7827,
 
-    # 登录 B 站账号所需 Cookie 数据 ( 不登录账号将有部分功能不可用 ) 各字段获取方式查看：https://bili.moyu.moe/#/get-credential.md
+    # 登录 B 站账号所需 Cookie 数据 ( 不登录账号将有部分功能不可用 ) 各字段获取方式查看：https://bot.starlwr.com/depoly/document
     "SESSDATA": None,
     "BILI_JCT": None,
     "BUVID3": None,

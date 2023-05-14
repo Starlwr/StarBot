@@ -34,7 +34,7 @@ class StarBot:
             r"   \___ \| __/ _` | '__|  _ < / _ \| __|",
             r"   ____) | || (_| | |  | |_) | (_) | |_ ",
             r"  |_____/ \__\__,_|_|  |____/ \___/ \__|",
-            f"      StarBot - (v{VERSION})  2023-05-13",
+            f"      StarBot - (v{VERSION})  2023-05-14",
             r" Github: https://github.com/Starlwr/StarBot",
             r"",
             r"",
