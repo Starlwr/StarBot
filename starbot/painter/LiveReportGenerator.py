@@ -425,7 +425,11 @@ class LiveReportGenerator:
             主播立绘图片
         """
         if model.logo:
-            logo = Image.open(model.logo)
+            try:
+                logo = Image.open(model.logo)
+            except FileNotFoundError:
+                logger.error(f"直播报告图片 {model.logo} 不存在")
+                return Image.new("RGBA", (1, 1))
         else:
             logo_bytes = BytesIO(base64.b64decode(model.logo_base64))
             logo = Image.open(logo_bytes)
