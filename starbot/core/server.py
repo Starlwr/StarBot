@@ -77,6 +77,8 @@ async def follow(request: aiohttp.web.Request) -> aiohttp.web.Response:
     u = User(uid, get_credential())
     await u.modify_relation(RelationType.SUBSCRIBE)
 
+    return web.Response(text="success")
+
 
 def get_routes() -> RouteTableDef:
     """
