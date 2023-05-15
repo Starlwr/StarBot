@@ -63,12 +63,9 @@ class LiveReportGenerator:
             logo = cls.__get_logo(model)
 
             base_left = 650
-            logo_left = base_left + int((width - base_left - logo.width) / 2)
-            if logo_left < base_left:
-                logo_left = base_left
-            pic.draw_img_alpha(logo, (logo_left, 0))
+            pic.draw_img_alpha(logo, (base_left, 0))
 
-            logo_limit = (logo_left, logo.height)
+            logo_limit = (base_left, logo.height)
 
         # 主播信息
         uname = param.get('uname', '')
@@ -434,10 +431,11 @@ class LiveReportGenerator:
             logo_bytes = BytesIO(base64.b64decode(model.logo_base64))
             logo = Image.open(logo_bytes)
 
+        logo = logo.convert("RGBA")
         logo = logo.crop(logo.getbbox())
 
-        logo_height = 800
-        logo_width = int(logo.width * (logo_height / logo.height))
+        logo_width = 300
+        logo_height = int(logo.height * (logo_width / logo.width))
         logo = logo.resize((logo_width, logo_height))
 
         return logo
