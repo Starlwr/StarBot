@@ -177,7 +177,8 @@ class StarBot:
                         await asyncio.sleep(10)
                     logger.success(f"已成功关注了 {len(uid_set)} 个 UP 主")
 
-                asyncio.create_task(follow_task(need_follow_uids))
+                if len(need_follow_uids) > 0:
+                    asyncio.create_task(follow_task(need_follow_uids))
 
         # 启动消息推送模块
         Ariadne.options["default_account"] = self.__datasource.bots[0].qq
