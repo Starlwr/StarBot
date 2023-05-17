@@ -1,8 +1,8 @@
 from graia.ariadne import Ariadne
 from graia.ariadne.event.message import GroupMessage
 from graia.ariadne.message.chain import MessageChain
-from graia.ariadne.message.element import Source
-from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatch, ParamMatch, ResultValue
+from graia.ariadne.message.element import Source, At
+from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatch, ParamMatch, ResultValue, ElementMatch
 from graia.ariadne.model import Group, Member, MemberPerm
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
@@ -28,6 +28,7 @@ channel = Channel.current()
     ListenerSchema(
         listening_events=[GroupMessage],
         inline_dispatchers=[Twilight(
+            ElementMatch(At, optional=True),
             FullMatch(prefix),
             UnionMatch("禁用", "disable"),
             "name" @ ParamMatch()
@@ -50,7 +51,7 @@ async def disable_command(app: Ariadne,
         )
         return
 
-    if redis.exists_disable_command(disable_map[name], group.id):
+    if await redis.exists_disable_command(disable_map[name], group.id):
         await app.send_message(group, "此命令已经是禁用状态~", quote=source)
         return
 

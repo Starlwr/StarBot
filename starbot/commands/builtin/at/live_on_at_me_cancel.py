@@ -1,8 +1,8 @@
 from graia.ariadne import Ariadne
 from graia.ariadne.event.message import GroupMessage
 from graia.ariadne.message.chain import MessageChain
-from graia.ariadne.message.element import Source
-from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatch
+from graia.ariadne.message.element import Source, At
+from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatch, ElementMatch
 from graia.ariadne.model import Member, Group
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
@@ -20,6 +20,7 @@ channel = Channel.current()
     ListenerSchema(
         listening_events=[GroupMessage],
         inline_dispatchers=[Twilight(
+            ElementMatch(At, optional=True),
             FullMatch(prefix),
             UnionMatch(
                 "取消开播@我", "取消直播@我", "退出开播@我", "退出直播@我", "开播不@我", "直播不@我", "开播别@我", "直播别@我"

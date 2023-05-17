@@ -3,8 +3,8 @@ from typing import Union, Optional
 from graia.ariadne import Ariadne
 from graia.ariadne.event.message import FriendMessage, GroupMessage
 from graia.ariadne.message.chain import MessageChain
-from graia.ariadne.message.element import Source
-from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatch, ParamMatch, ResultValue
+from graia.ariadne.message.element import Source, At
+from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatch, ParamMatch, ResultValue, ElementMatch
 from graia.ariadne.model import Friend, Member, Group
 from graia.ariadne.util.interrupt import FunctionWaiter
 from graia.saya import Channel
@@ -23,6 +23,7 @@ channel = Channel.current()
     ListenerSchema(
         listening_events=[FriendMessage, GroupMessage],
         inline_dispatchers=[Twilight(
+            ElementMatch(At, optional=True),
             FullMatch(prefix),
             UnionMatch("绑定", "bind"),
             "uid" @ ParamMatch()

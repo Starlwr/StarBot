@@ -5,8 +5,9 @@ from typing import Union
 from graia.ariadne import Ariadne
 from graia.ariadne.event.message import FriendMessage, GroupMessage
 from graia.ariadne.message.chain import MessageChain
-from graia.ariadne.message.element import Source, Image
-from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatch, ParamMatch, RegexResult, ResultValue
+from graia.ariadne.message.element import Source, Image, At
+from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatch, ParamMatch, RegexResult, ResultValue, \
+    ElementMatch
 from graia.ariadne.model import Friend, Group
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
@@ -44,6 +45,7 @@ channel = Channel.current()
     ListenerSchema(
         listening_events=[FriendMessage, GroupMessage],
         inline_dispatchers=[Twilight(
+            ElementMatch(At, optional=True),
             FullMatch(prefix),
             "_type" @ ParamMatch(),
             UnionMatch("榜", "排行", "排行榜"),
