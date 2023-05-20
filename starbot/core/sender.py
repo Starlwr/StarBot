@@ -1,11 +1,11 @@
 import asyncio
 import time
 from asyncio import AbstractEventLoop
-from typing import Optional, List, Dict, Any, Union, Callable
+from typing import Optional, List, Dict, Any, Union, Callable, Tuple
 
 from graia.ariadne import Ariadne
 from graia.ariadne.connection.config import config as AriadneConfig, HttpClientConfig, WebsocketClientConfig
-from graia.ariadne.exception import RemoteException
+from graia.ariadne.exception import RemoteException, AccountMuted
 from graia.ariadne.message.chain import MessageChain
 from graia.ariadne.message.element import At, AtAll
 from graia.ariadne.model import LogConfig, MemberPerm
@@ -14,6 +14,7 @@ from pydantic import BaseModel, PrivateAttr
 
 from .model import LiveOn, LiveOff, DynamicUpdate, Message, PushType, PushTarget
 from .room import Up
+from ..exception import NoPermissionException
 from ..exception.AtAllLimitedException import AtAllLimitedException
 from ..painter.LiveReportGenerator import LiveReportGenerator
 from ..utils import config, redis
@@ -71,7 +72,6 @@ class Bot(BaseModel):
         Raises:
 
         """
-        exception = None
         if msg.type == PushType.Friend:
             for message in msg.get_message_chains():
                 try:
@@ -81,56 +81,73 @@ class Bot(BaseModel):
                     logger.exception("消息推送模块异常", ex)
                     continue
         else:
-            msgs = await self.group_message_filter(msg)
-
-            if any([(AtAll in x) for x in msg.get_message_chains()]) and all([(AtAll not in x) for x in msgs]):
-                exception = AtAllLimitedException()
+            msgs, exception = await self.group_message_filter(msg)
 
             for message in msgs:
                 try:
                     await self.__bot.send_group_message(msg.id, message)
                     logger.info(f"{self.qq} -> 群[{msg.id}] : {message.safe_display}")
+                except AccountMuted:
+                    logger.warning(f"Bot({self.qq}) 在群 {msg.id} 中被禁言")
+                    return
                 except RemoteException as ex:
                     if "AT_ALL_LIMITED" in str(ex):
+                        logger.warning(f"Bot({self.qq}) 今日的@全体成员次数已达到上限")
                         exception = AtAllLimitedException()
                         self.__at_all_limited = time.localtime(time.time()).tm_yday
                         continue
                     else:
                         logger.exception("消息推送模块异常", ex)
                         continue
+                except Exception as ex:
+                    logger.exception("消息推送模块异常", ex)
+                    continue
 
-        if exception is not None:
-            raise exception
+            if exception is not None:
+                message = ""
+                if isinstance(exception, AtAllLimitedException):
+                    message = config.get("AT_ALL_LIMITED_MESSAGE")
+                elif isinstance(exception, NoPermissionException):
+                    message = config.get("NO_PERMISSION_MESSAGE")
+                if len(message) > 0:
+                    try:
+                        await self.__bot.send_group_message(msg.id, MessageChain(message))
+                    except Exception:
+                        pass
 
-    async def group_message_filter(self, message: Message) -> List[MessageChain]:
+    async def group_message_filter(self, message: Message) -> Tuple[List[MessageChain], Optional[Exception]]:
         """
         过滤群消息中的非法元素
 
         Args:
-            message: 源消息链
+            message: 源消息
 
         Returns:
-            处理后的消息链
+            处理后的消息链和引发的异常
         """
+        exception = None
+
         if message.type == PushType.Friend:
-            return message.get_message_chains()
+            return message.get_message_chains(), exception
 
         new_chains = []
 
         # 过滤 Bot 不在群内的消息
         group = await self.__bot.get_group(message.id)
         if group is None:
-            return new_chains
+            return new_chains, exception
 
         for chain in message.get_message_chains():
             if AtAll in chain:
+                # 过滤已超出当日次数上限的 @全体成员 消息
+                if time.localtime(time.time()).tm_yday == self.__at_all_limited:
+                    exception = AtAllLimitedException()
+                    chain = chain.exclude(AtAll)
+
                 # 过滤 Bot 不是群管理员时的 @全体成员 消息
                 bot_info = await self.__bot.get_member(message.id, self.qq)
                 if bot_info.permission < MemberPerm.Administrator:
-                    chain = chain.exclude(AtAll)
-
-                # 过滤已超出当日次数上限的 @全体成员 消息
-                if time.localtime(time.time()).tm_yday == self.__at_all_limited:
+                    exception = NoPermissionException()
                     chain = chain.exclude(AtAll)
 
                 # 过滤多余的 @全体成员 消息
@@ -157,7 +174,7 @@ class Bot(BaseModel):
             if len(chain) != 0:
                 new_chains.append(chain)
 
-        return new_chains
+        return new_chains, exception
 
     async def send_to_all_target(self, up: Up, msg: str, target_filter: Callable[[PushTarget], bool] = lambda t: True):
         """
@@ -189,11 +206,13 @@ class Bot(BaseModel):
         if not isinstance(up, Up):
             return
 
+        logger.debug(f"{up.uname} 已配置推送群: ({', '.join(map(lambda t: str(t.id), up.targets))})")
         for target in up.targets:
             select = type_selector(target)
             if not isinstance(select, (LiveOn, LiveOff, DynamicUpdate)):
                 return
 
+            logger.debug(f"群 {target.id}: ({select.enabled}) ({select.message})")
             if select.enabled:
                 message = select.message
                 for arg, val in args.items():
@@ -208,24 +227,26 @@ class Bot(BaseModel):
             up: 要发送的 UP 主实例
             args: 占位符参数
         """
-        try:
-            await self.__send_push_message(up, lambda t: t.live_on, args)
-        except AtAllLimitedException:
-            await self.send_live_on_at(up, True)
+        await self.__send_push_message(up, lambda t: t.live_on, args)
 
-    async def send_live_on_at(self, up: Up, limited: bool = False):
+    async def send_live_on_at(self, up: Up):
         """
         发送开播 @ 我列表中的 @ 消息
 
         Args:
             up: 要发送的 UP 主实例
-            limited: 是否为 @全体成员次数达到上限时发送。默认：False
         """
         if not isinstance(up, Up):
             return
 
+        limited = self.__at_all_limited == time.localtime(time.time()).tm_yday
         for target in filter(lambda t: t.type == PushType.Group, up.targets):
-            if target.live_on.enabled and (limited or "{atall}" not in target.live_on.message):
+            group = await self.__bot.get_group(target.id)
+            if group is None:
+                continue
+            bot_info = await self.__bot.get_member(target.id, self.qq)
+            not_admin = bot_info.permission < MemberPerm.Administrator
+            if target.live_on.enabled and (limited or "{atall}" not in target.live_on.message or not_admin):
                 ats = " ".join(["{at" + str(x) + "}" for x in await redis.range_live_on_at(target.id)])
                 await self.send_message(Message(id=target.id, content=ats, type=target.type))
 

@@ -207,8 +207,8 @@ class Up(BaseModel):
                         "{url}": f"https://live.bilibili.com/{self.room_id}",
                         "{cover}": "".join(["{urlpic=", arg_base["cover"], "}"])
                     }
-                    await self.__bot.send_live_on_at(self)
                     await self.__bot.send_live_on(self, args)
+                    await self.__bot.send_live_on_at(self)
 
         @self.__room.on("PREPARING")
         async def live_off(event):
@@ -365,6 +365,7 @@ class Up(BaseModel):
         动态更新事件
         """
         logger.debug(f"{self.uname} (DYNAMIC_UPDATE): {event}")
+        logger.opt(colors=True).info(f"<magenta>[动态更新] {self.uname}</>")
 
         dynamic_id = event["desc"]["dynamic_id"]
         dynamic_type = event["desc"]["type"]
