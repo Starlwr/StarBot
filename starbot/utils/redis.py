@@ -1179,3 +1179,13 @@ async def add_disable_command(name: str, _id: int):
 
 async def delete_disable_command(name: str, _id: int):
     await srem(name, _id)
+
+
+# 动态
+
+async def exists_dynamic(_id: int):
+    return await sismember("Dynamics", _id)
+
+
+async def add_dynamic(_id: int):
+    await sadd("Dynamics", _id)
