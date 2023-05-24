@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any, Union, Callable, Tuple
 
 from graia.ariadne import Ariadne
 from graia.ariadne.connection.config import config as AriadneConfig, HttpClientConfig, WebsocketClientConfig
-from graia.ariadne.exception import RemoteException, AccountMuted
+from graia.ariadne.exception import RemoteException, AccountMuted, UnknownTarget
 from graia.ariadne.message.chain import MessageChain
 from graia.ariadne.message.element import At, AtAll
 from graia.ariadne.model import LogConfig, MemberPerm
@@ -90,6 +90,8 @@ class Bot(BaseModel):
                 except AccountMuted:
                     logger.warning(f"Bot({self.qq}) 在群 {msg.id} 中被禁言")
                     return
+                except UnknownTarget:
+                    return
                 except RemoteException as ex:
                     if "AT_ALL_LIMITED" in str(ex):
                         logger.warning(f"Bot({self.qq}) 今日的@全体成员次数已达到上限")
@@ -145,7 +147,10 @@ class Bot(BaseModel):
                     chain = chain.exclude(AtAll)
 
                 # 过滤 Bot 不是群管理员时的 @全体成员 消息
-                bot_info = await self.__bot.get_member(message.id, self.qq)
+                try:
+                    bot_info = await self.__bot.get_member(message.id, self.qq)
+                except UnknownTarget:
+                    return new_chains, exception
                 if bot_info.permission < MemberPerm.Administrator:
                     exception = NoPermissionException()
                     chain = chain.exclude(AtAll)
