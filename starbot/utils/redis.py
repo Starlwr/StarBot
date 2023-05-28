@@ -1,7 +1,7 @@
 from typing import Any, Union, Tuple, List, Set
 
-import aioredis
 from loguru import logger
+from redis import asyncio as aioredis
 
 from ..exception.RedisException import RedisException
 from ..utils import config
@@ -32,7 +32,7 @@ async def expire(key: str, seconds: int):
 
 
 async def exists(key: str) -> bool:
-    return await __redis.exists(key)
+    return bool(await __redis.exists(key))
 
 
 async def get(key: str) -> str:
