@@ -10,7 +10,6 @@ from io import BytesIO
 from typing import Tuple, List, Dict, Sized, Optional, Any, Union
 
 from PIL import Image, ImageDraw
-from loguru import logger
 
 from . import config
 from .Credential import Credential
@@ -164,12 +163,14 @@ async def get_unames_and_faces_by_uids(uids: List[str]) -> Tuple[List[str], List
         face = Image.new("RGBA", (300, 300), (255, 255, 255, 255))
         return face
 
-    user_info_url = f"https://api.vc.bilibili.com/account/v1/user/cards?uids={','.join(uids)}"
-    try:
-        infos_list = await request("GET", user_info_url)
-    except ResponseCodeException as ex:
-        logger.exception("批量获取昵称和头像图片异常", ex)
-        return [], []
+    infos_list = []
+    uid_lists = split_list(uids, 10)
+    for lst in uid_lists:
+        user_info_url = f"https://api.vc.bilibili.com/account/v1/user/cards?uids={','.join(lst)}"
+        try:
+            infos_list.extend(await request("GET", user_info_url))
+        except ResponseCodeException:
+            return [], []
     infos = dict(zip([x["mid"] for x in infos_list], infos_list))
     unames = [infos[int(uid)]["name"] if int(uid) in infos else "" for uid in uids]
     download_face_tasks = [
