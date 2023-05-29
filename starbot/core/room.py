@@ -10,7 +10,7 @@ from pydantic import BaseModel, PrivateAttr
 from .live import LiveDanmaku, LiveRoom
 from .model import PushTarget
 from .user import User
-from ..exception import LiveException
+from ..exception import LiveException, ResponseCodeException
 from ..painter.DynamicPicGenerator import DynamicPicGenerator
 from ..utils import config, redis
 from ..utils.network import request
@@ -166,10 +166,20 @@ class Up(BaseModel):
             """
             logger.debug(f"{self.uname} (LIVE): {event}")
 
+            locked = False
+            room_info = {}
+
             # 是否为真正开播
             if "live_time" in event["data"]:
-                room_info = await self.__live_room.get_room_info()
-                self.uname = room_info["anchor_info"]["base_info"]["uname"]
+                try:
+                    room_info = await self.__live_room.get_room_info()
+                except ResponseCodeException as ex:
+                    if ex.code == 19002005:
+                        locked = True
+                        logger.warning(f"{self.uname} ({self.room_id}) 的直播间已加密")
+
+                if not locked:
+                    self.uname = room_info["anchor_info"]["base_info"]["uname"]
 
                 await redis.set_live_status(self.room_id, 1)
 
@@ -185,28 +195,39 @@ class Up(BaseModel):
                 else:
                     logger.opt(colors=True).info(f"<magenta>[开播] {self.uname} ({self.room_id})</>")
 
-                    live_start_time = room_info["room_info"]["live_start_time"]
-                    fans_count = room_info["anchor_info"]["relation_info"]["attention"]
-                    if room_info["anchor_info"]["medal_info"] is None:
-                        fans_medal_count = 0
-                    else:
-                        fans_medal_count = room_info["anchor_info"]["medal_info"]["fansclub"]
-                    guard_count = room_info["guard_info"]["count"]
+                    live_start_time = room_info["room_info"]["live_start_time"] if not locked else int(time.time())
                     await redis.set_live_start_time(self.room_id, live_start_time)
-                    await redis.set_fans_count(self.room_id, live_start_time, fans_count)
-                    await redis.set_fans_medal_count(self.room_id, live_start_time, fans_medal_count)
-                    await redis.set_guard_count(self.room_id, live_start_time, guard_count)
+
+                    if not locked:
+                        fans_count = room_info["anchor_info"]["relation_info"]["attention"]
+                        if room_info["anchor_info"]["medal_info"] is None:
+                            fans_medal_count = 0
+                        else:
+                            fans_medal_count = room_info["anchor_info"]["medal_info"]["fansclub"]
+                        guard_count = room_info["guard_info"]["count"]
+                        await redis.set_fans_count(self.room_id, live_start_time, fans_count)
+                        await redis.set_fans_medal_count(self.room_id, live_start_time, fans_medal_count)
+                        await redis.set_guard_count(self.room_id, live_start_time, guard_count)
 
                     await self.accumulate_and_reset_data()
 
                     # 推送开播消息
-                    arg_base = room_info["room_info"]
-                    args = {
-                        "{uname}": self.uname,
-                        "{title}": arg_base["title"],
-                        "{url}": f"https://live.bilibili.com/{self.room_id}",
-                        "{cover}": "".join(["{urlpic=", arg_base["cover"], "}"])
-                    }
+                    if not locked:
+                        arg_base = room_info["room_info"]
+                        args = {
+                            "{uname}": self.uname,
+                            "{title}": arg_base["title"],
+                            "{url}": f"https://live.bilibili.com/{self.room_id}",
+                            "{cover}": "".join(["{urlpic=", arg_base["cover"], "}"])
+                        }
+                    else:
+                        args = {
+                            "{uname}": self.uname,
+                            "{title}": "加密直播间",
+                            "{url}": f"https://live.bilibili.com/{self.room_id}",
+                            "{cover}": ""
+                        }
+
                     await self.__bot.send_live_on(self, args)
                     await self.__bot.send_live_on_at(self)
 
@@ -431,39 +452,48 @@ class Up(BaseModel):
             "second": second
         })
 
+        locked = False
+        room_info = {}
+
         # 基础数据变动
         if self.__any_live_report_item_enabled(["fans_change", "fans_medal_change", "guard_change"]):
-            room_info = await self.__live_room.get_room_info()
+            try:
+                room_info = await self.__live_room.get_room_info()
+            except ResponseCodeException as ex:
+                if ex.code == 19002005:
+                    locked = True
+                    logger.warning(f"{self.uname} ({self.room_id}) 的直播间已加密")
 
-            if await redis.exists_fans_count(self.room_id, start_time):
-                fans_count = await redis.get_fans_count(self.room_id, start_time)
-            else:
-                fans_count = -1
-            if await redis.exists_fans_medal_count(self.room_id, start_time):
-                fans_medal_count = await redis.get_fans_medal_count(self.room_id, start_time)
-            else:
-                fans_medal_count = -1
-            if await redis.exists_guard_count(self.room_id, start_time):
-                guard_count = await redis.get_guard_count(self.room_id, start_time)
-            else:
-                guard_count = -1
+            if not locked:
+                if await redis.exists_fans_count(self.room_id, start_time):
+                    fans_count = await redis.get_fans_count(self.room_id, start_time)
+                else:
+                    fans_count = -1
+                if await redis.exists_fans_medal_count(self.room_id, start_time):
+                    fans_medal_count = await redis.get_fans_medal_count(self.room_id, start_time)
+                else:
+                    fans_medal_count = -1
+                if await redis.exists_guard_count(self.room_id, start_time):
+                    guard_count = await redis.get_guard_count(self.room_id, start_time)
+                else:
+                    guard_count = -1
 
-            if room_info["anchor_info"]["medal_info"] is None:
-                fans_medal_count_after = 0
-            else:
-                fans_medal_count_after = room_info["anchor_info"]["medal_info"]["fansclub"]
+                if room_info["anchor_info"]["medal_info"] is None:
+                    fans_medal_count_after = 0
+                else:
+                    fans_medal_count_after = room_info["anchor_info"]["medal_info"]["fansclub"]
 
-            live_report_param.update({
-                # 粉丝变动
-                "fans_before": fans_count,
-                "fans_after": room_info["anchor_info"]["relation_info"]["attention"],
-                # 粉丝团（粉丝勋章数）变动
-                "fans_medal_before": fans_medal_count,
-                "fans_medal_after": fans_medal_count_after,
-                # 大航海变动
-                "guard_before": guard_count,
-                "guard_after": room_info["guard_info"]["count"]
-            })
+                live_report_param.update({
+                    # 粉丝变动
+                    "fans_before": fans_count,
+                    "fans_after": room_info["anchor_info"]["relation_info"]["attention"],
+                    # 粉丝团（粉丝勋章数）变动
+                    "fans_medal_before": fans_medal_count,
+                    "fans_medal_after": fans_medal_count_after,
+                    # 大航海变动
+                    "guard_before": guard_count,
+                    "guard_after": room_info["guard_info"]["count"]
+                })
 
         # 直播数据
         box_profit = await redis.get_room_box_profit(self.room_id)
