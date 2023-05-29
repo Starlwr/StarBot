@@ -9,10 +9,10 @@ import re
 from typing import Any, Union, Dict
 
 import aiohttp
-from aiohttp import TCPConnector
+from aiohttp import TCPConnector, ServerDisconnectedError
 
-from ..exception import ResponseCodeException, ResponseException, NetworkException
 from .Credential import Credential
+from ..exception import ResponseCodeException, ResponseException, NetworkException
 
 __session_pool = {}
 
@@ -111,55 +111,65 @@ async def request(method: str,
 
     session = get_session()
 
-    async with session.request(**config) as resp:
-
-        # 检查状态码
+    for i in range(3):
         try:
-            resp.raise_for_status()
-        except aiohttp.ClientResponseError as e:
-            raise NetworkException(e.status, e.message)
+            async with session.request(**config) as resp:
 
-        # 检查响应头 Content-Length
-        content_length = resp.headers.get("content-length")
-        if content_length and int(content_length) == 0:
-            return None
+                # 检查状态码
+                try:
+                    resp.raise_for_status()
+                except aiohttp.ClientResponseError as e:
+                    raise NetworkException(e.status, e.message)
 
-        # 检查响应头 Content-Type
-        content_type = resp.headers.get("content-type")
+                # 检查响应头 Content-Length
+                content_length = resp.headers.get("content-length")
+                if content_length and int(content_length) == 0:
+                    return None
 
-        # 不是 application/json
-        if content_type.lower().index("application/json") == -1:
-            raise ResponseException("响应不是 application/json 类型")
+                # 检查响应头 Content-Type
+                content_type = resp.headers.get("content-type")
 
-        raw_data = await resp.text()
-        resp_data: dict
+                # 不是 application/json
+                if content_type.lower().index("application/json") == -1:
+                    raise ResponseException("响应不是 application/json 类型")
 
-        if 'callback' in params:
-            # JSONP 请求
-            resp_data = json.loads(
-                re.match("^.*?({.*}).*$", raw_data, re.S).group(1))
-        else:
-            # JSON
-            resp_data = json.loads(raw_data)
+                raw_data = await resp.text()
+                resp_data: dict
 
-        # 检查 code
-        code = resp_data.get("code", None)
+                if 'callback' in params:
+                    # JSONP 请求
+                    resp_data = json.loads(
+                        re.match("^.*?({.*}).*$", raw_data, re.S).group(1))
+                else:
+                    # JSON
+                    resp_data = json.loads(raw_data)
 
-        if code is None:
-            raise ResponseCodeException(-1, "API 返回数据未含 code 字段", resp_data)
+                # 检查 code
+                code = resp_data.get("code", None)
 
-        if code != 0:
-            msg = resp_data.get('msg', None)
-            if msg is None:
-                msg = resp_data.get('message', None)
-            if msg is None:
-                msg = "接口未返回错误信息"
-            raise ResponseCodeException(code, msg, resp_data)
+                if code is None:
+                    raise ResponseCodeException(-1, "API 返回数据未含 code 字段", resp_data)
 
-        real_data = resp_data.get("data", None)
-        if real_data is None:
-            real_data = resp_data.get("result", None)
-        return real_data
+                if code != 0:
+                    # 加载错误，请稍后再试
+                    if code == 4101131:
+                        await asyncio.sleep(10)
+                        continue
+
+                    msg = resp_data.get('msg', None)
+                    if msg is None:
+                        msg = resp_data.get('message', None)
+                    if msg is None:
+                        msg = "接口未返回错误信息"
+                    raise ResponseCodeException(code, msg, resp_data)
+
+                real_data = resp_data.get("data", None)
+                if real_data is None:
+                    real_data = resp_data.get("result", None)
+                return real_data
+        except ServerDisconnectedError:
+            await asyncio.sleep(0.5)
+            continue
 
 
 def get_session() -> aiohttp.ClientSession:
