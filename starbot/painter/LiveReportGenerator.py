@@ -461,6 +461,7 @@ class LiveReportGenerator:
             unames: 昵称列表，按照数量列表降序排序
             counts: 数量列表，降序排序
             icon: 大航海图标
+            color: 大航海文字颜色
         """
         count = len(counts)
         if count == 0 or len(faces) != len(unames) or len(unames) != len(counts):
@@ -481,9 +482,9 @@ class LiveReportGenerator:
                 mask_round(faces[i].resize((face_size, face_size)).convert("RGBA")), (x + face_padding, face_padding)
             )
             if i != count - 1:
-                line.draw_img_alpha(icon, (x, 0))
+                line.draw_img_alpha(icon.copy(), (x, 0))
             else:
-                line.set_pos(x=x).draw_img_alpha(icon).set_pos(x=0)
+                line.set_pos(x=x).draw_img_alpha(icon.copy()).set_pos(x=0)
 
         for i, x in enumerate(xs):
             uname = limit_str_length(unames[i], 8)
@@ -523,9 +524,9 @@ class LiveReportGenerator:
 
         resource_base_path = os.path.dirname(os.path.dirname(__file__))
         icon_map = {
-            0: Image.open(f"{resource_base_path}/resource/governor.png").convert("RGBA"),
-            1: Image.open(f"{resource_base_path}/resource/commander.png").convert("RGBA"),
-            2: Image.open(f"{resource_base_path}/resource/captain.png").convert("RGBA")
+            0: f"{resource_base_path}/resource/governor.png",
+            1: f"{resource_base_path}/resource/commander.png",
+            2: f"{resource_base_path}/resource/captain.png"
         }
         color_map = {
             0: Color.CRIMSON,
@@ -548,9 +549,11 @@ class LiveReportGenerator:
                 faces = [x[0] for x in line]
                 unames = [x[1] for x in line]
                 counts = [x[2] for x in line]
+                icon = Image.open(icon_map[i]).convert("RGBA")
                 img.draw_img_alpha(
-                    cls.__get_guard_line_pic(pic, width, face_size, faces, unames, counts, icon_map[i], color_map[i])
+                    cls.__get_guard_line_pic(pic, width, face_size, faces, unames, counts, icon, color_map[i])
                 ).move_pos(0, -pic.row_space)
+                icon.close()
 
         return img.img
 

@@ -127,6 +127,7 @@ def mask_round(img: Image.Image) -> Image.Image:
     img_width, img_height = img.size
     mask_draw.ellipse((0, 0, img_width, img_height), fill=255)
     img.putalpha(mask)
+    mask.close()
     return img
 
 
@@ -146,6 +147,7 @@ def mask_rounded_rectangle(img: Image.Image, radius: int = 10) -> Image.Image:
     img_width, img_height = img.size
     mask_draw.rounded_rectangle((0, 0, img_width, img_height), radius, 255)
     img.putalpha(mask)
+    mask.close()
     return img
 
 

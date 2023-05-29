@@ -59,6 +59,7 @@ class RankingGenerator:
         else:
             mask_draw.polygon(((0, 0), (0, height), (height, height)), 0)
         bar.putalpha(mask)
+        mask.close()
 
         return bar
 

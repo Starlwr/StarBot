@@ -260,6 +260,7 @@ class PicGenerator:
         """
         在当前绘图坐标绘制一张图片，会自动移动绘图坐标至下次绘图适合位置
         也可手动传入绘图坐标，手动传入时不会移动绘图坐标
+        绘制结束后，传入图片会被自动调用 close 方法关闭
 
         Args:
             img: 图片路径或 Image 图片实例
@@ -273,12 +274,16 @@ class PicGenerator:
             self.move_pos(0, img.height + self.__ROW_SPACE)
         else:
             self.__canvas.paste(img, xy)
+
+        img.close()
+
         return self
 
     def draw_img_alpha(self, img: Union[str, Image.Image], xy: Optional[Tuple[int, int]] = None):
         """
         在当前绘图坐标绘制一张透明背景图片，会自动移动绘图坐标至下次绘图适合位置
         也可手动传入绘图坐标，手动传入时不会移动绘图坐标
+        绘制结束后，传入图片会被自动调用 close 方法关闭
 
         Args:
             img: 透明背景图片路径或 Image 图片实例
@@ -292,6 +297,9 @@ class PicGenerator:
             self.move_pos(0, img.height + self.__ROW_SPACE)
         else:
             self.__canvas.paste(img, xy, img)
+
+        img.close()
+
         return self
 
     def draw_img_with_border(self,
@@ -303,6 +311,7 @@ class PicGenerator:
         """
         在当前绘图坐标绘制一张图片并附带圆角矩形边框，会自动移动绘图坐标至下次绘图适合位置
         也可手动传入绘图坐标，手动传入时不会移动绘图坐标
+        绘制结束后，传入图片会被自动调用 close 方法关闭
 
         Args:
             img: 图片路径或 Image 图片实例
@@ -571,22 +580,23 @@ class PicGenerator:
 
     def save(self, path: str):
         """
-        保存图片
+        保存图片，终端操作，保存完成后会关闭图片，无法再对图片进行操作
 
         Args:
             path: 保存路径
         """
         self.__canvas.save(path)
-        return self
+        self.__canvas.close()
 
     def base64(self) -> str:
         """
-        结束绘图，获取 Base64 字符串
+        获取 Base64 字符串，终端操作，获取后会关闭图片，无法再对图片进行操作
 
         Returns:
             Base64 字符串
         """
         io = BytesIO()
         self.__canvas.save(io, format="PNG")
+        self.__canvas.close()
 
         return base64.b64encode(io.getvalue()).decode()

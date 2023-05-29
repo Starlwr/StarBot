@@ -317,6 +317,7 @@ class DynamicPicGenerator:
 
             auto_next_line(size[0])
             img.paste(pic, (x, y), pic)
+            pic.close()
             x = int(x + size[0])
 
         def draw_char(c: str, color: Union[Color, Tuple[int, int, int]] = Color.BLACK):
@@ -521,6 +522,10 @@ class DynamicPicGenerator:
         cover.paste(mask, (0, cover.height - mask.height - 1), mask)
         cover.paste(time, (13, cover.height - time.height - 14), time)
         cover.paste(tv, (cover.width - tv.width - 16, cover.height - tv.height - 5), tv)
+
+        mask.close()
+        time.close()
+        tv.close()
 
         cover_draw = ImageDraw.Draw(cover)
         normal_font = config.get("PAINTER_NORMAL_FONT")
