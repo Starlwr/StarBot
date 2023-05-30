@@ -25,7 +25,7 @@ class StarBot:
     """
     StarBot 类
     """
-    VERSION = "2.0.1"
+    VERSION = "2.0.2"
     STARBOT_ASCII_LOGO = "\n".join(
         (
             r"    _____ _             ____        _   ",
@@ -34,7 +34,7 @@ class StarBot:
             r"   \___ \| __/ _` | '__|  _ < / _ \| __|",
             r"   ____) | || (_| | |  | |_) | (_) | |_ ",
             r"  |_____/ \__\__,_|_|  |____/ \___/ \__|",
-            f"      StarBot - (v{VERSION})  2023-05-21",
+            f"      StarBot - (v{VERSION})  2023-05-30",
             r" Github: https://github.com/Starlwr/StarBot",
             r"",
             r"",
