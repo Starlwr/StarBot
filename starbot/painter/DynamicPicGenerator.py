@@ -631,7 +631,7 @@ class DynamicPicGenerator:
 
         cover = await open_url_image(cover_url)
         cover_size = int(pic.width / 4)
-        cover = cover.resize((cover_size, cover_size), Resampling.LANCZOS)
+        cover = cover.resize((cover_size, cover_size), Resampling.LANCZOS).convert("RGBA")
         cover = mask_rounded_rectangle(cover)
 
         if forward:
