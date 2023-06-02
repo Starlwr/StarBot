@@ -151,8 +151,8 @@ async def request(method: str,
                     raise ResponseCodeException(-1, "API 返回数据未含 code 字段", resp_data)
 
                 if code != 0:
-                    # 加载错误，请稍后再试
-                    if code == 4101131:
+                    # 4101131: 加载错误，请稍后再试, 22015: 您的账号异常，请稍后再试
+                    if code == 4101131 or code == 22015:
                         await asyncio.sleep(10)
                         continue
 
