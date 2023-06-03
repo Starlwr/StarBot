@@ -46,6 +46,9 @@ class Up(BaseModel):
     __room: Optional[LiveDanmaku] = PrivateAttr()
     """直播间连接实例"""
 
+    __connecting: Optional[bool] = PrivateAttr()
+    """是否正在连接中"""
+
     __is_reconnect: Optional[bool] = PrivateAttr()
     """是否为重新连接直播间"""
 
@@ -60,6 +63,7 @@ class Up(BaseModel):
         self.__user = None
         self.__live_room = None
         self.__room = None
+        self.__connecting = False
         self.__is_reconnect = False
         self.__loop = asyncio.get_event_loop()
         self.__bot = None
@@ -111,6 +115,11 @@ class Up(BaseModel):
                 logger.warning(f"{self.uname} 的开播, 下播和直播报告开关均处于关闭状态, 跳过连接直播间")
                 return
 
+        if self.__connecting:
+            logger.warning(f"{self.uname} ( UID: {self.uid} ) 的直播间正在连接中, 跳过重复连接")
+            return
+        self.__connecting = True
+
         self.__live_room = LiveRoom(self.room_id, get_credential())
         self.__room = LiveDanmaku(self.room_id, credential=get_credential())
 
@@ -124,6 +133,8 @@ class Up(BaseModel):
             连接成功事件
             """
             logger.debug(f"{self.uname} (VERIFICATION_SUCCESSFUL): {event}")
+
+            self.__connecting = False
 
             if self.__is_reconnect:
                 logger.success(f"已重新连接到 {self.uname} 的直播间 {self.room_id}")
@@ -375,7 +386,7 @@ class Up(BaseModel):
         """
         if config.get("ONLY_CONNECT_NECESSARY_ROOM"):
             if any([self.__any_live_on_enabled(), self.__any_live_off_enabled(), self.__any_live_report_enabled()]):
-                if self.__room is None or self.__room.get_status() != 2:
+                if self.__room is None or (self.__room.get_status() != 2 and self.__room.get_status() != 5):
                     await self.connect()
             else:
                 if self.__room is not None and self.__room.get_status() == 2:
