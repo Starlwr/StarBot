@@ -16,9 +16,6 @@ class LiveOn(BaseModel):
     或使用 LiveOn.default() 获取功能全部开启的默认配置
     """
 
-    DEFAULT_MESSAGE: Optional[str] = "{uname} 正在直播 {title}\n{url}{next}{cover}"
-    """默认消息模板"""
-
     enabled: Optional[bool] = False
     """是否启用开播推送。默认：False"""
 
@@ -36,7 +33,7 @@ class LiveOn(BaseModel):
         获取功能全部开启的默认 LiveOn 实例
         默认配置：启用开播推送，推送内容模板为 "{uname} 正在直播 {title}\n{url}{next}{cover}"
         """
-        return LiveOn(enabled=True, message=LiveOn.DEFAULT_MESSAGE)
+        return LiveOn(enabled=True, message="{uname} 正在直播 {title}\n{url}{next}{cover}")
 
     def __str__(self):
         return f"启用: {self.enabled}\n推送内容:\n{self.message}"
@@ -48,9 +45,6 @@ class LiveOff(BaseModel):
     可使用构造方法手动传入所需的各项配置
     或使用 LiveOff.default() 获取功能全部开启的默认配置
     """
-
-    DEFAULT_MESSAGE: Optional[str] = "{uname} 直播结束了"
-    """默认消息模板"""
 
     enabled: Optional[bool] = False
     """是否启用下播推送。默认：False"""
@@ -69,7 +63,7 @@ class LiveOff(BaseModel):
         获取功能全部开启的默认 LiveOff 实例
         默认配置：启用下播推送，推送内容模板为 "{uname} 直播结束了"
         """
-        return LiveOff(enabled=True, message=LiveOff.DEFAULT_MESSAGE)
+        return LiveOff(enabled=True, message="{uname} 直播结束了")
 
     def __str__(self):
         return f"启用: {self.enabled}\n推送内容:\n{self.message}"
@@ -202,9 +196,6 @@ class DynamicUpdate(BaseModel):
     或使用 DynamicUpdate.default() 获取功能全部开启的默认配置
     """
 
-    DEFAULT_MESSAGE: Optional[str] = "{uname} {action}\n{url}{next}{picture}"
-    """默认消息模板"""
-
     enabled: Optional[bool] = False
     """是否启用动态推送。默认：False"""
 
@@ -222,7 +213,7 @@ class DynamicUpdate(BaseModel):
         获取功能全部开启的默认 DynamicUpdate 实例
         默认配置：启用动态推送，推送内容模板为 "{uname} {action}\n{url}{next}{picture}"
         """
-        return DynamicUpdate(enabled=True, message=DynamicUpdate.DEFAULT_MESSAGE)
+        return DynamicUpdate(enabled=True, message="{uname} {action}\n{url}{next}{picture}")
 
     def __str__(self):
         return f"启用: {self.enabled}\n推送内容:\n{self.message}"
