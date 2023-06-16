@@ -1,6 +1,6 @@
 import asyncio
 
-from aiohttp import ClientOSError, ServerDisconnectedError
+from aiohttp import ClientOSError, ServerDisconnectedError, ClientPayloadError
 from loguru import logger
 
 from .datasource import DataSource
@@ -37,6 +37,10 @@ async def dynamic_spider(datasource: DataSource):
         except ClientOSError:
             continue
         except ServerDisconnectedError:
+            continue
+        except TimeoutError:
+            continue
+        except ClientPayloadError:
             continue
         except Exception as ex:
             logger.exception("动态推送任务抓取最新动态异常", ex)
