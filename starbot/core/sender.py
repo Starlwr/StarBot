@@ -40,6 +40,9 @@ class Bot(BaseModel):
     __at_all_limited: Optional[int] = PrivateAttr()
     """@全体成员次数用尽时所在日期"""
 
+    __banned: Optional[bool] = PrivateAttr()
+    """当前是否被风控"""
+
     __queue: Optional[List[Message]] = PrivateAttr()
     """消息补发队列"""
 
@@ -56,6 +59,7 @@ class Bot(BaseModel):
             log_config=LogConfig(log_level="DEBUG")
         )
         self.__at_all_limited = time.localtime(time.time() - 86400).tm_yday
+        self.__banned = False
         self.__queue = []
 
         # 注入 Bot 实例引用
@@ -98,6 +102,12 @@ class Bot(BaseModel):
                         exception = AtAllLimitedException()
                         self.__at_all_limited = time.localtime(time.time()).tm_yday
                         continue
+                    elif "LIMITED_MESSAGING" in str(ex):
+                        logger.error(f"受风控影响, 发送群消息失败, 需人工通过验证码验证, 群号: {msg.id}")
+                        if config.get("MASTER_QQ"):
+                            await self.__bot.send_friend_message(config.get("MASTER_QQ"), config.get("BAN_NOTICE"))
+                        else:
+                            logger.warning("未设置主人 QQ, 无法发送提醒消息, 可使用 config.set(\"MASTER_QQ\", QQ号) 进行设置")
                     else:
                         logger.exception("消息推送模块异常", ex)
                         continue
