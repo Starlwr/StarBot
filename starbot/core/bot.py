@@ -111,10 +111,11 @@ class StarBot:
             await redis.set_live_start_time(up.room_id, start_time)
 
         # 连接直播间
+        interval = config.get("CONNECTION_INTERVAL")
         for up in self.__datasource.get_up_list():
             try:
                 await up.connect()
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(interval)
             except LiveException as ex:
                 logger.error(ex.msg)
         if len(self.__datasource.get_up_list()) > 0:

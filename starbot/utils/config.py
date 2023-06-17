@@ -44,6 +44,8 @@ SIMPLE_CONFIG = {
     # 是否将日志同时输出到文件中
     "LOG_TO_FILE": False,
 
+    # 连接每个直播间的间隔等待时长，用于避免连接大量直播间时的并发过多异常 too many file descriptors in select()，单位：秒
+    "CONNECTION_INTERVAL": 0.2,
     # 成功连接所有主播直播间的最大等待时长，可使得日志输出顺序更加易读，一般无需修改此处，设置为 0 会自适应计算，单位：秒
     "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 0,
 
@@ -160,6 +162,8 @@ FULL_CONFIG = {
     # 是否将日志同时输出到文件中
     "LOG_TO_FILE": False,
 
+    # 连接每个直播间的间隔等待时长，用于避免连接大量直播间时的并发过多异常 too many file descriptors in select()，单位：秒
+    "CONNECTION_INTERVAL": 0.2,
     # 成功连接所有主播直播间的最大等待时长，可使得日志输出顺序更加易读，一般无需修改此处，设置为 0 会自适应计算，单位：秒
     "WAIT_FOR_ALL_CONNECTION_TIMEOUT": 0,
 
