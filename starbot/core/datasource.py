@@ -55,6 +55,17 @@ class DataSource(metaclass=abc.ABCMeta):
         """
         return self.__up_list
 
+    def remove_up(self, uid: int):
+        """
+        从数据源中移除指定 UID 的 UP 实例
+
+        Args:
+            uid: 需要移除 Up 的 UID
+        """
+        for bot in self.bots:
+            bot.ups = [up for up in bot.ups if up.uid != uid]
+        self.format_data()
+
     def get_uid_list(self) -> List[int]:
         """
         获取数据源中所有的 UID
