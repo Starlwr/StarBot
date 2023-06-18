@@ -38,7 +38,7 @@ async def dynamic_spider(datasource: DataSource):
             continue
         except ServerDisconnectedError:
             continue
-        except TimeoutError:
+        except asyncio.TimeoutError:
             continue
         except ClientPayloadError:
             continue
