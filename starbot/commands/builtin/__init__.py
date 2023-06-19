@@ -14,3 +14,4 @@ import starbot.commands.builtin.enable_command
 import starbot.commands.builtin.help
 import starbot.commands.builtin.ranking.ranking
 import starbot.commands.builtin.ranking.ranking_double
+import starbot.commands.builtin.resend

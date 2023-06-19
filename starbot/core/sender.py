@@ -43,7 +43,7 @@ class Bot(BaseModel):
     __banned: Optional[bool] = PrivateAttr()
     """当前是否被风控"""
 
-    __queue: Optional[List[Message]] = PrivateAttr()
+    __queue: Optional[List[Tuple[int, MessageChain, int]]] = PrivateAttr()
     """消息补发队列"""
 
     def __init__(self, **data: Any):
@@ -66,15 +66,78 @@ class Bot(BaseModel):
         for up in self.ups:
             up.inject_bot(self)
 
+    async def resend(self):
+        """
+        风控消息补发
+        """
+        if len(self.__queue) == 0:
+            if config.get("MASTER_QQ"):
+                await self.__bot.send_friend_message(config.get("MASTER_QQ"), "补发队列为空~")
+            return
+
+        task_start_tip = f"补发任务已启动, 补发队列长度: {len(self.__queue)}"
+        logger.info(task_start_tip)
+        if config.get("MASTER_QQ"):
+            await self.__bot.send_friend_message(config.get("MASTER_QQ"), f"{task_start_tip}~")
+
+        while len(self.__queue) > 0:
+            msg_id, message, timestamp = self.__queue[0]
+            resend_time_limit = config.get("RESEND_TIME_LIMIT")
+            if resend_time_limit != 0 and int(time.time()) - timestamp > resend_time_limit:
+                logger.info(f"消息已超时, 跳过补发, 群({msg_id}) : {message.safe_display}")
+                self.__queue.pop(0)
+                continue
+            try:
+                await self.__bot.send_group_message(msg_id, message)
+                self.__banned = False
+                logger.info(f"{self.qq} -> 群[{msg_id}] : {message.safe_display}")
+                self.__queue.pop(0)
+                await asyncio.sleep(3)
+            except AccountMuted:
+                logger.warning(f"Bot({self.qq}) 在群 {msg_id} 中被禁言")
+                self.__queue.pop(0)
+                continue
+            except UnknownTarget:
+                self.__queue.pop(0)
+                continue
+            except RemoteException as ex:
+                if "AT_ALL_LIMITED" in str(ex):
+                    logger.warning(f"Bot({self.qq}) 今日的@全体成员次数已达到上限")
+                    self.__queue.pop(0)
+                    self.__at_all_limited = time.localtime(time.time()).tm_yday
+                    continue
+                elif "LIMITED_MESSAGING" in str(ex):
+                    self.__banned = True
+                    logger.error(f"消息补发期间再次触发风控, 需人工再次通过验证码验证")
+                    if not config.get("BAN_CONTINUE_SEND_MESSAGE"):
+                        logger.warning("已停止尝试消息推送, 后续消息将会被暂存, 请人工通过验证码验证后使用 \"补发\" 命令恢复")
+                    if config.get("MASTER_QQ"):
+                        notice = "消息补发期间再次触发验证, 请手动通过验证码验证后重新发送 \"补发\" 命令~"
+                        await self.__bot.send_friend_message(config.get("MASTER_QQ"), notice)
+                    else:
+                        logger.warning("未设置主人 QQ, 无法发送提醒消息, 可使用 config.set(\"MASTER_QQ\", QQ号) 进行设置")
+                    return
+                else:
+                    logger.exception("消息推送模块异常", ex)
+                    if config.get("MASTER_QQ"):
+                        await self.__bot.send_friend_message(config.get("MASTER_QQ"), "补发任务期间出现异常, 详细请查看日志~")
+                    return
+            except Exception as ex:
+                logger.exception("消息推送模块异常", ex)
+                if config.get("MASTER_QQ"):
+                    await self.__bot.send_friend_message(config.get("MASTER_QQ"), "补发任务期间出现异常, 详细请查看日志~")
+                return
+
+        logger.success(f"补发任务已完成")
+        if config.get("MASTER_QQ"):
+            await self.__bot.send_friend_message(config.get("MASTER_QQ"), "补发任务已完成~")
+
     async def send_message(self, msg: Message):
         """
         消息发送
 
         Args:
             msg: Message 实例
-
-        Raises:
-
         """
         if msg.type == PushType.Friend:
             for message in msg.get_message_chains():
@@ -89,7 +152,19 @@ class Bot(BaseModel):
 
             for message in msgs:
                 try:
+                    if self.__banned and config.get("BAN_RESEND") and not config.get("BAN_CONTINUE_SEND_MESSAGE"):
+                        if not config.get("RESEND_AT_MESSAGE"):
+                            message = message.exclude(At, AtAll)
+                        if len(message) > 0:
+                            self.__queue.append((msg.id, message, msg.get_time()))
+                        logger.error(f"受风控影响, 要发送的消息已暂存, 请人工通过验证码验证后使用 \"补发\" 命令恢复, 群号: {msg.id}")
+                        if config.get("MASTER_QQ"):
+                            await self.__bot.send_friend_message(config.get("MASTER_QQ"), config.get("BAN_NOTICE"))
+                        else:
+                            logger.warning("未设置主人 QQ, 无法发送提醒消息, 可使用 config.set(\"MASTER_QQ\", QQ号) 进行设置")
+                        continue
                     await self.__bot.send_group_message(msg.id, message)
+                    self.__banned = False
                     logger.info(f"{self.qq} -> 群[{msg.id}] : {message.safe_display}")
                 except AccountMuted:
                     logger.warning(f"Bot({self.qq}) 在群 {msg.id} 中被禁言")
@@ -103,7 +178,15 @@ class Bot(BaseModel):
                         self.__at_all_limited = time.localtime(time.time()).tm_yday
                         continue
                     elif "LIMITED_MESSAGING" in str(ex):
+                        self.__banned = True
                         logger.error(f"受风控影响, 发送群消息失败, 需人工通过验证码验证, 群号: {msg.id}")
+                        if config.get("BAN_RESEND"):
+                            if not config.get("RESEND_AT_MESSAGE"):
+                                message = message.exclude(At, AtAll)
+                            if len(message) > 0:
+                                self.__queue.append((msg.id, message, msg.get_time()))
+                            if not config.get("BAN_CONTINUE_SEND_MESSAGE"):
+                                logger.warning("已停止尝试消息推送, 后续消息将会被暂存, 请人工通过验证码验证后使用 \"补发\" 命令恢复")
                         if config.get("MASTER_QQ"):
                             await self.__bot.send_friend_message(config.get("MASTER_QQ"), config.get("BAN_NOTICE"))
                         else:
@@ -115,7 +198,7 @@ class Bot(BaseModel):
                     logger.exception("消息推送模块异常", ex)
                     continue
 
-            if exception is not None:
+            if exception is not None and not self.__banned:
                 message = ""
                 if isinstance(exception, AtAllLimitedException):
                     message = config.get("AT_ALL_LIMITED_MESSAGE")

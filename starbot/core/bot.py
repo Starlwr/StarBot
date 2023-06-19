@@ -182,6 +182,10 @@ class StarBot:
                 if len(need_follow_uids) > 0:
                     asyncio.create_task(follow_task(need_follow_uids))
 
+        # 检测消息补发配置完整性
+        if config.get("BAN_RESEND") and config.get("MASTER_QQ") is None:
+            logger.warning("检测到风控消息补发功能已开启, 但未配置机器人主人 QQ, 将会导致 \"补发\" 命令无法使用, 请使用 config.set(\"MASTER_QQ\", QQ号) 进行配置")
+
         # 启动消息推送模块
         Ariadne.options["default_account"] = self.__datasource.bots[0].qq
 
