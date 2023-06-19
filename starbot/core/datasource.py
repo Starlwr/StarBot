@@ -1,3 +1,4 @@
+import os
 import abc
 import asyncio
 import json
@@ -194,17 +195,19 @@ class JsonDataSource(DataSource):
     """
     从 JSON 字符串初始化的 Bot 推送配置数据源
     """
-    def __init__(self, json_file: Optional[str] = None, json_str: Optional[str] = None):
+    def __init__(self, json_file: Optional[str] = None, json_str: Optional[str] = None, credential_file: Optional[str] = None):
         """
         Args:
             json_file: JSON 文件路径，两个参数任选其一传入，全部传入优先使用 json_str
             json_str: JSON 配置字符串，两个参数任选其一传入，全部传入优先使用 json_str
+            credential_file: B站凭据 JSON 文件路径，不填默认从运行目录下的credential.json中读取凭据
         """
         super().__init__()
         self.__config = None
 
         self.__json_file = json_file
         self.__json_str = json_str
+        self.__credential_file = credential_file
 
     async def load(self):
         """
@@ -249,6 +252,15 @@ class JsonDataSource(DataSource):
         super().format_data()
         logger.success(f"成功从 JSON 中导入了 {len(self.get_up_list())} 个 UP 主")
 
+        # 判断用户是否已通过config.set_credential设置凭据，若已设置则跳过设置
+        if config.get("SESSDATA") is None or config.get("BILI_JCT") is None or config.get("BUVID3") is None:
+            # 用户不填credential_file字段时默认运行目录下credential.json
+            if self.__credential_file is None:
+                # 判断运行目录下是否存在credential.json，若不存在则不调set_credential_from_json
+                if os.path.exists("credential.json"):
+                    config.set_credential_from_json("credential.json")
+            else:
+                config.set_credential_from_json(self.__credential_file)
 
 class MySQLDataSource(DataSource):
     """
