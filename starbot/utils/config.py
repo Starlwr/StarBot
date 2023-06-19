@@ -33,7 +33,9 @@ DEFAULT_CONFIG = {
     # MySQL 数据库名
     "MYSQL_DB": "starbot",
 
-    # Mirai HTTP 及 Websocket 端口
+    # Mirai API HTTP 及 Websocket 地址
+    "MIRAI_HOST": "localhost",
+    # Mirai API HTTP 及 Websocket 端口
     "MIRAI_PORT": 7827,
 
     # 登录 B 站账号所需 Cookie 数据 ( 不登录账号将有部分功能不可用 ) 各字段获取方式查看：https://bot.starlwr.com/depoly/document

@@ -53,8 +53,8 @@ class Bot(BaseModel):
             connection=AriadneConfig(
                 self.qq,
                 "StarBot",
-                HttpClientConfig(host=f"http://localhost:{config.get('MIRAI_PORT')}"),
-                WebsocketClientConfig(host=f"http://localhost:{config.get('MIRAI_PORT')}"),
+                HttpClientConfig(host=f"http://{config.get('MIRAI_HOST')}:{config.get('MIRAI_PORT')}"),
+                WebsocketClientConfig(host=f"http://{config.get('MIRAI_HOST')}:{config.get('MIRAI_PORT')}"),
             ),
             log_config=LogConfig(log_level="DEBUG")
         )
