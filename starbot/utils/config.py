@@ -1,9 +1,4 @@
-import json
-from typing import Any, Optional
-
-from loguru import logger
-
-from ..exception.CredentialFromJSONException import CredentialFromJSONException
+from typing import Any
 
 DEFAULT_CONFIG = {
     # 是否检测最新 StarBot 版本
@@ -154,43 +149,6 @@ def set_credential(sessdata: str, bili_jct: str, buvid3: str):
     set("SESSDATA", sessdata)
     set("BILI_JCT", bili_jct)
     set("BUVID3", buvid3)
-
-
-def set_credential_from_json(json_file: Optional[str] = None, json_str: Optional[str] = None):
-    """
-    从JSON读取B站credential
-
-    Args:
-        json_file: JSON 文件路径，两个参数任选其一传入，全部传入优先使用 json_str
-        json_str: JSON 配置字符串，两个参数任选其一传入，全部传入优先使用 json_str
-    Raises:
-        CredentialFromJSONException: JSON 格式错误或缺少必要参数
-    """
-    if json_str is None:
-        try:
-            with open(json_file, "r", encoding="utf-8") as file:
-                json_str = file.read()
-        except FileNotFoundError:
-            logger.error("B站凭据 JSON 文件不存在, 请检查文件路径是否正确")
-            raise CredentialFromJSONException("B站凭据 JSON 文件不存在, 请检查文件路径是否正确")
-        except UnicodeDecodeError:
-            logger.error("B站凭据 JSON 文件编码不正确, 请将其转换为 UTF-8 格式编码后重试")
-            raise CredentialFromJSONException("B站凭据 JSON 文件编码不正确, 请将其转换为 UTF-8 格式编码后重试")
-        except Exception as ex:
-            logger.error(f"读取B站凭据 JSON 文件异常 {ex}")
-            raise CredentialFromJSONException(f"读取B站凭据 JSON 文件异常 {ex}")
-
-    try:
-        config = json.loads(json_str)
-    except Exception:
-        logger.error("提供的B站凭据 JSON 字符串格式不正确")
-        raise CredentialFromJSONException("提供的B站凭据 JSON 字符串格式不正确")
-
-    set("SESSDATA", config["sessdata"])
-    set("BILI_JCT", config["bili_jct"])
-    set("BUVID3", config["buvid3"])
-
-    logger.success("成功从JSON中导入了B站凭据")
 
 
 def get(key: str) -> Any:

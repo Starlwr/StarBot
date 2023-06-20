@@ -2,6 +2,7 @@ import asyncio
 import json
 import signal
 import sys
+from json import JSONDecodeError
 
 from creart import create
 from graia.ariadne import Ariadne
@@ -126,6 +127,28 @@ class StarBot:
                 await asyncio.wait_for(self.__datasource.wait_for_connects(), wait_time)
             except asyncio.exceptions.TimeoutError:
                 logger.warning("等待连接所有直播间超时, 请检查是否存在未连接成功的直播间")
+
+        # 未设置登录凭据时尝试从 JSON 文件中读取
+        if config.get("SESSDATA") is None or config.get("BILI_JCT") is None or config.get("BUVID3") is None:
+            logger.info("未设置 B 站登录凭据, 将尝试从 credential.json 文件中读取")
+            try:
+                with open("credential.json", "r", encoding="utf-8") as file:
+                    credential = json.loads(file.read())
+                    config.set("SESSDATA", credential["sessdata"])
+                    config.set("BILI_JCT", credential["bili_jct"])
+                    config.set("BUVID3", credential["buvid3"])
+                    logger.success("成功从 JSON 文件中读取了 B 站登录凭据")
+            except FileNotFoundError:
+                logger.warning("登录凭据 JSON 文件不存在")
+            except UnicodeDecodeError:
+                logger.warning("登录凭据 JSON 文件编码不正确, 请将其转换为 UTF-8 格式编码")
+            except (JSONDecodeError, KeyError):
+                logger.warning("登录凭据 JSON 文件格式不正确")
+            except Exception as ex:
+                logger.warning(f"读取登录凭据 JSON 文件异常 {ex}")
+
+            if config.get("SESSDATA") is None or config.get("BILI_JCT") is None or config.get("BUVID3") is None:
+                logger.warning("读取 B 站登录凭据失败, 动态推送等部分功能将不可用")
 
         # 启动动态推送模块
         asyncio.get_event_loop().create_task(dynamic_spider(self.__datasource))
