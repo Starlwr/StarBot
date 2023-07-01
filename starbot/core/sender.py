@@ -66,6 +66,12 @@ class Bot(BaseModel):
         for up in self.ups:
             up.inject_bot(self)
 
+    def clear_resend_queue(self):
+        """
+        清空补发队列
+        """
+        self.__queue.clear()
+
     async def resend(self):
         """
         风控消息补发

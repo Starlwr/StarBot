@@ -15,3 +15,4 @@ import starbot.commands.builtin.help
 import starbot.commands.builtin.ranking.ranking
 import starbot.commands.builtin.ranking.ranking_double
 import starbot.commands.builtin.resend
+import starbot.commands.builtin.resend_clear_queue
