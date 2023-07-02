@@ -303,6 +303,10 @@ class Up(BaseModel):
                 num = base["num"]
                 price = float("{:.1f}".format((base["discount_price"] / 1000) * num))
 
+                # 幸运之钥主播收益为 1%
+                if base["giftId"] == 31709:
+                    price = price * 0.01
+
                 # 礼物统计
                 if base["total_coin"] != 0 and base["discount_price"] != 0:
                     await redis.incr_room_gift_profit(self.room_id, price)
