@@ -88,7 +88,7 @@ class RankingGenerator:
         """
         count = len(counts)
         if count == 0 or len(faces) != len(unames) or len(unames) != len(counts):
-            raise ValueError
+            raise ValueError("绘制排行榜错误, 头像昵称列表与数量列表长度不匹配")
 
         face_size = 100
         offset = 10
@@ -142,7 +142,7 @@ class RankingGenerator:
         """
         count = len(counts)
         if count == 0 or len(faces) != len(unames) or len(unames) != len(counts):
-            raise ValueError
+            raise ValueError("绘制排行榜错误, 头像昵称列表与数量列表长度不匹配")
 
         face_size = 100
         offset = 10

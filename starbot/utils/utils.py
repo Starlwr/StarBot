@@ -161,18 +161,24 @@ async def get_unames_and_faces_by_uids(uids: List[str]) -> Tuple[List[str], List
     Returns:
         昵称列表和头像图片列表组成的元组
     """
+    resource_base_path = os.path.dirname(os.path.dirname(__file__))
+
     async def illegal_face():
-        face = Image.new("RGBA", (300, 300), (255, 255, 255, 255))
-        return face
+        return Image.open(f"{resource_base_path}/resource/face.png")
 
     infos_list = []
     uid_lists = split_list(uids, 10)
     for lst in uid_lists:
         user_info_url = f"https://api.vc.bilibili.com/account/v1/user/cards?uids={','.join(lst)}"
         try:
-            infos_list.extend(await request("GET", user_info_url))
+            infos_list.extend(await request("GET", user_info_url, credential=get_credential()))
         except ResponseCodeException:
-            return [], []
+            failed_uids = []
+            failed_faces = []
+            for i in range(len(uids)):
+                failed_uids.append(f"昵称获取失败({uids[i]})")
+                failed_faces.append(await illegal_face())
+            return failed_uids, failed_faces
     infos = dict(zip([x["mid"] for x in infos_list], infos_list))
     unames = [infos[int(uid)]["name"] if int(uid) in infos else "" for uid in uids]
     download_face_tasks = [
