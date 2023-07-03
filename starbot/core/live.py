@@ -16,6 +16,7 @@ from aiohttp.client_ws import ClientWebSocketResponse
 from loguru import logger
 
 from ..exception.LiveException import LiveException
+from ..utils import config
 from ..utils.AsyncEvent import AsyncEvent
 from ..utils.Credential import Credential
 from ..utils.Danmaku import Danmaku
@@ -810,7 +811,10 @@ class LiveDanmaku(AsyncEvent):
                 logger.warning(f"直播间 {self.room_display_id} 检测到未知的数据包类型, 无法处理")
 
     async def __send_verify_data(self, ws: ClientWebSocketResponse, token: str):
-        verify_data = {"uid": 0, "roomid": self.__room_real_id,
+        uid = config.get("ACCOUNT_UID")
+        if uid is None:
+            uid = 0
+        verify_data = {"uid": uid, "roomid": self.__room_real_id,
                        "protover": 3, "platform": "web", "type": 2, "key": token}
         data = json.dumps(verify_data).encode()
         await self.__send(data, self.PROTOCOL_VERSION_HEARTBEAT, self.DATAPACK_TYPE_VERIFY, ws)

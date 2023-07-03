@@ -279,7 +279,8 @@ class Up(BaseModel):
 
                 # 弹幕统计
                 await redis.incr_room_danmu_count(self.room_id)
-                await redis.incr_user_danmu_count(self.room_id, uid)
+                if uid != 0:
+                    await redis.incr_user_danmu_count(self.room_id, uid)
 
                 # 弹幕词云所需弹幕记录
                 if isinstance(base[0][13], str):

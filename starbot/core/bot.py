@@ -205,9 +205,25 @@ class StarBot:
                 if len(need_follow_uids) > 0:
                     asyncio.create_task(follow_task(need_follow_uids))
 
+        # 检测 UID 配置完整性
+        if config.get("ACCOUNT_UID") is None:
+            logger.warning("未填写 ACCOUNT_UID 配置项, 受 B 站风控影响, 将无法获取弹幕相关数据, 请使用 config.set('ACCOUNT_UID', 您的UID) 设置")
+
         # 检测消息补发配置完整性
         if config.get("BAN_RESEND") and config.get("MASTER_QQ") is None:
             logger.warning("检测到风控消息补发功能已开启, 但未配置机器人主人 QQ, 将会导致 \"补发\" 命令无法使用, 请使用 config.set(\"MASTER_QQ\", QQ号) 进行配置")
+
+        # 受 B 站新风控机制影响，取到了 UID 为 0 的弹幕数据，自动删除掉这一批污染数据
+        for key in await redis.keys("UserDanmuCount:*"):
+            room_id = key.split(":")[1]
+            count = int(await redis.zscore(key, 0))
+            await redis.zrem(key, 0)
+            await redis.hincrby("RoomDanmuCount", room_id, -count)
+        for key in await redis.keys("UserDanmuTotal:*"):
+            room_id = key.split(":")[1]
+            count = int(await redis.zscore(key, 0))
+            await redis.zrem(key, 0)
+            await redis.hincrby("RoomDanmuTotal", room_id, -count)
 
         # 启动消息推送模块
         Ariadne.options["default_account"] = self.__datasource.bots[0].qq

@@ -25,7 +25,7 @@ async def init():
     logger.success("成功连接 Redis 数据库")
 
 
-# String
+# Key
 
 async def expire(key: str, seconds: int):
     await __redis.expire(key, seconds)
@@ -34,6 +34,12 @@ async def expire(key: str, seconds: int):
 async def exists(key: str) -> bool:
     return bool(await __redis.exists(key))
 
+
+async def keys(pattern: str) -> List[str]:
+    return [x.decode() for x in await __redis.keys(pattern)]
+
+
+# String
 
 async def get(key: str) -> str:
     result = await __redis.get(key)
@@ -212,6 +218,10 @@ async def zunionstore(dest: str, source: Union[str, List[str]]):
         await __redis.zunionstore(dest, [dest, source])
     if isinstance(source, list):
         await __redis.zunionstore(dest, source)
+
+
+async def zrem(key: str, member: Union[str, int]):
+    await __redis.zrem(key, member)
 
 
 # StarBot
