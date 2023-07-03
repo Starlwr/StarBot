@@ -7,7 +7,7 @@ from graia.ariadne import Ariadne
 from graia.ariadne.connection.config import config as AriadneConfig, HttpClientConfig, WebsocketClientConfig
 from graia.ariadne.exception import RemoteException, AccountMuted, UnknownTarget
 from graia.ariadne.message.chain import MessageChain
-from graia.ariadne.message.element import At, AtAll
+from graia.ariadne.message.element import At, AtAll, Source
 from graia.ariadne.model import LogConfig, MemberPerm
 from loguru import logger
 from pydantic import BaseModel, PrivateAttr
@@ -77,6 +77,7 @@ class Bot(BaseModel):
         风控消息补发
         """
         if len(self.__queue) == 0:
+            self.__banned = False
             if config.get("MASTER_QQ"):
                 await self.__bot.send_friend_message(config.get("MASTER_QQ"), "补发队列为空~")
             return
@@ -94,7 +95,9 @@ class Bot(BaseModel):
                 self.__queue.pop(0)
                 continue
             try:
-                await self.__bot.send_group_message(msg_id, message)
+                active = await self.__bot.send_group_message(msg_id, message)
+                if active.message_chain[Source][0].id < 0:
+                    raise RemoteException("MESSAGE_BANNED")
                 self.__banned = False
                 logger.info(f"{self.qq} -> 群[{msg_id}] : {message.safe_display}")
                 self.__queue.pop(0)
@@ -114,11 +117,24 @@ class Bot(BaseModel):
                     continue
                 elif "LIMITED_MESSAGING" in str(ex):
                     self.__banned = True
-                    logger.error(f"消息补发期间再次触发风控, 需人工再次通过验证码验证")
+                    logger.error(f"消息补发期间再次触发风控, 需人工通过验证码验证")
                     if not config.get("BAN_CONTINUE_SEND_MESSAGE"):
                         logger.warning("已停止尝试消息推送, 后续消息将会被暂存, 请人工通过验证码验证后使用 \"补发\" 命令恢复")
                     if config.get("MASTER_QQ"):
-                        notice = "消息补发期间再次触发验证, 请手动通过验证码验证后重新发送 \"补发\" 命令~"
+                        notice = "消息补发期间再次触发风控, 请手动通过验证码验证后重新发送 \"补发\" 命令~"
+                        await self.__bot.send_friend_message(config.get("MASTER_QQ"), notice)
+                    else:
+                        logger.warning("未设置主人 QQ, 无法发送提醒消息, 可使用 config.set(\"MASTER_QQ\", QQ号) 进行设置")
+                    return
+                elif "MESSAGE_BANNED" in str(ex):
+                    self.__banned = True
+                    config.set("BAN_CONTINUE_SEND_MESSAGE", False)
+                    logger.error(
+                        "消息补发期间再次触发风控, 已停止尝试消息推送, 后续消息将会被暂存, "
+                        f"请挂机一段时间后使用 \"补发\" 命令恢复消息发送, 群号: {msg_id}"
+                    )
+                    if config.get("MASTER_QQ"):
+                        notice = "消息补发期间再次触发风控, 请挂机一段时间后重新发送 \"补发\" 命令~"
                         await self.__bot.send_friend_message(config.get("MASTER_QQ"), notice)
                     else:
                         logger.warning("未设置主人 QQ, 无法发送提醒消息, 可使用 config.set(\"MASTER_QQ\", QQ号) 进行设置")
@@ -163,13 +179,11 @@ class Bot(BaseModel):
                             message = message.exclude(At, AtAll)
                         if len(message) > 0:
                             self.__queue.append((msg.id, message, msg.get_time()))
-                        logger.error(f"受风控影响, 要发送的消息已暂存, 请人工通过验证码验证后使用 \"补发\" 命令恢复, 群号: {msg.id}")
-                        if config.get("MASTER_QQ"):
-                            await self.__bot.send_friend_message(config.get("MASTER_QQ"), config.get("BAN_NOTICE"))
-                        else:
-                            logger.warning("未设置主人 QQ, 无法发送提醒消息, 可使用 config.set(\"MASTER_QQ\", QQ号) 进行设置")
+                        logger.error(f"受风控影响, 要发送的消息已暂存, 请解除风控后使用 \"补发\" 命令恢复, 群号: {msg.id}")
                         continue
-                    await self.__bot.send_group_message(msg.id, message)
+                    active = await self.__bot.send_group_message(msg.id, message)
+                    if active.message_chain[Source][0].id < 0:
+                        raise RemoteException("MESSAGE_BANNED")
                     self.__banned = False
                     logger.info(f"{self.qq} -> 群[{msg.id}] : {message.safe_display}")
                 except AccountMuted:
@@ -195,6 +209,23 @@ class Bot(BaseModel):
                                 logger.warning("已停止尝试消息推送, 后续消息将会被暂存, 请人工通过验证码验证后使用 \"补发\" 命令恢复")
                         if config.get("MASTER_QQ"):
                             await self.__bot.send_friend_message(config.get("MASTER_QQ"), config.get("BAN_NOTICE"))
+                        else:
+                            logger.warning("未设置主人 QQ, 无法发送提醒消息, 可使用 config.set(\"MASTER_QQ\", QQ号) 进行设置")
+                    elif "MESSAGE_BANNED" in str(ex):
+                        self.__banned = True
+                        config.set("BAN_RESEND", True)
+                        config.set("BAN_CONTINUE_SEND_MESSAGE", False)
+                        logger.error(
+                            "受风控影响, 发送群消息失败, 已停止尝试消息推送, 后续消息将会被暂存, "
+                            "请挂机一段时间后使用 \"补发\" 命令恢复消息发送, 如不想补发期间漏发的消息, "
+                            f"可先使用一次 \"清空补发队列\" 命令, 群号: {msg.id}"
+                        )
+                        if not config.get("RESEND_AT_MESSAGE"):
+                            message = message.exclude(At, AtAll)
+                        if len(message) > 0:
+                            self.__queue.append((msg.id, message, msg.get_time()))
+                        if config.get("MASTER_QQ"):
+                            await self.__bot.send_friend_message(config.get("MASTER_QQ"), config.get("BAN_WAIT_NOTICE"))
                         else:
                             logger.warning("未设置主人 QQ, 无法发送提醒消息, 可使用 config.set(\"MASTER_QQ\", QQ号) 进行设置")
                     else:
