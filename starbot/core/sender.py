@@ -82,6 +82,7 @@ class Bot(BaseModel):
                 await self.__bot.send_friend_message(config.get("MASTER_QQ"), "补发队列为空~")
             return
 
+        interval = config.get("RESEND_INTERVAL")
         task_start_tip = f"补发任务已启动, 补发队列长度: {len(self.__queue)}"
         logger.info(task_start_tip)
         if config.get("MASTER_QQ"):
@@ -101,7 +102,7 @@ class Bot(BaseModel):
                 self.__banned = False
                 logger.info(f"{self.qq} -> 群[{msg_id}] : {message.safe_display}")
                 self.__queue.pop(0)
-                await asyncio.sleep(3)
+                await asyncio.sleep(interval)
             except AccountMuted:
                 logger.warning(f"Bot({self.qq}) 在群 {msg_id} 中被禁言")
                 self.__queue.pop(0)
