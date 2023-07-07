@@ -811,9 +811,7 @@ class LiveDanmaku(AsyncEvent):
                 logger.warning(f"直播间 {self.room_display_id} 检测到未知的数据包类型, 无法处理")
 
     async def __send_verify_data(self, ws: ClientWebSocketResponse, token: str):
-        uid = config.get("ACCOUNT_UID")
-        if uid is None:
-            uid = 0
+        uid = config.get("LOGIN_UID")
         verify_data = {"uid": uid, "roomid": self.__room_real_id,
                        "protover": 3, "platform": "web", "type": 2, "key": token}
         data = json.dumps(verify_data).encode()

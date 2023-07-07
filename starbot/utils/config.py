@@ -38,8 +38,6 @@ DEFAULT_CONFIG = {
     "BILI_JCT": None,
     "BUVID3": None,
 
-    # 以上 Cookie 数据所对应的 B 站账号 UID，自动关注打开了动态推送但没有关注的用户时使用
-    "ACCOUNT_UID": None,
     # 是否自动关注打开了动态推送但没有关注的用户，推荐打开，否则无法获取未关注用户的动态更新信息
     "AUTO_FOLLOW_OPENED_DYNAMIC_UPDATE_UP": True,
 

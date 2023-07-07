@@ -14,7 +14,7 @@ from .datasource import DataSource
 from .dynamic import dynamic_spider
 from .server import http_init
 from .user import User, RelationType
-from ..exception import LiveException
+from ..exception import LiveException, ResponseCodeException
 from ..exception.DataSourceException import DataSourceException
 from ..exception.RedisException import RedisException
 from ..utils import redis, config
@@ -67,23 +67,64 @@ class StarBot:
                 logger.error("获取 StarBot 最新版本失败")
         logger.info("开始启动 StarBot")
 
+        # 检查登录凭据完整性
+        logger.info("开始尝试使用登录凭据登录 B 站账号")
+        if config.get("SESSDATA") is None or config.get("BILI_JCT") is None or config.get("BUVID3") is None:
+            logger.info("未配置 B 站登录凭据, 尝试从 credential.json 文件中读取")
+            try:
+                with open("credential.json", "r", encoding="utf-8") as file:
+                    credential = json.loads(file.read())
+                    config.set("SESSDATA", credential["sessdata"])
+                    config.set("BILI_JCT", credential["bili_jct"])
+                    config.set("BUVID3", credential["buvid3"])
+                    logger.success("成功从 JSON 文件中读取了 B 站登录凭据")
+            except FileNotFoundError:
+                logger.warning("登录凭据 JSON 文件不存在")
+            except UnicodeDecodeError:
+                logger.warning("登录凭据 JSON 文件编码不正确, 请将其转换为 UTF-8 格式编码")
+            except (JSONDecodeError, KeyError):
+                logger.warning("登录凭据 JSON 文件格式不正确")
+            except Exception as ex:
+                logger.warning(f"读取登录凭据 JSON 文件异常 {ex}")
+
+            if config.get("SESSDATA") is None or config.get("BILI_JCT") is None or config.get("BUVID3") is None:
+                logger.error("未配置 B 站登录凭据, 请使用 config.set_credential(sessdata=\"B站账号的sessdata\", "
+                             "bili_jct=\"B站账号的bili_jct\", buvid3=\"B站账号的buvid3\") 配置登录 B 站账号所需的登录凭据")
+                return 1
+
+        # 获取账号信息
+        try:
+            response = await request("GET", "https://api.bilibili.com/x/space/v2/myinfo", credential=get_credential())
+            profile = response["profile"]
+            uid = profile["mid"]
+            uname = profile["name"]
+            config.set("LOGIN_UID", uid)
+            logger.opt(colors=True).info(f"<green>B 站账号登录成功, UID: <cyan>{uid}</>, 昵称: <cyan>{uname}</></>")
+        except ResponseCodeException as ex:
+            if ex.code == -101:
+                logger.error("尝试登录 B 站账号失败, 可能的原因为登录凭据填写不正确或已失效, 请检查后重试")
+                return 2
+        except Exception as ex:
+            logger.exception(f"尝试登录 B 站账号失败", ex)
+            return 2
+
         # 从数据源中加载配置
         try:
             await self.__datasource.load()
         except DataSourceException as ex:
             logger.error(ex.msg)
-            return 1
+            return 3
 
         if not self.__datasource.bots:
             logger.error("数据源配置为空, 请先在数据源中配置完毕后再重新运行")
-            return 2
+            return 4
 
         # 连接 Redis
         try:
             await redis.init()
         except RedisException as ex:
             logger.error(ex.msg)
-            return 3
+            return 5
 
         # 通过 UID 列表批量获取信息
         info = {}
@@ -128,28 +169,6 @@ class StarBot:
             except asyncio.exceptions.TimeoutError:
                 logger.warning("等待连接所有直播间超时, 请检查是否存在未连接成功的直播间")
 
-        # 未设置登录凭据时尝试从 JSON 文件中读取
-        if config.get("SESSDATA") is None or config.get("BILI_JCT") is None or config.get("BUVID3") is None:
-            logger.info("未设置 B 站登录凭据, 将尝试从 credential.json 文件中读取")
-            try:
-                with open("credential.json", "r", encoding="utf-8") as file:
-                    credential = json.loads(file.read())
-                    config.set("SESSDATA", credential["sessdata"])
-                    config.set("BILI_JCT", credential["bili_jct"])
-                    config.set("BUVID3", credential["buvid3"])
-                    logger.success("成功从 JSON 文件中读取了 B 站登录凭据")
-            except FileNotFoundError:
-                logger.warning("登录凭据 JSON 文件不存在")
-            except UnicodeDecodeError:
-                logger.warning("登录凭据 JSON 文件编码不正确, 请将其转换为 UTF-8 格式编码")
-            except (JSONDecodeError, KeyError):
-                logger.warning("登录凭据 JSON 文件格式不正确")
-            except Exception as ex:
-                logger.warning(f"读取登录凭据 JSON 文件异常 {ex}")
-
-            if config.get("SESSDATA") is None or config.get("BILI_JCT") is None or config.get("BUVID3") is None:
-                logger.warning("读取 B 站登录凭据失败, 动态推送等部分功能将不可用")
-
         # 启动动态推送模块
         asyncio.get_event_loop().create_task(dynamic_spider(self.__datasource))
 
@@ -171,14 +190,17 @@ class StarBot:
 
         # 自动关注打开了动态推送的未关注 UP 主
         if config.get("AUTO_FOLLOW_OPENED_DYNAMIC_UPDATE_UP"):
-            if config.get("ACCOUNT_UID") is None:
-                logger.warning("未填写 ACCOUNT_UID 配置项, 无法自动关注打开了动态推送的未关注 UP 主, "
-                               "请使用 config.set('ACCOUNT_UID', 您的UID) 设置, 或手动关注所有需要动态推送的 UP 主, "
-                               "否则无法获取未关注用户的动态更新信息, "
-                               "使用 config.set('AUTO_FOLLOW_OPENED_DYNAMIC_UPDATE_UP', False) 可禁用自动关注功能和此警告")
-            else:
-                uid = int(config.get("ACCOUNT_UID"))
-                me = User(uid, get_credential())
+            uid = config.get("LOGIN_UID")
+            me = User(uid, get_credential())
+
+            async def follow_task(uid_set):
+                for u in uid_set:
+                    follow_user = User(u, get_credential())
+                    await follow_user.modify_relation(RelationType.SUBSCRIBE)
+                    await asyncio.sleep(10)
+                logger.success(f"已成功关注了 {len(uid_set)} 个 UP 主")
+
+            try:
                 follows = set()
                 page = 1
                 while True:
@@ -190,24 +212,20 @@ class StarBot:
 
                 need_follow_uids = set()
                 for up in self.__datasource.get_up_list():
-                    if any(map(lambda d: d.enabled, map(lambda t: t.dynamic_update, up.targets))):
+                    if up.uid != uid and any(map(lambda d: d.enabled, map(lambda t: t.dynamic_update, up.targets))):
                         need_follow_uids.add(up.uid)
                 need_follow_uids.difference_update(follows)
 
-                async def follow_task(uid_set):
-                    logger.info(f"检测到 {len(uid_set)} 个打开了动态推送但未关注的 UP 主, 启动自动关注任务")
-                    for u in uid_set:
-                        follow_user = User(u, get_credential())
-                        await follow_user.modify_relation(RelationType.SUBSCRIBE)
-                        await asyncio.sleep(10)
-                    logger.success(f"已成功关注了 {len(uid_set)} 个 UP 主")
-
                 if len(need_follow_uids) > 0:
+                    logger.info(f"检测到 {len(need_follow_uids)} 个打开了动态推送但未关注的 UP 主, 启动自动关注任务")
                     asyncio.create_task(follow_task(need_follow_uids))
-
-        # 检测 UID 配置完整性
-        if config.get("ACCOUNT_UID") is None:
-            logger.warning("未填写 ACCOUNT_UID 配置项, 受 B 站风控影响, 将无法获取弹幕相关数据, 请使用 config.set(\"ACCOUNT_UID\", 您的UID) 设置")
+                else:
+                    logger.success(f"不存在打开了动态推送但未关注的 UP 主")
+            except ResponseCodeException as ex:
+                if ex.code == 22115 or ex.code == 22007:
+                    logger.warning(f"读取登录账号的关注列表失败, 请检查登录凭据是否已失效, 错误信息: {ex.msg}")
+            except Exception as ex:
+                logger.exception(f"读取登录账号的关注列表失败", ex)
 
         # 检测消息补发配置完整性
         if config.get("BAN_RESEND") and config.get("MASTER_QQ") is None:
@@ -237,7 +255,7 @@ class StarBot:
                 pass
             else:
                 logger.error(ex)
-                return 4
+                return 6
 
     def run(self):
         """
