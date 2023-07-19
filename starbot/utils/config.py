@@ -42,7 +42,7 @@ DEFAULT_CONFIG = {
     "AUTO_FOLLOW_OPENED_DYNAMIC_UPDATE_UP": True,
 
     # 是否将日志同时输出到文件中
-    "LOG_TO_FILE": False,
+    "LOG_TO_FILE": True,
 
     # 连接每个直播间的间隔等待时长，用于避免连接大量直播间时的并发过多异常 too many file descriptors in select()，单位：秒
     "CONNECTION_INTERVAL": 0.2,
