@@ -12,7 +12,7 @@ import starbot.commands.builtin.data.user_data_total
 import starbot.commands.builtin.disable_command
 import starbot.commands.builtin.enable_command
 import starbot.commands.builtin.help
+import starbot.commands.builtin.master.resend
+import starbot.commands.builtin.master.resend_clear_queue
 import starbot.commands.builtin.ranking.ranking
 import starbot.commands.builtin.ranking.ranking_double
-import starbot.commands.builtin.resend
-import starbot.commands.builtin.resend_clear_queue

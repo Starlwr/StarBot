@@ -6,8 +6,8 @@ from graia.ariadne.model import Friend
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
 
-from ...core.datasource import DataSource
-from ...utils import config
+from ....core.datasource import DataSource
+from ....utils import config
 
 prefix = config.get("COMMAND_PREFIX")
 master = config.get("MASTER_QQ")
@@ -20,11 +20,11 @@ channel = Channel.current()
         listening_events=[FriendMessage],
         inline_dispatchers=[Twilight(
             FullMatch(prefix),
-            UnionMatch("补发", "resend")
+            UnionMatch("清空补发队列")
         )],
     )
 )
-async def resend(app: Ariadne, friend: Friend):
+async def resend_clear_queue(app: Ariadne, friend: Friend):
     if friend.id != master:
         return
 
@@ -33,4 +33,5 @@ async def resend(app: Ariadne, friend: Friend):
 
     datasource: DataSource = app.options["StarBotDataSource"]
     bot = datasource.get_bot(app.account)
-    await bot.resend()
+    bot.clear_resend_queue()
+    await app.send_friend_message(friend, MessageChain("补发队列已清空~"))
