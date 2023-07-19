@@ -40,6 +40,10 @@ async def room_data_total(app: Ariadne, source: Source, sender: Union[Friend, Gr
     ups = datasource.get_ups_by_target(sender.id, PushType.Group if isinstance(sender, Group) else PushType.Friend)
 
     if not ups:
+        if isinstance(sender, Group):
+            await app.send_message(sender, MessageChain("本群未关联直播间~"), quote=source)
+        else:
+            await app.send_message(sender, MessageChain("此处未关联直播间~"), quote=source)
         return
 
     for up in ups:

@@ -42,7 +42,7 @@ async def bind(app: Ariadne,
     uid = remove_command_param_placeholder(uid.display)
 
     if not uid.isdigit() or int(uid) == 0:
-        await app.send_message(sender, MessageChain("请输入正确的UID~"), quote=source)
+        await app.send_message(sender, MessageChain(f"请输入正确的UID~\n命令示例:{prefix}绑定 114514"), quote=source)
         return
 
     if isinstance(sender, Friend):
@@ -78,7 +78,7 @@ async def bind(app: Ariadne,
         if wait_qq == qq:
             nonlocal source
             source = wait_source
-            if wait_msg.display == f"{prefix}确认绑定":
+            if wait_msg.display == f"{prefix}确认绑定" or wait_msg.display == f"{prefix}确定绑定":
                 return True
             else:
                 return False
