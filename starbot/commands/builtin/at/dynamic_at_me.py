@@ -6,6 +6,7 @@ from graia.ariadne.message.parser.twilight import Twilight, FullMatch, ElementMa
 from graia.ariadne.model import Member, Group
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
+from loguru import logger
 
 from ....core.datasource import DataSource
 from ....core.model import PushType
@@ -27,6 +28,8 @@ channel = Channel.current()
     )
 )
 async def dynamic_at_me(app: Ariadne, source: Source, sender: Group, member: Member):
+    logger.info(f"群[{sender.id}] 触发命令 : 动态@我")
+
     datasource: DataSource = app.options["StarBotDataSource"]
     ups = datasource.get_ups_by_target(sender.id, PushType.Group if isinstance(sender, Group) else PushType.Friend)
 

@@ -11,6 +11,7 @@ from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatc
 from graia.ariadne.model import Friend, Group
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
+from loguru import logger
 
 from ....core.datasource import DataSource
 from ....core.model import PushType
@@ -51,6 +52,8 @@ async def ranking_double(app: Ariadne,
     _type = _type.display
     if _type not in type_map:
         return
+
+    logger.info(f"{'群' if isinstance(sender, Group) else '好友'}[{sender.id}] 触发命令 : {_type}排行")
 
     if page.matched:
         page = remove_command_param_placeholder(page.result.display)

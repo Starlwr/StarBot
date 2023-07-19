@@ -6,6 +6,7 @@ from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatc
 from graia.ariadne.model import Group, Member, MemberPerm
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
+from loguru import logger
 
 from ...utils import config, redis
 from ...utils.utils import remove_command_param_placeholder
@@ -50,6 +51,8 @@ async def disable_command(app: Ariadne,
             group, MessageChain(f"输入的命令名称不正确~\n支持的命令: {'、'.join(disable_map.keys())}"), quote=source
         )
         return
+
+    logger.info(f"群[{group.id}] 触发命令 : 禁用{name}")
 
     if await redis.exists_disable_command(disable_map[name], group.id):
         await app.send_message(group, "此命令已经是禁用状态~", quote=source)

@@ -8,6 +8,7 @@ from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatc
 from graia.ariadne.model import Friend, Group
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
+from loguru import logger
 
 from ...painter.PicGenerator import PicGenerator, Color
 from ...utils import config, redis
@@ -28,6 +29,8 @@ channel = Channel.current()
     )
 )
 async def _help(app: Ariadne, sender: Union[Friend, Group]):
+    logger.info(f"{'群' if isinstance(sender, Group) else '好友'}[{sender.id}] 触发命令 : 帮助")
+
     disable_querys = ["DenyRoomData", "DenyRoomDataTotal", "DenyBind", "DenyUserData", "DenyUserDataTotal"]
     disabled = [False] * 5
     if isinstance(sender, Group):

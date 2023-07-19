@@ -5,6 +5,7 @@ from graia.ariadne.message.parser.twilight import Twilight, FullMatch, UnionMatc
 from graia.ariadne.model import Friend
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
+from loguru import logger
 
 from ....core.datasource import DataSource
 from ....utils import config
@@ -25,6 +26,8 @@ channel = Channel.current()
     )
 )
 async def resend_clear_queue(app: Ariadne, friend: Friend):
+    logger.info(f"好友[{friend.id}] 触发命令 : 清空补发队列")
+
     if friend.id != master:
         return
 

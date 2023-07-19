@@ -9,6 +9,7 @@ from graia.ariadne.message.parser.twilight import Twilight, FullMatch, ElementMa
 from graia.ariadne.model import Friend, Group
 from graia.saya import Channel
 from graia.saya.builtins.broadcast import ListenerSchema
+from loguru import logger
 
 from ....core.datasource import DataSource
 from ....core.model import PushType
@@ -32,6 +33,8 @@ channel = Channel.current()
     )
 )
 async def room_data_total(app: Ariadne, source: Source, sender: Union[Friend, Group]):
+    logger.info(f"{'群' if isinstance(sender, Group) else '好友'}[{sender.id}] 触发命令 : 直播间总数据")
+
     if isinstance(sender, Group) and await redis.exists_disable_command("DenyRoomDataTotal", sender.id):
         await app.send_message(sender, MessageChain("此命令已被禁用~"), quote=source)
         return
