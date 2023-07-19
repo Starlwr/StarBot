@@ -182,16 +182,6 @@ class Up(BaseModel):
 
             # 是否为真正开播
             if "live_time" in event["data"]:
-                try:
-                    room_info = await self.__live_room.get_room_info()
-                except ResponseCodeException as ex:
-                    if ex.code == 19002005:
-                        locked = True
-                        logger.warning(f"{self.uname} ({self.room_id}) 的直播间已加密")
-
-                if not locked:
-                    self.uname = room_info["anchor_info"]["base_info"]["uname"]
-
                 await redis.set_live_status(self.room_id, 1)
 
                 # 是否为主播网络波动断线重连
@@ -205,6 +195,16 @@ class Up(BaseModel):
                                                             lambda t: t.live_on.enabled)
                 else:
                     logger.opt(colors=True).info(f"<magenta>[开播] {self.uname} ({self.room_id})</>")
+
+                    try:
+                        room_info = await self.__live_room.get_room_info()
+                    except ResponseCodeException as ex:
+                        if ex.code == 19002005:
+                            locked = True
+                            logger.warning(f"{self.uname} ({self.room_id}) 的直播间已加密")
+
+                    if not locked:
+                        self.uname = room_info["anchor_info"]["base_info"]["uname"]
 
                     live_start_time = room_info["room_info"]["live_start_time"] if not locked else int(time.time())
                     await redis.set_live_start_time(self.room_id, live_start_time)
