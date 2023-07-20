@@ -62,7 +62,9 @@ class StarBot:
                 latest_version = json.loads(data)["info"]["version"]
                 if latest_version != self.VERSION:
                     logger.warning(f"检测到 StarBot 新版本 v{latest_version}, 建议升级到最新版本, "
-                                   f"升级内容和版本间不兼容说明请参阅官网或 Github 页的迁移指南")
+                                   "升级内容和升级注意事项请参阅官网或 Github 页的迁移指南")
+                    cmd = "pip install -i https://mirrors.cloud.tencent.com/pypi/simple --upgrade starbot-bilibili=="
+                    logger.warning(f"升级命令: {cmd}{latest_version}")
             except Exception:
                 logger.error("获取 StarBot 最新版本失败")
         logger.info("开始启动 StarBot")
