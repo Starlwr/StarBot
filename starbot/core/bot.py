@@ -195,39 +195,41 @@ class StarBot:
             uid = config.get("LOGIN_UID")
             me = User(uid, get_credential())
 
-            async def follow_task(uid_set):
-                for u in uid_set:
-                    follow_user = User(u, get_credential())
-                    await follow_user.modify_relation(RelationType.SUBSCRIBE)
-                    await asyncio.sleep(10)
-                logger.success(f"已成功关注了 {len(uid_set)} 个 UP 主")
+            async def auto_follow_task():
+                try:
+                    follows = set()
+                    page = 1
+                    while True:
+                        res = await me.get_followings(page)
+                        follows = follows.union(set(map(lambda x: x["mid"], res["list"])))
+                        if len(res["list"]) < 20:
+                            break
+                        page += 1
 
-            try:
-                follows = set()
-                page = 1
-                while True:
-                    res = await me.get_followings(page)
-                    follows = follows.union(set(map(lambda x: x["mid"], res["list"])))
-                    if len(res["list"]) < 20:
-                        break
-                    page += 1
+                    need_follow_uids = set()
+                    for u in self.__datasource.get_up_list():
+                        if u.uid != uid and any(map(lambda t: t.dynamic_update.enabled, u.targets)):
+                            need_follow_uids.add(u.uid)
+                    need_follow_uids.difference_update(follows)
 
-                need_follow_uids = set()
-                for up in self.__datasource.get_up_list():
-                    if up.uid != uid and any(map(lambda d: d.enabled, map(lambda t: t.dynamic_update, up.targets))):
-                        need_follow_uids.add(up.uid)
-                need_follow_uids.difference_update(follows)
+                    if len(need_follow_uids) == 0:
+                        logger.success(f"不存在打开了动态推送但未关注的 UP 主")
+                        return
 
-                if len(need_follow_uids) > 0:
                     logger.info(f"检测到 {len(need_follow_uids)} 个打开了动态推送但未关注的 UP 主, 启动自动关注任务")
-                    asyncio.create_task(follow_task(need_follow_uids))
-                else:
-                    logger.success(f"不存在打开了动态推送但未关注的 UP 主")
-            except ResponseCodeException as ex:
-                if ex.code == 22115 or ex.code == 22007:
-                    logger.warning(f"读取登录账号的关注列表失败, 请检查登录凭据是否已失效, 错误信息: {ex.msg}")
-            except Exception as ex:
-                logger.exception(f"读取登录账号的关注列表失败", ex)
+                    for i, u in enumerate(need_follow_uids):
+                        follow_user = User(u, get_credential())
+                        await follow_user.modify_relation(RelationType.SUBSCRIBE)
+                        await asyncio.sleep(10)
+                        logger.success(f"已关注: {i + 1} / {len(need_follow_uids)}")
+                    logger.success(f"已成功关注了 {len(need_follow_uids)} 个 UP 主")
+                except ResponseCodeException as e:
+                    if e.code == 22115 or e.code == 22007:
+                        logger.warning(f"读取登录账号的关注列表失败, 请检查登录凭据是否已失效, 错误信息: {e.msg}")
+                except Exception as e:
+                    logger.exception(f"自动关注任务异常", e)
+
+            asyncio.create_task(auto_follow_task())
 
         # 检测消息补发配置完整性
         if config.get("BAN_RESEND") and config.get("MASTER_QQ") is None:
