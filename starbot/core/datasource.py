@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from .model import LiveOn, LiveOff, LiveReport, DynamicUpdate, PushTarget, PushType
 from .room import Up
 from .sender import Bot
-from ..exception.DataSourceException import DataSourceException
+from ..exception import LiveException, DataSourceException
 from ..utils import config
 
 
@@ -480,4 +480,7 @@ class MySQLDataSource(DataSource):
         super().format_data()
         logger.success(f"已成功载入 UID: {uid} 的推送配置")
 
-        await up.connect()
+        try:
+            await up.connect()
+        except LiveException as ex:
+            logger.error(ex.msg)
