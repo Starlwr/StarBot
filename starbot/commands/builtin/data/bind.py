@@ -81,7 +81,8 @@ async def bind(app: Ariadne,
         if wait_qq == qq:
             nonlocal source
             source = wait_source
-            if wait_msg.display == f"{prefix}确认绑定" or wait_msg.display == f"{prefix}确定绑定":
+            msg = wait_msg.exclude(At).display.removeprefix(prefix).strip()
+            if msg == "确认绑定" or msg == "确定绑定":
                 return True
             else:
                 return False
