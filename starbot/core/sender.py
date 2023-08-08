@@ -52,7 +52,7 @@ class Bot(BaseModel):
         self.__bot = Ariadne(
             connection=AriadneConfig(
                 self.qq,
-                "StarBot",
+                config.get('MIRAI_KEY'),
                 HttpClientConfig(host=f"http://{config.get('MIRAI_HOST')}:{config.get('MIRAI_PORT')}"),
                 WebsocketClientConfig(host=f"http://{config.get('MIRAI_HOST')}:{config.get('MIRAI_PORT')}"),
             ),
