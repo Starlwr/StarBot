@@ -101,7 +101,7 @@ async def http_init(source: DataSource):
     app.add_routes(routes)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, 'localhost', port)
+    site = web.TCPSite(runner, '0.0.0.0', port)
     try:
         await site.start()
     except OSError:
