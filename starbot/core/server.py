@@ -9,7 +9,7 @@ from loguru import logger
 from .datasource import DataSource
 from .model import Message, PushType
 from .user import User, RelationType
-from ..exception import DataSourceException
+from ..exception import DataSourceException, ResponseCodeException
 from ..utils import config
 from ..utils.utils import get_credential
 
@@ -75,7 +75,11 @@ async def follow(request: aiohttp.web.Request) -> aiohttp.web.Response:
 
     uid = int(request.match_info['uid'])
     u = User(uid, get_credential())
-    await u.modify_relation(RelationType.SUBSCRIBE)
+    try:
+        await u.modify_relation(RelationType.SUBSCRIBE)
+    except ResponseCodeException as ex:
+        if ex.code != 22014:
+            raise ex
 
     return web.Response(text="success")
 
