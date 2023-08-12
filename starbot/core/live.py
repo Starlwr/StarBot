@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import base64
 import json
 import struct
 import time
@@ -21,7 +22,7 @@ from ..utils.AsyncEvent import AsyncEvent
 from ..utils.Credential import Credential
 from ..utils.Danmaku import Danmaku
 from ..utils.network import get_session, request
-from ..utils.utils import get_api
+from ..utils.utils import get_api, get_credential
 
 API = get_api("live")
 
@@ -610,11 +611,12 @@ class LiveDanmaku(AsyncEvent):
         self.room_display_id = room_display_id
         self.live_time = 0
         self.retry_after = retry_after
+        self.__uid = config.get("LOGIN_UID")
         self.__room_real_id = None
         self.__status = 0
         self.__ws = None
         self.__tasks = []
-        self.__heartbeat_timer = 30.0
+        self.__heartbeat_timer = 60.0
         self.err_reason = ""
 
     def get_status(self) -> int:
@@ -670,6 +672,7 @@ class LiveDanmaku(AsyncEvent):
         # 获取真实房间号和开播时间
         logger.debug(f"正在获取直播间 {self.room_display_id} 的真实房间号")
         info = await room.get_room_play_info()
+        self.__uid = info["uid"]
         self.__room_real_id = info["room_id"]
         self.live_time = info["live_time"]
         logger.debug(f"获取成功, 真实房间号: {self.__room_real_id}")
@@ -711,14 +714,13 @@ class LiveDanmaku(AsyncEvent):
             logger.debug(f"正在尝试连接直播间 {self.room_display_id} 的主机: {uri}")
 
             try:
-                async with session.ws_connect(uri) as ws:
+                async with session.ws_connect(uri, headers={"User-Agent": "Mozilla/5.0"}) as ws:
                     @self.on('VERIFICATION_SUCCESSFUL')
                     async def on_verification_successful(data):
                         """
                         连接成功，新建心跳任务
                         """
-                        self.__tasks.append(
-                            asyncio.create_task(self.__heartbeat(ws)))
+                        self.__tasks.append(asyncio.create_task(self.__heartbeat(ws)))
 
                     self.__ws = ws
                     logger.debug(f"连接直播间 {self.room_display_id} 的主机成功, 准备发送认证信息")
@@ -726,7 +728,7 @@ class LiveDanmaku(AsyncEvent):
 
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.BINARY:
-                            logger.debug(f'收到直播间 {self.room_display_id} 的原始数据: {msg.data}')
+                            # logger.debug(f'收到直播间 {self.room_display_id} 的原始数据: {msg.data}')
                             await self.__handle_data(msg.data)
 
                         elif msg.type == aiohttp.WSMsgType.ERROR:
@@ -744,8 +746,7 @@ class LiveDanmaku(AsyncEvent):
                 # 正常断开情况下跳出循环
                 if self.__status != self.STATUS_CLOSED or self.err_reason:
                     # 非用户手动调用关闭，触发重连
-                    raise LiveException(
-                        '非正常关闭连接' if not self.err_reason else self.err_reason)
+                    raise LiveException('非正常关闭连接' if not self.err_reason else self.err_reason)
                 else:
                     break
 
@@ -766,7 +767,7 @@ class LiveDanmaku(AsyncEvent):
         处理数据
         """
         data = self.__unpack(data)
-        logger.debug(f"直播间 {self.room_display_id} 收到信息: {data}")
+        # logger.debug(f"直播间 {self.room_display_id} 收到信息: {data}")
 
         for info in data:
             callback_info = {
@@ -786,7 +787,7 @@ class LiveDanmaku(AsyncEvent):
 
             elif info["datapack_type"] == LiveDanmaku.DATAPACK_TYPE_HEARTBEAT_RESPONSE:
                 # 心跳包反馈，返回直播间人气
-                logger.debug(f"直播间 {self.room_display_id} 收到心跳包反馈")
+                # logger.debug(f"直播间 {self.room_display_id} 收到心跳包反馈")
                 # 重置心跳计时器
                 self.__heartbeat_timer = 30.0
                 callback_info["type"] = 'VIEW'
@@ -811,9 +812,9 @@ class LiveDanmaku(AsyncEvent):
                 logger.warning(f"直播间 {self.room_display_id} 检测到未知的数据包类型, 无法处理")
 
     async def __send_verify_data(self, ws: ClientWebSocketResponse, token: str):
-        uid = config.get("LOGIN_UID")
-        verify_data = {"uid": uid, "roomid": self.__room_real_id,
-                       "protover": 3, "platform": "web", "type": 2, "key": token}
+        # uid = config.get("LOGIN_UID")
+        verify_data = {"uid": self.__uid, "roomid": self.__room_real_id, "protover": 3,
+                       "buvid": config.get("BUVID3"), "platform": "web", "type": 2, "key": token}
         data = json.dumps(verify_data).encode()
         await self.__send(data, self.PROTOCOL_VERSION_HEARTBEAT, self.DATAPACK_TYPE_VERIFY, ws)
 
@@ -821,12 +822,17 @@ class LiveDanmaku(AsyncEvent):
         """
         定时发送心跳包
         """
-        heartbeat = self.__pack(b'[object Object]',
-                                self.PROTOCOL_VERSION_HEARTBEAT, self.DATAPACK_TYPE_HEARTBEAT)
+        heartbeat = self.__pack(b'[object Object]', self.PROTOCOL_VERSION_HEARTBEAT, self.DATAPACK_TYPE_HEARTBEAT)
+        heartbeat_url = "https://live-trace.bilibili.com/xlive/rdata-interface/v1/heartbeat/webHeartBeat?pf=web&hb="
+        hb = str(base64.b64encode(f"60|{self.room_display_id}|1|0".encode("utf-8")), "utf-8")
         while True:
             if self.__heartbeat_timer == 0:
-                logger.debug(f"直播间 {self.room_display_id} 发送心跳包")
+                # logger.debug(f"直播间 {self.room_display_id} 发送心跳包")
                 await ws.send_bytes(heartbeat)
+                try:
+                    await request("GET", heartbeat_url, {"hb": hb, "pf": "web"}, credential=get_credential())
+                except Exception as ex:
+                    pass
             elif self.__heartbeat_timer <= -30:
                 # 视为已异常断开连接，发布 TIMEOUT 事件
                 self.dispatch('TIMEOUT')
@@ -841,7 +847,7 @@ class LiveDanmaku(AsyncEvent):
         自动打包并发送数据
         """
         data = self.__pack(data, protocol_version, datapack_type)
-        logger.debug(f'直播间 {self.room_display_id} 发送原始数据: {data}')
+        # logger.debug(f'直播间 {self.room_display_id} 发送原始数据: {data}')
         await ws.send_bytes(data)
 
     @staticmethod

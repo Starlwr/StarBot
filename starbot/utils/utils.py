@@ -151,6 +151,25 @@ def mask_rounded_rectangle(img: Image.Image, radius: int = 10) -> Image.Image:
     return img
 
 
+async def get_live_info_by_uids(uids: List[int]) -> Dict[str, Any]:
+    """
+    根据 UID 列表批量获取直播间信息
+
+    Args:
+        uids: UID 列表
+
+    Returns:
+        直播间信息
+    """
+    infos = {}
+    info_url = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?uids[]="
+    uids = [str(u) for u in uids]
+    uid_lists = split_list(uids, 100)
+    for lst in uid_lists:
+        infos.update(await request("GET", info_url + "&uids[]=".join(lst)))
+    return infos
+
+
 async def get_unames_and_faces_by_uids(uids: List[str]) -> Tuple[List[str], List[Image.Image]]:
     """
     根据 UID 列表批量获取昵称和头像图片

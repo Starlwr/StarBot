@@ -19,7 +19,7 @@ from ..exception.DataSourceException import DataSourceException
 from ..exception.RedisException import RedisException
 from ..utils import redis, config
 from ..utils.network import request, get_session
-from ..utils.utils import split_list, get_credential
+from ..utils.utils import get_credential, get_live_info_by_uids
 
 
 class StarBot:
@@ -50,10 +50,52 @@ class StarBot:
         self.__datasource = datasource
         Ariadne.options["StarBotDataSource"] = datasource
 
+    async def __backup_live_push(self):
+        infos_before = await get_live_info_by_uids(self.__datasource.get_uid_list())
+        status_before = {}
+        for uid in infos_before:
+            status = infos_before[uid]["live_status"]
+            status_before[int(uid)] = status
+
+        logger.success("备用直播推送模块已启动")
+
+        while True:
+            await asyncio.sleep(10)
+            try:
+                infos_after = await get_live_info_by_uids(self.__datasource.get_uid_list())
+            except Exception as ex:
+                logger.warning(f"备用直播推送模块数据抓取异常, 已忽略并继续 {ex}")
+                continue
+            for uid in infos_after:
+                now_status = infos_after[uid]["live_status"]
+                uid = int(uid)
+                if uid not in status_before:
+                    status_before[uid] = now_status
+                    continue
+                last_status = status_before[uid]
+                status_before[uid] = now_status
+                if now_status != last_status:
+                    up = self.__datasource.get_up(uid)
+                    if (not config.get("ONLY_CONNECT_NECESSARY_ROOM")) or up.is_need_connect():
+                        if now_status == 1:
+                            # logger.warning(f"备用: {up.uname}({up.room_id}) 开播")
+                            param = {
+                                "data": {
+                                    "live_time": 0
+                                }
+                            }
+                            up.dispatch("LIVE", param)
+                        if last_status == 1:
+                            # logger.warning(f"备用: {up.uname}({up.room_id}) 下播")
+                            param = {}
+                            up.dispatch("PREPARING", param)
+
     async def __main(self):
         """
         StarBot 入口
         """
+        core_tasks = set()
+
         logger.opt(colors=True, raw=True).info(f"<yellow>{self.STARBOT_ASCII_LOGO}</>")
         if config.get("CHECK_VERSION"):
             try:
@@ -129,14 +171,9 @@ class StarBot:
             return 5
 
         # 通过 UID 列表批量获取信息
-        info = {}
-        info_url = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?uids[]="
-        uids = [str(u) for u in self.__datasource.get_uid_list()]
-        uid_lists = split_list(uids, 100)
-        for lst in uid_lists:
-            info.update(await request("GET", info_url + "&uids[]=".join(lst)))
-        for uid in info:
-            base = info[uid]
+        infos = await get_live_info_by_uids(self.__datasource.get_uid_list())
+        for uid in infos:
+            base = infos[uid]
             uid = int(uid)
             up = self.__datasource.get_up(uid)
             up.uname = base["uname"]
@@ -171,12 +208,16 @@ class StarBot:
             except asyncio.exceptions.TimeoutError:
                 logger.warning("等待连接所有直播间超时, 请检查是否存在未连接成功的直播间")
 
+        # 启动备用直播推送
+        if config.get("BACKUP_LIVE_PUSH"):
+            core_tasks.add(asyncio.get_event_loop().create_task(self.__backup_live_push()))
+
         # 启动动态推送模块
-        asyncio.get_event_loop().create_task(dynamic_spider(self.__datasource))
+        core_tasks.add(asyncio.get_event_loop().create_task(dynamic_spider(self.__datasource)))
 
         # 启动 HTTP API 服务
         if config.get("USE_HTTP_API"):
-            asyncio.get_event_loop().create_task(http_init(self.__datasource))
+            core_tasks.add(asyncio.get_event_loop().create_task(http_init(self.__datasource)))
 
         # 载入命令
         logger.info("开始载入命令模块")
@@ -229,7 +270,9 @@ class StarBot:
                 except Exception as e:
                     logger.exception(f"自动关注任务异常", e)
 
-            asyncio.create_task(auto_follow_task())
+            follow_task = asyncio.create_task(auto_follow_task())
+            core_tasks.add(follow_task)
+            follow_task.add_done_callback(lambda t: core_tasks.remove(t))
 
         # 检测消息补发配置完整性
         if config.get("BAN_RESEND") and config.get("MASTER_QQ") is None:

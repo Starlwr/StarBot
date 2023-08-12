@@ -72,6 +72,9 @@ class Up(BaseModel):
     def status(self):
         return 6 if not self.__room else self.__room.get_status()
 
+    def dispatch(self, event, data):
+        self.__room.dispatch(event, data)
+
     def inject_bot(self, bot):
         self.__bot = bot
 
@@ -81,6 +84,9 @@ class Up(BaseModel):
 
     def is_connecting(self):
         return (self.__room is not None) and (self.__room.get_status() != 2)
+
+    def is_need_connect(self):
+        return any([self.__any_live_on_enabled(), self.__any_live_off_enabled(), self.__any_live_report_enabled()])
 
     def __any_live_on_enabled(self):
         return any(map(lambda conf: conf.enabled, map(lambda group: group.live_on, self.targets)))
@@ -109,11 +115,9 @@ class Up(BaseModel):
             self.room_id = user_info["room_id"]
 
         # 开播推送开关和下播推送开关均处于关闭状态时跳过连接直播间，以节省性能
-        if config.get("ONLY_CONNECT_NECESSARY_ROOM"):
-            if not any([self.__any_live_on_enabled(), self.__any_live_off_enabled(),
-                        self.__any_live_report_enabled()]):
-                logger.warning(f"{self.uname} 的开播, 下播和直播报告开关均处于关闭状态, 跳过连接直播间")
-                return
+        if config.get("ONLY_CONNECT_NECESSARY_ROOM") and not self.is_need_connect():
+            logger.warning(f"{self.uname} 的开播, 下播和直播报告开关均处于关闭状态, 跳过连接直播间")
+            return
 
         if self.__connecting:
             logger.warning(f"{self.uname} ( UID: {self.uid} ) 的直播间正在连接中, 跳过重复连接")
@@ -144,7 +148,6 @@ class Up(BaseModel):
                 now_status = room_info["live_status"]
 
                 if now_status != last_status:
-                    await redis.set_live_status(self.room_id, now_status)
                     if now_status == 1:
                         logger.warning(f"直播间 {self.room_id} 断线期间开播")
                         param = {
@@ -176,12 +179,16 @@ class Up(BaseModel):
             开播事件
             """
             logger.debug(f"{self.uname} (LIVE): {event}")
+            # logger.warning(f"{self.uname}: 开播事件")
 
             locked = False
             room_info = {}
 
             # 是否为真正开播
             if "live_time" in event["data"]:
+                if await redis.get_live_status(self.room_id) == 1:
+                    return
+
                 await redis.set_live_status(self.room_id, 1)
 
                 # 是否为主播网络波动断线重连
@@ -248,6 +255,10 @@ class Up(BaseModel):
             下播事件
             """
             logger.debug(f"{self.uname} (PREPARING): {event}")
+            # logger.warning(f"{self.uname}: 下播事件")
+
+            if await redis.get_live_status(self.room_id) == 0:
+                return
 
             await redis.set_live_status(self.room_id, 0)
             await redis.set_live_end_time(self.room_id, int(time.time()))

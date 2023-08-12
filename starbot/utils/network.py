@@ -170,6 +170,9 @@ async def request(method: str,
         except ServerDisconnectedError:
             await asyncio.sleep(0.5)
             continue
+        except NetworkException:
+            await asyncio.sleep(0.5)
+            continue
 
 
 def get_session() -> aiohttp.ClientSession:
@@ -182,7 +185,11 @@ def get_session() -> aiohttp.ClientSession:
     loop = asyncio.get_running_loop()
     session = __session_pool.get(loop, None)
     if session is None:
-        session = aiohttp.ClientSession(loop=loop, connector=TCPConnector(loop=loop, limit=0))
+        session = aiohttp.ClientSession(
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36 Core/1.94.201.400 QQBrowser/11.9.5325.400"
+            }, loop=loop, connector=TCPConnector(loop=loop, limit=0, verify_ssl=False)
+        )
         __session_pool[loop] = session
 
     return session

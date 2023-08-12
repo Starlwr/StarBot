@@ -40,6 +40,9 @@ DEFAULT_CONFIG = {
     "BILI_JCT": None,
     "BUVID3": None,
 
+    # 是否启用备用轮询式直播推送，建议仅在默认直播推送出现问题时启用
+    "BACKUP_LIVE_PUSH": False,
+
     # 是否自动关注打开了动态推送但没有关注的用户，推荐打开，否则无法获取未关注用户的动态更新信息
     "AUTO_FOLLOW_OPENED_DYNAMIC_UPDATE_UP": True,
 
