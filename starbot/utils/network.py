@@ -5,12 +5,14 @@
 import asyncio
 import atexit
 import json
+import random
 import re
 from typing import Any, Union, Dict
 
 import aiohttp
 from aiohttp import TCPConnector, ServerDisconnectedError
 
+from . import config
 from .Credential import Credential
 from ..exception import ResponseCodeException, ResponseException, NetworkException
 
@@ -89,7 +91,7 @@ async def request(method: str,
     if params.get("jsonp", "") == "jsonp":
         params["callback"] = "callback"
 
-    config = {
+    args = {
         "method": method,
         "url": url,
         "params": params,
@@ -98,22 +100,24 @@ async def request(method: str,
         "cookies": credential.get_cookies()
     }
 
-    config.update(kwargs)
+    args.update(kwargs)
 
     if json_body:
-        config["headers"]["Content-Type"] = "application/json"
-        config["data"] = json.dumps(config["data"])
-
-    # 如果用户提供代理则设置代理
-    proxy = config.get("PROXY")
-    if proxy:
-        config["proxy"] = proxy
+        args["headers"]["Content-Type"] = "application/json"
+        args["data"] = json.dumps(args["data"])
 
     session = get_session()
 
     for i in range(3):
+        # 如果用户提供代理则设置代理
+        proxy = config.get("PROXY")
+        if isinstance(proxy, str):
+            args["proxy"] = proxy
+        elif isinstance(proxy, list):
+            args["proxy"] = random.choice(proxy)
+
         try:
-            async with session.request(**config) as resp:
+            async with session.request(**args) as resp:
 
                 # 检查状态码
                 try:

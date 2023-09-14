@@ -6,6 +6,7 @@
 import asyncio
 import base64
 import json
+import random
 import struct
 import time
 from enum import Enum
@@ -143,6 +144,16 @@ class LiveRoom:
         api = API["info"]["chat_conf"]
         params = {
             "room_id": self.room_display_id
+        }
+        return await request(api['method'], api["url"], params, credential=self.credential)
+
+    async def get_chat_conf_new(self):
+        """
+        获取新版聊天弹幕服务器配置信息(websocket)
+        """
+        api = API["info"]["chat_conf_new"]
+        params = {
+            "id": self.room_display_id
         }
         return await request(api['method'], api["url"], params, credential=self.credential)
 
@@ -672,20 +683,19 @@ class LiveDanmaku(AsyncEvent):
         # 获取真实房间号和开播时间
         logger.debug(f"正在获取直播间 {self.room_display_id} 的真实房间号")
         info = await room.get_room_play_info()
-        self.__uid = info["uid"]
         self.__room_real_id = info["room_id"]
         self.live_time = info["live_time"]
         logger.debug(f"获取成功, 真实房间号: {self.__room_real_id}")
 
         # 获取直播服务器配置
         logger.debug(f"正在获取直播间 {self.room_display_id} 的聊天服务器配置")
-        conf = await room.get_chat_conf()
+        conf = await room.get_chat_conf_new()
         logger.debug(f"直播间 {self.room_display_id} 的聊天服务器配置获取成功")
 
         # 连接直播间
         logger.debug(f"开始连接直播间 {self.room_display_id}")
         session = get_session()
-        available_hosts: List[dict] = conf["host_server_list"]
+        available_hosts: List[dict] = conf["host_list"]
         host = None
 
         @self.on('TIMEOUT')
@@ -714,7 +724,15 @@ class LiveDanmaku(AsyncEvent):
             logger.debug(f"正在尝试连接直播间 {self.room_display_id} 的主机: {uri}")
 
             try:
-                async with session.ws_connect(uri, headers={"User-Agent": "Mozilla/5.0"}) as ws:
+                # 如果用户提供代理则设置代理
+                proxy = None
+                config_proxy = config.get("PROXY")
+                if isinstance(config_proxy, str):
+                    proxy = config_proxy
+                elif isinstance(config_proxy, list):
+                    proxy = random.choice(config_proxy)
+
+                async with session.ws_connect(uri, headers={"User-Agent": "Mozilla/5.0"}, proxy=proxy) as ws:
                     @self.on('VERIFICATION_SUCCESSFUL')
                     async def on_verification_successful(data):
                         """
