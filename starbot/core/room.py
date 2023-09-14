@@ -117,11 +117,11 @@ class Up(BaseModel):
         # 开播推送开关和下播推送开关均处于关闭状态时跳过连接直播间，以节省性能
         if config.get("ONLY_CONNECT_NECESSARY_ROOM") and not self.is_need_connect():
             logger.warning(f"{self.uname} 的开播, 下播和直播报告开关均处于关闭状态, 跳过连接直播间")
-            return
+            return False
 
         if self.__connecting:
             logger.warning(f"{self.uname} ( UID: {self.uid} ) 的直播间正在连接中, 跳过重复连接")
-            return
+            return False
         self.__connecting = True
 
         self.__live_room = LiveRoom(self.room_id, get_credential())
@@ -384,6 +384,8 @@ class Up(BaseModel):
                 await redis.incr_user_guard_count(type_mapping[guard_type], self.room_id, uid, month)
 
                 await redis.incr_room_guard_time(self.room_id, int(time.time()), month)
+
+        return True
 
     async def disconnect(self):
         """

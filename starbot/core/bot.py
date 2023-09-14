@@ -192,13 +192,16 @@ class StarBot:
             await redis.set_live_start_time(up.room_id, start_time)
 
         # 连接直播间
-        interval = config.get("CONNECTION_INTERVAL")
-        for up in self.__datasource.get_up_list():
-            try:
-                await up.connect()
-                await asyncio.sleep(interval)
-            except LiveException as ex:
-                logger.error(ex.msg)
+        async def connect_room_task():
+            interval = config.get("CONNECTION_INTERVAL")
+            for u in self.__datasource.get_up_list():
+                try:
+                    if await u.connect():
+                        await asyncio.sleep(interval)
+                except LiveException as e:
+                    logger.error(e.msg)
+
+        asyncio.create_task(connect_room_task())
         if len(self.__datasource.get_up_list()) > 0:
             try:
                 wait_time = config.get("WAIT_FOR_ALL_CONNECTION_TIMEOUT")
