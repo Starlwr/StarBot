@@ -46,6 +46,9 @@ async def dynamic_spider(datasource: DataSource):
             logger.exception("动态推送任务抓取最新动态异常", ex)
             continue
 
+        if latest_dynamic is None:
+            continue
+
         if "new_num" not in latest_dynamic:
             continue
 
