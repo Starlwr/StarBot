@@ -49,7 +49,7 @@ async def dynamic_spider(datasource: DataSource):
         if latest_dynamic is None:
             continue
 
-        if "new_num" not in latest_dynamic:
+        if "new_num" not in latest_dynamic or "cards" not in latest_dynamic:
             continue
 
         new_num = latest_dynamic["new_num"]

@@ -73,7 +73,8 @@ class Up(BaseModel):
         return 6 if not self.__room else self.__room.get_status()
 
     def dispatch(self, event, data):
-        self.__room.dispatch(event, data)
+        if self.__room is not None:
+            self.__room.dispatch(event, data)
 
     def inject_bot(self, bot):
         self.__bot = bot
@@ -179,7 +180,6 @@ class Up(BaseModel):
             开播事件
             """
             logger.debug(f"{self.uname} (LIVE): {event}")
-            # logger.warning(f"{self.uname}: 开播事件")
 
             locked = False
             room_info = {}
@@ -255,7 +255,6 @@ class Up(BaseModel):
             下播事件
             """
             logger.debug(f"{self.uname} (PREPARING): {event}")
-            # logger.warning(f"{self.uname}: 下播事件")
 
             if await redis.get_live_status(self.room_id) == 0:
                 return
