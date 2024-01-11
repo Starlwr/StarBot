@@ -168,10 +168,26 @@ class DynamicPicGenerator:
                 mod: 表情区块字典
             """
             mod["img"] = await open_url_image(mod["emoji"]["icon_url"])
-
-        modules_url = f"https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?timezone_offset=-480&id={dynamic_id}"
-        modules = (await request("GET", modules_url))["item"]["modules"]["module_dynamic"]["desc"]
-        modules = modules["rich_text_nodes"] if modules else []
+        
+        if dynamic_type == 2 or dynamic_type == 4:
+            # 有些动态带有标题，不显示标题会缺少上下文
+            modules_url =("https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?timezone_offset=-480"
+                 f"&platform=web&id={dynamic_id}&features=itemOpusStyle,opusBigCover,onlyfansVote")
+            modules = (await request("GET", modules_url))["item"]["modules"]["module_dynamic"]["major"]["opus"]
+            title = modules["title"]
+            modules = modules["summary"]
+            if modules:
+                modules = modules["rich_text_nodes"]
+                if title is not None:
+                    modules.insert(0,{'orig_text': title+"\n",
+                                       'text': title+"\n",
+                                       'type': 'RICH_TEXT_NODE_TYPE_TEXT'})
+            else:
+                modules = []
+        else :
+            modules_url = f"https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?timezone_offset=-480&id={dynamic_id}"
+            modules = (await request("GET", modules_url))["item"]["modules"]["module_dynamic"]["desc"]
+            modules = modules["rich_text_nodes"] if modules else []
 
         # 下载表情
         download_picture_tasks = []
