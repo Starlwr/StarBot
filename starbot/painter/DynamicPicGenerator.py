@@ -171,17 +171,18 @@ class DynamicPicGenerator:
         
         if dynamic_type == 2 or dynamic_type == 4:
             # 有些动态带有标题，不显示标题会缺少上下文
-            modules_url =("https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?timezone_offset=-480"
-                 f"&platform=web&id={dynamic_id}&features=itemOpusStyle,opusBigCover,onlyfansVote")
+            modules_url =f"https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?timezone_offset=-480&id={dynamic_id}&features=itemOpusStyle,opusBigCover,onlyfansVote"
             modules = (await request("GET", modules_url))["item"]["modules"]["module_dynamic"]["major"]["opus"]
             title = modules["title"]
             modules = modules["summary"]
             if modules:
                 modules = modules["rich_text_nodes"]
                 if title is not None:
-                    modules.insert(0,{'orig_text': title+"\n",
-                                       'text': title+"\n",
-                                       'type': 'RICH_TEXT_NODE_TYPE_TEXT'})
+                    modules.insert(0, {
+                        'orig_text': f"{title}\n",
+                        'text': f"{title}\n",
+                        'type': 'RICH_TEXT_NODE_TYPE_TEXT'
+                    })
             else:
                 modules = []
         else :
