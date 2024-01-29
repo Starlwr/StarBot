@@ -11,7 +11,7 @@ from .PicGenerator import Color, PicGenerator
 from ..utils import config
 from ..utils.network import request
 from ..utils.utils import open_url_image, timestamp_format, split_list, limit_str_length, \
-    mask_round, mask_rounded_rectangle
+    mask_round, mask_rounded_rectangle, get_credential
 
 
 class DynamicPicGenerator:
@@ -172,7 +172,7 @@ class DynamicPicGenerator:
         if dynamic_type == 2 or dynamic_type == 4:
             # 有些动态带有标题，不显示标题会缺少上下文
             modules_url =f"https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?timezone_offset=-480&id={dynamic_id}&features=itemOpusStyle,opusBigCover,onlyfansVote"
-            modules = (await request("GET", modules_url))["item"]["modules"]["module_dynamic"]["major"]["opus"]
+            modules = (await request("GET", modules_url, credential=get_credential()))["item"]["modules"]["module_dynamic"]["major"]["opus"]
             title = modules["title"]
             modules = modules["summary"]
             if modules:
@@ -187,7 +187,7 @@ class DynamicPicGenerator:
                 modules = []
         else :
             modules_url = f"https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?timezone_offset=-480&id={dynamic_id}"
-            modules = (await request("GET", modules_url))["item"]["modules"]["module_dynamic"]["desc"]
+            modules = (await request("GET", modules_url, credential=get_credential()))["item"]["modules"]["module_dynamic"]["desc"]
             modules = modules["rich_text_nodes"] if modules else []
 
         # 下载表情
