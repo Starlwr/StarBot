@@ -231,7 +231,11 @@ class StarBot:
             saya.require(f"starbot.commands.builtin")
             logger.success("内置命令模块载入完毕")
             if custom_commands:
-                saya.require(custom_commands)
+                if isinstance(custom_commands, list):
+                    for _package in custom_commands:
+                        saya.require(_package)
+                else:
+                    saya.require(custom_commands)
                 logger.success("用户自定义命令模块载入完毕")
 
         # 自动关注打开了动态推送的未关注 UP 主
