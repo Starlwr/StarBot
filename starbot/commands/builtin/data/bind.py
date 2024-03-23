@@ -44,9 +44,8 @@ async def bind(app: Ariadne,
 
     uid = remove_command_param_placeholder(uid.display)
 
-    # Pre Calc
-    temp = uid.split("UID:")
-    uid = uid if len(temp) == 1 else temp[1]
+    # Replace
+    uid = uid.replace("UID:", "")
 
     if not uid.isdigit() or int(uid) == 0:
         await app.send_message(sender, MessageChain(f"请输入正确的UID~\n命令示例:{prefix}绑定 114514"), quote=source)
