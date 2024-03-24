@@ -1,6 +1,15 @@
-# StarBot
+<div align="center">
 
-一款极速，多功能的哔哩哔哩推送机器人。
+![logo](https://bot.starlwr.com/images/static/logo.jpg)
+
+[![PyPI](https://img.shields.io/pypi/v/starbot-bilibili)](https://pypi.org/project/starbot-bilibili)
+[![Python](https://img.shields.io/badge/python-3.10%20|%203.11-blue)](https://www.python.org)
+[![License](https://img.shields.io/github/license/Starlwr/StarBot)](https://github.com/Starlwr/StarBot/blob/master/LICENSE)
+[![STARS](https://img.shields.io/github/stars/Starlwr/StarBot?color=yellow&label=Stars)](https://github.com/Starlwr/StarBot/stargazers)
+
+
+**一个极速，多功能的哔哩哔哩推送机器人**
+</div>
 
 ## 特性
 
@@ -44,3 +53,10 @@ bot.run()
 * [Ariadne](https://github.com/GraiaProject/Ariadne): 一个优雅且完备的 Python QQ 自动化框架，基于 Mirai API HTTP v2
 * [Fake-QQ-Chat-Window](https://github.com/Redlnn/Fake-QQ-Chat-Window): 伪 QQ 移动客户端聊天窗口，当前官网的推送配置在线预览基于此项目魔改实现
 * [为本项目赞赏支持的小伙伴们](https://bot.starlwr.com/about): 名单较长，详细名单可点击链接在官网查看
+* [JetBrains](https://www.jetbrains.com/?from=StarBot): 为开源项目免费提供的优秀 IDE
+
+[<img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jb_beam.svg"/>](https://www.jetbrains.com/?from=StarBot)
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Starlwr/StarBot&type=Date)](https://star-history.com/#Starlwr/StarBot&Date)
