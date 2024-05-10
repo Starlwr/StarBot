@@ -61,6 +61,8 @@ async def dynamic_spider(datasource: DataSource):
                 detail = latest_dynamic["cards"][i]
             except IndexError:
                 break
+            except TypeError:
+                break
 
             dynamic_id = detail['desc']['dynamic_id']
             if await redis.exists_dynamic(dynamic_id):
