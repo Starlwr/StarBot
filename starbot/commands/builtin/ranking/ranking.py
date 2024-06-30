@@ -90,7 +90,7 @@ async def ranking(app: Ariadne,
 
         if length == 0:
             await app.send_message(sender, MessageChain(f"{up.uname} 的房间暂无{type_map[_type][2]}数据~"), quote=source)
-            return
+            continue
 
         if page > page_length:
             await app.send_message(
@@ -98,7 +98,7 @@ async def ranking(app: Ariadne,
                 MessageChain(f"{up.uname} 的房间{type_map[_type][3]}榜页码范围为 1 ~ {page_length}\n请重新输入正确的页码~"),
                 quote=source
             )
-            return
+            continue
 
         data = await type_map[_type][1](up.room_id, start, end)
         top_count = (await type_map[_type][1](up.room_id, 0, 0))[0][1]
