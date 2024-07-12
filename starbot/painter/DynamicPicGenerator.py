@@ -5,6 +5,7 @@ from typing import Optional, Union, Tuple, List, Dict, Any
 
 from PIL import Image, ImageDraw, ImageFont
 from PIL.Image import Resampling
+from fontTools.ttLib import TTFont
 from emoji import is_emoji
 
 from .PicGenerator import Color, PicGenerator
@@ -292,7 +293,10 @@ class DynamicPicGenerator:
         img = Image.new("RGBA", (width, line_height))
         draw = ImageDraw.Draw(img)
         normal_font = config.get("PAINTER_NORMAL_FONT")
-        font = ImageFont.truetype(f"{cls.__resource_base_path}/resource/{normal_font}", 30)
+        if type(normal_font) == str:
+            normal_font = [normal_font]
+        draw_font_list = [ImageFont.truetype(f"{cls.__resource_base_path}/resource/{font}", 30) for font in normal_font]
+        judge_font_list = [TTFont(f"{cls.__resource_base_path}/resource/{font}", fontNumber=0) for font in normal_font]
         emoji_font = ImageFont.truetype(f"{cls.__resource_base_path}/resource/emoji.ttf", 109)
         x, y = 0, 0
 
@@ -337,6 +341,22 @@ class DynamicPicGenerator:
             pic.close()
             x = int(x + size[0])
 
+        def select_font_for_char(c: str) -> bool:
+            """
+            选择字体
+
+            Args:
+                c: 字符
+
+            Returns:
+                包含该字符的字体或列表中最后一个字体
+            """
+            for i in range(len(judge_font_list)):
+                for table in judge_font_list[i]['cmap'].tables:
+                    if ord(c) in table.cmap.keys():
+                        return draw_font_list[i]
+            return draw_font_list[-1]
+
         def draw_char(c: str, color: Union[Color, Tuple[int, int, int]] = Color.BLACK):
             """
             绘制字符
@@ -360,9 +380,10 @@ class DynamicPicGenerator:
                     emoji_img = emoji_img.resize((30, 30), Resampling.LANCZOS)
                     draw_pic(emoji_img)
                 else:
-                    text_width = draw.textlength(c, font)
+                    draw_font = select_font_for_char(c)
+                    text_width = draw.textlength(c, draw_font)
                     auto_next_line(text_width)
-                    draw.text((x, y), c, color, font)
+                    draw.text((x, y), c, color, draw_font)
                     x = int(x + text_width)
 
         for module in modules:
