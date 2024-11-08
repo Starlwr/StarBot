@@ -158,7 +158,7 @@ class RankingGenerator:
         chart = PicGenerator(width, (face_size * count) + (row_space * (count - 1)))
         chart.set_row_space(row_space)
         for i in range(count):
-            bar_width = int(abs(counts[i]) / top_count * top_bar_width)
+            bar_width = int(abs(counts[i]) / top_count * top_bar_width) if top_count != 0 else 0.1
             if bar_width != 0:
                 if counts[i] > 0:
                     bar = cls.__get_rank_bar_pic(bar_width, bar_height, start_color, end_color)
