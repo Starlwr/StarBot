@@ -674,7 +674,7 @@ class LiveReportGenerator:
         end = abs_max + (-abs_max % 10)
         step = int((end - start) / 10)
 
-        yticks = list(range(start, end)[::step])
+        yticks = list(range(start, end)[::step]) if step != 0 else [0]
         yticks.append(end)
         return cls.__get_line_diagram(
             indexs, profits, [], yticks, [], [], (-1, length), (start, end), width
