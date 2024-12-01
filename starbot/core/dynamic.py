@@ -31,6 +31,9 @@ async def dynamic_spider(datasource: DataSource):
         except ResponseCodeException as ex:
             if ex.code == -6:
                 continue
+            if ex.code == 4100000:
+                logger.error("B 站登录凭据已失效, 无法继续抓取动态，请配置新登录凭据后重启服务")
+                continue
             logger.error(f"动态推送任务抓取最新动态异常, HTTP 错误码: {ex.code} ({ex.msg})")
         except NetworkException:
             continue
