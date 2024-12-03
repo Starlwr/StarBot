@@ -73,7 +73,7 @@ async def request(method: str,
     # 使用 Referer 和 UA 请求头以绕过反爬虫机制
     default_headers = {
         "Referer": "https://www.bilibili.com",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36 Core/1.94.218.400 QQBrowser/12.1.5496.400"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.5845.97 Safari/537.36 Core/1.116.462.400 QQBrowser/13.3.6197.400"
     }
     headers = default_headers
 
@@ -156,7 +156,7 @@ async def request(method: str,
 
                 if code != 0:
                     # 4101131: 加载错误，请稍后再试, 22015: 您的账号异常，请稍后再试
-                    if code == 4101131 or code == 22015:
+                    if code == 4101131 or code == 22015 or code == -352:
                         await asyncio.sleep(10)
                         continue
 

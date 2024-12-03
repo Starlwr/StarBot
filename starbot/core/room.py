@@ -209,6 +209,8 @@ class Up(BaseModel):
                         if ex.code == 19002005:
                             locked = True
                             logger.warning(f"{self.uname} ({self.room_id}) 的直播间已加密")
+                        else:
+                            logger.error(f"{self.uname} ({self.room_id}) 的直播间信息获取失败, 错误信息: {ex.code} ({ex.msg})")
 
                     if not locked:
                         self.uname = room_info["anchor_info"]["base_info"]["uname"]
