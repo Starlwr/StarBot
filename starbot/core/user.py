@@ -6,8 +6,10 @@
 import json
 import time
 from enum import Enum
-from typing import List
+from typing import List, Dict
+from deprecated import deprecated
 
+from .wbi import encWbi, getWbiKeys
 from ..utils.Credential import Credential
 from ..utils.network import request
 from ..utils.utils import get_api
@@ -100,7 +102,7 @@ class User:
     用户相关
     """
 
-    def __init__(self, uid: int, credential: Credential = None):
+    def __init__(self, uid: int, credential: Credential = None, wbi_keys: Dict[str, str] = None):
         """
         Args:
             uid: 用户 UID
@@ -112,7 +114,12 @@ class User:
             credential = Credential()
         self.credential = credential
         self.__self_info = None
-
+        self.__wbi_keys = wbi_keys
+    
+    def set_wbi_keys(self, wbi_keys: Dict[str, str]) -> None:
+        self.__wbi_keys = wbi_keys
+        
+    @deprecated(reason='you should use get_user_info_wbi')
     async def get_user_info(self):
         """
         获取用户信息（昵称，性别，生日，签名，头像 URL，空间横幅 URL 等）
@@ -123,6 +130,16 @@ class User:
         }
         return await request("GET", url=api["url"], params=params, credential=self.credential)
 
+    async def get_user_info_wbi(self):
+        if self.__wbi_keys == None:
+            raise RuntimeError("wbi keys is None")
+        api = API["info"]["info_wbi"]
+        params = {
+            "mid": self.uid
+        }
+        params_wbi = encWbi(params, **self.__wbi_keys)
+        return await request("GET", url=api["url"], params=params, credential=self.credential)
+    
     async def __get_self_info(self):
         """
         获取自己的信息，如果存在缓存则使用缓存
@@ -155,6 +172,7 @@ class User:
         }
         return await request("GET", url=api["url"], params=params, credential=self.credential)
 
+    @deprecated(reason="you should use get_live_info_wbi")
     async def get_live_info(self):
         """
         获取用户直播间信息
@@ -165,6 +183,19 @@ class User:
         }
         return await request("GET", url=api["url"], params=params, credential=self.credential)
 
+    async def get_live_info_wbi(self):
+        """
+        获取用户直播间信息
+        """
+        if self.__wbi_keys == None:
+            raise RuntimeError("wbi keys is None")
+        api = API["info"]["live_wbi"]
+        params = {
+            "mid": self.uid
+        }
+        params_wbi = encWbi(params, **self.__wbi_keys)
+        return await request("GET", url=api["url"], params=params_wbi, credential=self.credential)
+    
     async def get_videos(self,
                          tid: int = 0,
                          pn: int = 1,
@@ -239,6 +270,7 @@ class User:
         }
         return await request("GET", url=api["url"], params=params, credential=self.credential)
 
+    @deprecated(reason="https://github.com/SocialSisterYi/bilibili-API-collect/issues/852")
     async def get_dynamics(self, offset: int = 0, need_top: bool = False):
         """
         获取用户动态
