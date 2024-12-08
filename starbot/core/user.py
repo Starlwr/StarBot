@@ -10,9 +10,9 @@ from typing import List, Dict
 from deprecated import deprecated
 
 from .wbi import encWbi, getWbiKeys
-from ..starbot_utils.Credential import Credential
-from ..starbot_utils.network import request
-from ..starbot_utils.utils import get_api
+from ..utils.Credential import Credential
+from ..utils.network import request
+from ..utils.utils import get_api
 
 API = get_api("user")
 
