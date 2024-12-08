@@ -15,6 +15,17 @@
       },
       "comment": "用户基本信息"
     },
+    "info_wbi": {
+      "url": "https://api.bilibili.com/x/space/wbi/acc/info",
+      "method": "GET",
+      "verify": false,
+      "params": {
+        "mid": "int: uid",
+        "w_rid": "str: Wbi签名",
+        "wts": "int: 当前时间戳"
+      },
+      "comment": "用户基本信息（WBI版本）"
+    },
     "relation": {
       "url": "https://api.bilibili.com/x/relation/stat",
       "method": "GET",
@@ -41,6 +52,17 @@
         "mid": "int: uid"
       },
       "comment": "直播间基本信息"
+    },
+    "live_wbi": {
+      "url": "https://api.bilibili.com/x/space/wbi/acc/info",
+      "method": "GET",
+      "verify": false,
+      "params": {
+        "mid": "int: uid",
+        "w_rid": "str: Wbi签名",
+        "wts": "int: 当前时间戳"
+      },
+      "comment": "直播间基本信息（WBI版本）"
     },
     "video": {
       "url": "https://api.bilibili.com/x/space/arc/search",
