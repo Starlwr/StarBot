@@ -167,6 +167,48 @@ class LiveRoom:
         }
         return await request(api['method'], api["url"], params, credential=self.credential)
 
+    async def get_room_info_v2(self):
+        """
+        获取直播间信息（标题，简介等）
+        """
+        api = "https://api.live.bilibili.com/room/v1/Room/get_info"
+        params = {
+            "room_id": self.room_display_id
+        }
+        return await request("GET", api, params, credential=self.credential)
+
+    async def get_fans_medal_info(self, uid: int):
+        """
+        获取粉丝勋章信息
+
+        Args:
+            uid: 用户 UID
+        """
+        api = "https://api.live.bilibili.com/xlive/app-ucenter/v1/fansMedal/fans_medal_info"
+        params = {
+            "target_id": uid,
+            "room_id": self.room_display_id
+        }
+        return await request("GET", api, params, credential=self.credential)
+
+    async def get_guards_info(self, uid: int):
+        """
+        获取大航海信息
+
+        Args:
+            uid: 用户 UID
+        """
+        api = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew"
+        params = {
+            "roomid": self.room_display_id,
+            "page": 1,
+            "ruid": uid,
+            "page_size": 20,
+            "typ": 5,
+            "platform": "web"
+        }
+        return await request("GET", api, params, credential=self.credential)
+
     async def get_user_info_in_room(self):
         """
         获取自己在直播间的信息（粉丝勋章等级，直播用户等级等）

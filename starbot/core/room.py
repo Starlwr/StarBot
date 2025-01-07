@@ -2,6 +2,7 @@ import asyncio
 import time
 import typing
 from asyncio import AbstractEventLoop
+from datetime import datetime
 from typing import Optional, Any, Union, List
 
 from loguru import logger
@@ -183,6 +184,8 @@ class Up(BaseModel):
 
             locked = False
             room_info = {}
+            fans_medal_info = {}
+            guards_info = {}
 
             # 是否为真正开播
             if "live_time" in event["data"]:
@@ -204,7 +207,9 @@ class Up(BaseModel):
                     logger.opt(colors=True).info(f"<magenta>[开播] {self.uname} ({self.room_id})</>")
 
                     try:
-                        room_info = await self.__live_room.get_room_info()
+                        room_info = await self.__live_room.get_room_info_v2()
+                        fans_medal_info = await self.__live_room.get_fans_medal_info(self.uid)
+                        guards_info = await self.__live_room.get_guards_info(self.uid)
                     except ResponseCodeException as ex:
                         if ex.code == 19002005:
                             locked = True
@@ -213,18 +218,23 @@ class Up(BaseModel):
                             logger.error(f"{self.uname} ({self.room_id}) 的直播间信息获取失败, 错误信息: {ex.code} ({ex.msg})")
 
                     if not locked:
-                        self.uname = room_info["anchor_info"]["base_info"]["uname"]
+                        # 此处若有合适 API 需更新一下最新昵称
+                        pass
 
-                    live_start_time = room_info["room_info"]["live_start_time"] if not locked else int(time.time())
+                    if locked:
+                        live_start_time = int(time.time())
+                    else:
+                        if room_info["live_time"] != "0000-00-00 00:00:00":
+                            time_format = "%Y-%m-%d %H:%M:%S"
+                            live_start_time = int(datetime.strptime(room_info["live_time"], time_format).timestamp())
+                        else:
+                            live_start_time = int(time.time())
                     await redis.set_live_start_time(self.room_id, live_start_time)
 
                     if not locked:
-                        fans_count = room_info["anchor_info"]["relation_info"]["attention"]
-                        if room_info["anchor_info"]["medal_info"] is None:
-                            fans_medal_count = 0
-                        else:
-                            fans_medal_count = room_info["anchor_info"]["medal_info"]["fansclub"]
-                        guard_count = room_info["guard_info"]["count"]
+                        fans_count = room_info["attention"]
+                        fans_medal_count = fans_medal_info["fans_medal_light_count"]
+                        guard_count = guards_info["info"]["num"]
                         await redis.set_fans_count(self.room_id, live_start_time, fans_count)
                         await redis.set_fans_medal_count(self.room_id, live_start_time, fans_medal_count)
                         await redis.set_guard_count(self.room_id, live_start_time, guard_count)
@@ -233,12 +243,11 @@ class Up(BaseModel):
 
                     # 推送开播消息
                     if not locked:
-                        arg_base = room_info["room_info"]
                         args = {
                             "{uname}": self.uname,
-                            "{title}": arg_base["title"],
+                            "{title}": room_info["title"],
                             "{url}": f"https://live.bilibili.com/{self.room_id}",
-                            "{cover}": "".join(["{urlpic=", arg_base["cover"], "}"])
+                            "{cover}": "".join(["{urlpic=", room_info["user_cover"], "}"])
                         }
                     else:
                         args = {
@@ -484,11 +493,15 @@ class Up(BaseModel):
 
         locked = False
         room_info = {}
+        fans_medal_info = {}
+        guards_info = {}
 
         # 基础数据变动
         if self.__any_live_report_item_enabled(["fans_change", "fans_medal_change", "guard_change"]):
             try:
-                room_info = await self.__live_room.get_room_info()
+                room_info = await self.__live_room.get_room_info_v2()
+                fans_medal_info = await self.__live_room.get_fans_medal_info(self.uid)
+                guards_info = await self.__live_room.get_guards_info(self.uid)
             except ResponseCodeException as ex:
                 if ex.code == 19002005:
                     locked = True
@@ -508,21 +521,18 @@ class Up(BaseModel):
                 else:
                     guard_count = -1
 
-                if room_info["anchor_info"]["medal_info"] is None:
-                    fans_medal_count_after = 0
-                else:
-                    fans_medal_count_after = room_info["anchor_info"]["medal_info"]["fansclub"]
+                fans_medal_count_after = fans_medal_info["fans_medal_light_count"]
 
                 live_report_param.update({
                     # 粉丝变动
                     "fans_before": fans_count,
-                    "fans_after": room_info["anchor_info"]["relation_info"]["attention"],
+                    "fans_after": room_info["attention"],
                     # 粉丝团（粉丝勋章数）变动
                     "fans_medal_before": fans_medal_count,
                     "fans_medal_after": fans_medal_count_after,
                     # 大航海变动
                     "guard_before": guard_count,
-                    "guard_after": room_info["guard_info"]["count"]
+                    "guard_after": guards_info["info"]["num"]
                 })
 
         # 直播数据
