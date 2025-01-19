@@ -294,6 +294,9 @@ class Up(BaseModel):
                 """
                 logger.debug(f"{self.uname} (DANMU_MSG): {event}")
 
+                if "info" not in event["data"]:
+                    return
+
                 base = event["data"]["info"]
                 uid = base[2][0]
                 content = base[1]
