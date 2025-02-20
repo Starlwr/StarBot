@@ -152,6 +152,16 @@ class StarBot:
             logger.exception(f"尝试登录 B 站账号失败", ex)
             return 2
 
+        # 尝试用uvloop提升asyncio性能
+        if not sys.platform.startswith("win"):
+            try:
+                import uvloop
+                uvloop.install()
+                logger.debug("当前使用uvloop替换默认asyncio中event_loop以改善性能")
+            except Exception as e:
+                logger.debug(f"uvloop加载失败\n{e}")
+                pass  # 不支持则静默回退
+
         # 从数据源中加载配置
         try:
             await self.__datasource.load()
