@@ -600,3 +600,21 @@ class PicGenerator:
         self.__canvas.close()
 
         return base64.b64encode(io.getvalue()).decode()
+
+    def save_and_get_base64(self, path: str) -> str:
+        """
+        保存图片并获取 Base64 字符串，终端操作，保存完成后会关闭图片，无法再对图片进行操作
+
+        Args:
+            path: 保存路径
+
+        Returns:
+            Base64 字符串
+        """
+        self.__canvas.save(path)
+
+        io = BytesIO()
+        self.__canvas.save(io, format="PNG")
+        self.__canvas.close()
+
+        return base64.b64encode(io.getvalue()).decode()

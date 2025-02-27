@@ -92,6 +92,11 @@ DEFAULT_CONFIG = {
     # 弹幕词云自定义词典路径，存储时每行一个词，以纯文本方式存储，在对弹幕进行切词时，词典中的词不会被切分开
     "DANMU_CLOUD_DICT": "",
 
+    # 是否自动保存直播报告图片
+    "SAVE_LIVE_REPORT_IMAGE": False,
+    # 是否自动保存动态图片
+    "SAVE_DYNAMIC_IMAGE": False,
+
     # 需加载的用户自定义命令包
     "CUSTOM_COMMANDS_PACKAGE": None,
 

@@ -4,6 +4,7 @@ import io
 import math
 import os
 from collections import Counter
+from datetime import datetime
 from io import BytesIO
 from typing import Union, Tuple, List, Dict, Any
 
@@ -407,7 +408,16 @@ class LiveReportGenerator:
         pic.draw_text_right(50, "https://github.com/Starlwr/StarBot", Color.LINK, logo_limit)
         pic.crop_and_paste_bottom()
 
-        return pic.base64()
+        if config.get("SAVE_LIVE_REPORT_IMAGE"):
+            report_dir = os.path.join(os.getcwd(), "report")
+            if not os.path.exists(report_dir):
+                os.makedirs(report_dir)
+
+            return pic.save_and_get_base64(
+                os.path.join(report_dir, f"{uname}_{room_id}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png")
+            )
+        else:
+            return pic.base64()
 
     @classmethod
     def __get_logo(cls, model: LiveReport) -> Image:
