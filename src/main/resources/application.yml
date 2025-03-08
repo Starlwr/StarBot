@@ -1,0 +1,9 @@
+spring:
+  main:
+    web-application-type: none
+
+starbot:
+  bilibili:
+    version:
+      number: 3.0.0
+      release-date: 2025-03-09
