@@ -19,6 +19,12 @@ public class StarBotBilibiliProperties {
     @Getter
     private final Thread thread = new Thread();
 
+    @Getter
+    private final Cookie cookie = new Cookie();
+
+    @Getter
+    private final Network network = new Network();
+
     /**
      * 版本相关
      */
@@ -61,5 +67,49 @@ public class StarBotBilibiliProperties {
          * 非核心线程存活时间，单位：秒
          */
         private int keepAliveSeconds = 300;
+    }
+
+    /**
+     * 登录相关
+     */
+    @Getter
+    @Setter
+    public static class Cookie {
+        /**
+         * Cookie 中的 SESSDATA
+         */
+        private String sessData;
+
+        /**
+         * Cookie 中的 buvid3
+         */
+        private String buvid3;
+
+        /**
+         * Cookie 中的 bili_jct
+         */
+        private String biliJct;
+    }
+
+    /**
+     * 网络相关
+     */
+    @Getter
+    @Setter
+    public static class Network {
+        /**
+         * 接口请求时使用的 User-Agent
+         */
+        private String userAgent = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36 Core/1.94.218.400 QQBrowser/12.1.5496.400";
+
+        /**
+         * 接口请求最大重试次数
+         */
+        private int apiRetryMaxTimes = 3;
+
+        /**
+         * 接口请求重试间隔，单位：毫秒
+         */
+        private int apiRetryInterval = 3000;
     }
 }
