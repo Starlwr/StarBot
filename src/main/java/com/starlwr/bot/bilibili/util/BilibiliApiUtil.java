@@ -5,10 +5,13 @@ import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
+import com.starlwr.bot.bilibili.model.WebSign;
+import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.common.util.HttpUtil;
 import io.micrometer.common.util.StringUtils;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.retry.RetryCallback;
 import org.springframework.retry.backoff.FixedBackOffPolicy;
@@ -34,6 +37,8 @@ public class BilibiliApiUtil {
 
     private final RetryTemplate retryTemplate = new RetryTemplate();
 
+    private WebSign sign;
+
     @PostConstruct
     public void init() {
         Map<Class<? extends Throwable>, Boolean> retryableExceptions = new HashMap<>();
@@ -57,7 +62,16 @@ public class BilibiliApiUtil {
         headers.put("Referer", "https://www.bilibili.com");
         headers.put("User-Agent", properties.getNetwork().getUserAgent());
         if (StringUtils.isNotBlank(properties.getCookie().getSessData()) && StringUtils.isNotBlank(properties.getCookie().getBuvid3()) && StringUtils.isNotBlank(properties.getCookie().getBiliJct())) {
-            headers.put("Cookie", String.format("SESSDATA=%s; buvid3=%s; bili_jct=%s; ", properties.getCookie().getSessData(), properties.getCookie().getBuvid3(), properties.getCookie().getBiliJct()));
+            headers.put(
+                    "Cookie", String.format(
+                            "SESSDATA=%s; buvid3=%s; bili_jct=%s; bili_ticket=%s; bili_ticket_expires=%s; ",
+                            properties.getCookie().getSessData(),
+                            properties.getCookie().getBuvid3(),
+                            properties.getCookie().getBiliJct(),
+                            sign.getTicket(),
+                            sign.getTicketExpires()
+                    )
+            );
         }
         return headers;
     }
@@ -130,5 +144,52 @@ public class BilibiliApiUtil {
 
             return rtn;
         });
+    }
+
+    /**
+     * 获取 Bilibili Web Api 签名
+     * @return Bilibili Web Api 签名
+     */
+    public WebSign generateBilibiliWebSign() {
+        String api = BilibiliTicketUtil.getBilibiliTicketUrl(properties.getCookie().getBiliJct());
+        JSONObject result = requestBilibiliApi(api, "POST", new HashMap<>(), new HashMap<>());
+        String ticket = result.getString("ticket");
+        Integer ticketExpires = result.getInteger("created_at") + result.getInteger("ttl");
+
+        String img = result.getJSONObject("nav").getString("img");
+        String sub = result.getJSONObject("nav").getString("sub");
+        String imgKey = img.substring(img.lastIndexOf("/") + 1, img.lastIndexOf("."));
+        String subKey = sub.substring(sub.lastIndexOf("/") + 1, sub.lastIndexOf("."));
+
+        sign = new WebSign(ticket, ticketExpires, imgKey, subKey);
+
+        return sign;
+    }
+
+    /**
+     * 获取登录账号 UID
+     * @return 登录账号 UID
+     */
+    public Long getLoginUid() {
+        String api = "https://api.bilibili.com/x/space/v2/myinfo";
+        JSONObject result = requestBilibiliApi(api);
+        JSONObject profile = result.getJSONObject("profile");
+        return profile.getLong("mid");
+    }
+
+    /**
+     * 根据 UID 获取 UP 主信息
+     * @param uid UID
+     * @return UP 主信息
+     */
+    public Up getUpInfoByUid(@NonNull Long uid) {
+        String api = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + uid;
+        JSONObject result = requestBilibiliApi(api);
+
+        JSONObject info = result.getJSONObject("info");
+        String uname = info.getString("uname");
+        Long roomId = result.getLong("room_id");
+        String face = info.getString("face");
+        return new Up(uid, uname, roomId == 0 ? null : roomId, face);
     }
 }
