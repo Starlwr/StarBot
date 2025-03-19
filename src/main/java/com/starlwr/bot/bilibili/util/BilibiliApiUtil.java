@@ -5,8 +5,10 @@ import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
-import com.starlwr.bot.bilibili.model.WebSign;
+import com.starlwr.bot.bilibili.model.ConnectAddress;
+import com.starlwr.bot.bilibili.model.ConnectInfo;
 import com.starlwr.bot.bilibili.model.Up;
+import com.starlwr.bot.bilibili.model.WebSign;
 import com.starlwr.bot.common.util.HttpUtil;
 import io.micrometer.common.util.StringUtils;
 import jakarta.annotation.PostConstruct;
@@ -20,7 +22,10 @@ import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClientException;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -191,5 +196,49 @@ public class BilibiliApiUtil {
         Long roomId = result.getLong("room_id");
         String face = info.getString("face");
         return new Up(uid, uname, roomId == 0 ? null : roomId, face);
+    }
+
+    /**
+     * 根据房间号获取 UP 主信息
+     * @param roomId 房间号
+     * @return UP 主信息
+     */
+    public Up getUpInfoByRoomId(@NonNull Long roomId) {
+        if (roomId == 0) {
+            throw new IllegalArgumentException("房间号不能为 0");
+        }
+
+        String api = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=" + roomId;
+        JSONObject result = requestBilibiliApi(api);
+        Long uid = result.getLong("uid");
+        return getUpInfoByUid(uid);
+    }
+
+    /**
+     * 获取直播间连接信息
+     * @param roomId 房间号
+     * @return 直播间连接信息
+     */
+    public ConnectInfo getLiveRoomConnectInfo(@NonNull Long roomId) {
+        String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id=" + roomId;
+        JSONObject result = requestBilibiliApi(api);
+
+        String token = result.getString("token");
+        List<ConnectAddress> addresses = result.getJSONArray("host_list").toJavaList(ConnectAddress.class);
+        return new ConnectInfo(token, addresses);
+    }
+
+    /**
+     * 直播间 Web 心跳包
+     * @param roomId 房间号
+     */
+    public void liveRoomHeartbeat(@NonNull Long roomId) {
+        String api = "https://live-trace.bilibili.com/xlive/rdata-interface/v1/heartbeat/webHeartBeat?pf=web&hb=";
+        String hbParam = Base64.getEncoder().encodeToString(("60|" + roomId + "|1|0").getBytes(StandardCharsets.UTF_8));
+        http.asyncGet(api + hbParam, getBilibiliHeaders()).whenComplete((response, exception) -> {
+            if (exception != null) {
+                log.error("直播间 {} 发送 Web 心跳包异常", roomId, exception);
+            }
+        });
     }
 }

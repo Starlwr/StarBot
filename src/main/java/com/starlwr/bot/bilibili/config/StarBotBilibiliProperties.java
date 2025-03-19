@@ -111,5 +111,10 @@ public class StarBotBilibiliProperties {
          * 接口请求重试间隔，单位：毫秒
          */
         private int apiRetryInterval = 3000;
+
+        /**
+         * 直播间重连间隔，单位：毫秒
+         */
+        private int liveRoomReconnectInterval = 1000;
     }
 }
