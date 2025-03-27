@@ -4,6 +4,9 @@ spring:
 
 starbot:
   bilibili:
+    log:
+      console: INFO
+      file: INFO
     version:
       number: 3.0.0
       release-date: 2025-03-09

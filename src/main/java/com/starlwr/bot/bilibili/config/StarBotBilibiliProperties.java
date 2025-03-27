@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.config;
 
+import ch.qos.logback.classic.Level;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -14,6 +15,9 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "starbot.bilibili")
 public class StarBotBilibiliProperties {
     @Getter
+    private final Log log = new Log();
+
+    @Getter
     private final Version version = new Version();
 
     @Getter
@@ -24,6 +28,23 @@ public class StarBotBilibiliProperties {
 
     @Getter
     private final Network network = new Network();
+
+    /**
+     * 日志相关
+     */
+    @Getter
+    @Setter
+    public static class Log {
+        /**
+         * 控制台日志级别
+         */
+        private Level console;
+
+        /**
+         * 文件日志级别
+         */
+        private Level file;
+    }
 
     /**
      * 版本相关

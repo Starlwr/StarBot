@@ -3,7 +3,13 @@
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
     <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
 
+    <springProperty name="consoleLogLevel" source="starbot.bilibili.log.console"/>
+    <springProperty name="fileLogLevel" source="starbot.bilibili.log.file"/>
+
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>${consoleLogLevel}</level>
+        </filter>
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
             <pattern>
                 %clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} --- [%clr(%20.20t)] %clr(%-40.40logger{39}){cyan} : %msg%n%ex
@@ -14,7 +20,7 @@
 
     <appender name="RollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>INFO</level>
+            <level>${fileLogLevel}</level>
         </filter>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>logs/%d{yyyy-MM,aux}/starbot-bilibili-%d{yyyy-MM-dd}.log</fileNamePattern>
@@ -31,6 +37,11 @@
         <appender-ref ref="RollingFile"/>
         <includeCallerData>true</includeCallerData>
     </appender>
+
+    <logger name="com.starlwr.bot" level="DEBUG" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="AsyncRollingFile"/>
+    </logger>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
