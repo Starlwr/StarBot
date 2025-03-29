@@ -1,6 +1,11 @@
 spring:
   main:
+    allow-circular-references: true
     web-application-type: none
+  cache:
+    cache-names: apiCache
+    caffeine:
+      spec: expireAfterAccess=5m, maximumSize=100000
 
 starbot:
   bilibili:

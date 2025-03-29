@@ -15,6 +15,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.retry.RetryCallback;
 import org.springframework.retry.backoff.FixedBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
@@ -36,6 +37,9 @@ import java.util.Map;
 public class BilibiliApiUtil {
     @Resource
     private StarBotBilibiliProperties properties;
+
+    @Resource
+    private BilibiliApiUtil bilibili;
 
     @Resource
     private HttpUtil http;
@@ -187,6 +191,7 @@ public class BilibiliApiUtil {
      * @param uid UID
      * @return UP 主信息
      */
+    @Cacheable(value = "apiCache", keyGenerator = "cacheKeyGenerator")
     public Up getUpInfoByUid(@NonNull Long uid) {
         String api = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + uid;
         JSONObject result = requestBilibiliApi(api);
@@ -203,6 +208,7 @@ public class BilibiliApiUtil {
      * @param roomId 房间号
      * @return UP 主信息
      */
+    @Cacheable(value = "apiCache", keyGenerator = "cacheKeyGenerator")
     public Up getUpInfoByRoomId(@NonNull Long roomId) {
         if (roomId == 0) {
             throw new IllegalArgumentException("房间号不能为 0");
@@ -211,7 +217,7 @@ public class BilibiliApiUtil {
         String api = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=" + roomId;
         JSONObject result = requestBilibiliApi(api);
         Long uid = result.getLong("uid");
-        return getUpInfoByUid(uid);
+        return bilibili.getUpInfoByUid(uid);
     }
 
     /**
