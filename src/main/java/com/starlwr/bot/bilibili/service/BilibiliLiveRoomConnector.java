@@ -113,7 +113,7 @@ public class BilibiliLiveRoomConnector {
                     return;
                 }
 
-                int interval = properties.getNetwork().getLiveRoomReconnectInterval();
+                int interval = properties.getLive().getLiveRoomReconnectInterval();
 
                 log.info("准备连接到 {} 的直播间 {}", up.getUname(), up.getRoomId());
 

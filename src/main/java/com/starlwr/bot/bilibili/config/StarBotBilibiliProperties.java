@@ -29,6 +29,9 @@ public class StarBotBilibiliProperties {
     @Getter
     private final Network network = new Network();
 
+    @Getter
+    private final Live live = new Live();
+
     /**
      * 日志相关
      */
@@ -132,9 +135,21 @@ public class StarBotBilibiliProperties {
          * 接口请求重试间隔，单位：毫秒
          */
         private int apiRetryInterval = 3000;
+    }
+
+    /**
+     * 直播相关
+     */
+    @Getter
+    @Setter
+    public static class Live {
+        /**
+         * 连接两个直播间之间的时间间隔，单位：毫秒
+         */
+        private int liveRoomConnectInterval = 1000;
 
         /**
-         * 直播间重连间隔，单位：毫秒
+         * 直播间自动断线重连时间间隔，单位：毫秒
          */
         private int liveRoomReconnectInterval = 1000;
     }

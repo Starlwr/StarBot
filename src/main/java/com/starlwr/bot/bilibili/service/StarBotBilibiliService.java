@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
+import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import jakarta.annotation.Resource;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -14,12 +15,22 @@ import org.springframework.stereotype.Service;
 @Service
 public class StarBotBilibiliService implements ApplicationListener<ApplicationReadyEvent> {
     @Resource
+    private StarBotBilibiliProperties properties;
+
+    @Resource
     private BilibiliAccountService accountService;
+
+    @Resource
+    private BilibiliLiveRoomService liveRoomService;
 
     @Override
     public void onApplicationEvent(@NonNull ApplicationReadyEvent event) {
-        log.info("开始启动 StarBot");
+        log.info("开始启动 StarBot Bilibili - v{}", properties.getVersion().getNumber());
 
         accountService.login();
+
+        log.info("开始连接直播间");
+
+        liveRoomService.start();
     }
 }
