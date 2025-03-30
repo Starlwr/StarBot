@@ -279,7 +279,7 @@ class Up(BaseModel):
             live_off_args = {
                 "{uname}": self.uname
             }
-            live_report_param = await self.__generate_live_report_param()
+            live_report_param = await self.generate_live_report_param()
 
             # 推送下播消息和直播报告
             await self.__bot.send_live_off(self, live_off_args)
@@ -465,7 +465,7 @@ class Up(BaseModel):
         await self.__bot.send_dynamic_at(self)
         await self.__bot.send_dynamic_update(self, dynamic_update_args)
 
-    async def __generate_live_report_param(self):
+    async def generate_live_report_param(self):
         """
         计算直播报告所需数据
         """
@@ -480,6 +480,8 @@ class Up(BaseModel):
         # 直播时间段和直播时长
         start_time = await redis.get_live_start_time(self.room_id)
         end_time = await redis.get_live_end_time(self.room_id)
+        if end_time == 0:
+            end_time = int(time.time())
         seconds = end_time - start_time
         minute, second = divmod(seconds, 60)
         hour, minute = divmod(minute, 60)

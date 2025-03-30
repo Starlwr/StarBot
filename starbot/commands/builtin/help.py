@@ -54,7 +54,7 @@ async def _help(app: Ariadne, sender: Union[Friend, Group]):
     pic.draw_text_multiline(50, ["命令: ", commands], [Color.RED, Color.BLACK])
     pic.draw_text(["示例: ", "禁用 直播间总数据"], [Color.RED, Color.BLACK])
     pic.draw_tip("此命令仅群聊可用")
-    pic.draw_tip("可禁用的命令名: 绑定、直播间数据、直播间总数据、我的数据、我的总数据")
+    pic.draw_tip("可禁用的命令名: 绑定、直播间数据、直播间总数据、我的数据、我的总数据、直播报告")
     pic.draw_tip("命令禁用只针对本群，如有多群需同时禁用命令请每个群进行一次配置")
 
     pic.draw_section(f"3.{prefix}启用命令")

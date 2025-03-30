@@ -20,6 +20,7 @@ disable_map = {
     "直播间总数据": "DenyRoomDataTotal",
     "我的数据": "DenyUserData",
     "我的总数据": "DenyUserDataTotal",
+    "直播报告": "DenyLiveReport",
 }
 
 channel = Channel.current()

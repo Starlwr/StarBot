@@ -5,6 +5,7 @@ import starbot.commands.builtin.at.live_on_at_me
 import starbot.commands.builtin.at.live_on_at_me_cancel
 import starbot.commands.builtin.at.live_on_at_me_list
 import starbot.commands.builtin.data.bind
+import starbot.commands.builtin.data.report
 import starbot.commands.builtin.data.room_data
 import starbot.commands.builtin.data.room_data_total
 import starbot.commands.builtin.data.user_data
