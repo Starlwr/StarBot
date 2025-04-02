@@ -1,15 +1,14 @@
 package com.starlwr.bot.bilibili.util;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
-import com.starlwr.bot.bilibili.model.ConnectAddress;
-import com.starlwr.bot.bilibili.model.ConnectInfo;
-import com.starlwr.bot.bilibili.model.Up;
-import com.starlwr.bot.bilibili.model.WebSign;
+import com.starlwr.bot.bilibili.model.*;
 import com.starlwr.bot.common.util.HttpUtil;
+import com.starlwr.bot.common.util.MathUtil;
 import io.micrometer.common.util.StringUtils;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
@@ -24,10 +23,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClientException;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * API 请求工具类
@@ -246,5 +242,47 @@ public class BilibiliApiUtil {
                 log.error("直播间 {} 发送 Web 心跳包异常", roomId, exception);
             }
         });
+    }
+
+    /**
+     * 获取礼物信息
+     * @return 礼物信息列表
+     */
+    public List<Gift> getGiftInfos() {
+        List<Gift> gifts = new ArrayList<>();
+
+        String api = "https://api.live.bilibili.com/xlive/web-room/v1/giftPanel/roomGiftConfig?platform=pc";
+        JSONObject result = requestBilibiliApi(api);
+
+        JSONArray giftInfos = result.getJSONObject("global_gift").getJSONArray("list");
+        for (int i = 0; i < giftInfos.size(); i++) {
+            JSONObject giftInfo = giftInfos.getJSONObject(i);
+            Long giftId = giftInfo.getLong("id");
+            String giftName = giftInfo.getString("name");
+            double giftPrice = MathUtil.divide(giftInfo.getInteger("price"), 1000.0);
+            String giftUrl = giftInfo.getString("img_basic");
+            gifts.add(new Gift(giftId, giftName, giftPrice, giftUrl));
+        }
+
+        return gifts;
+    }
+
+    /**
+     * 获取大航海信息
+     * @return 大航海信息
+     */
+    public Map<String, String> getGuardInfos() {
+        Map<String, String> guards = new HashMap<>();
+
+        String api = "https://api.live.bilibili.com/xlive/web-room/v1/giftPanel/roomGiftConfig?platform=pc";
+        JSONObject result = requestBilibiliApi(api);
+
+        JSONArray guardInfos = result.getJSONArray("guard_resources");
+        for (int i = 0; i < guardInfos.size(); i++) {
+            JSONObject guardInfo = guardInfos.getJSONObject(i);
+            guards.put(guardInfo.getString("name"), guardInfo.getString("img"));
+        }
+
+        return guards;
     }
 }

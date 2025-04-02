@@ -152,5 +152,10 @@ public class StarBotBilibiliProperties {
          * 直播间自动断线重连时间间隔，单位：毫秒
          */
         private int liveRoomReconnectInterval = 1000;
+
+        /**
+         * 礼物数据缓存时间，单位：秒
+         */
+        private int giftCacheExpire = 3600;
     }
 }
