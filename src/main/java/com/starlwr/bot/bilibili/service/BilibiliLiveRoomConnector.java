@@ -6,10 +6,13 @@ import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.enums.DataHeaderType;
 import com.starlwr.bot.bilibili.enums.DataPackType;
+import com.starlwr.bot.bilibili.event.BilibiliConnectedEvent;
+import com.starlwr.bot.bilibili.event.BilibiliDisconnectedEvent;
 import com.starlwr.bot.bilibili.model.ConnectAddress;
 import com.starlwr.bot.bilibili.model.ConnectInfo;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import com.starlwr.bot.common.model.LiveStreamerInfo;
 import jakarta.annotation.Resource;
 import jakarta.websocket.ClientEndpoint;
 import lombok.Getter;
@@ -18,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.brotli.dec.BrotliInputStream;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Scope;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -51,6 +55,9 @@ import java.util.concurrent.TimeUnit;
 @Scope(value = ConfigurableBeanFactory.SCOPE_PROTOTYPE)
 public class BilibiliLiveRoomConnector {
     @Resource
+    private ApplicationEventPublisher eventPublisher;
+
+    @Resource
     private StarBotBilibiliProperties properties;
 
     @Resource
@@ -59,6 +66,9 @@ public class BilibiliLiveRoomConnector {
 
     @Resource
     private BilibiliAccountService accountService;
+
+    @Resource
+    private BilibiliEventParser eventParser;
 
     @Resource
     private BilibiliApiUtil bilibili;
@@ -83,6 +93,14 @@ public class BilibiliLiveRoomConnector {
     public BilibiliLiveRoomConnector(Up up) {
         this.up = up;
         this.status = ConnectStatus.INIT;
+    }
+
+    /**
+     * 获取当前直播间主播信息
+     * @return 当前直播间主播信息
+     */
+    private LiveStreamerInfo getLiveStreamerInfo() {
+        return new LiveStreamerInfo(up.getUid(), up.getUname(), up.getRoomId(), up.getFace());
     }
 
     /**
@@ -119,10 +137,10 @@ public class BilibiliLiveRoomConnector {
 
                 status = ConnectStatus.CONNECTING;
 
-                String url = getConnectUrl();
-
                 Throwable exception = null;
                 try {
+                    String url = getConnectUrl();
+
                     CompletableFuture<WebSocketSession> sessionFuture = new CompletableFuture<>();
 
                     WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
@@ -171,6 +189,9 @@ public class BilibiliLiveRoomConnector {
         }
 
         log.info("已断开连接 {} 的直播间 {}", up.getUname(), up.getRoomId());
+
+        BilibiliDisconnectedEvent event = new BilibiliDisconnectedEvent(getLiveStreamerInfo());
+        eventPublisher.publishEvent(event);
     }
 
     /**
@@ -410,12 +431,16 @@ public class BilibiliLiveRoomConnector {
                             JSONObject data = unpackedData.getJSONObject("data");
 
                             if (dataPackType == DataPackType.NOTICE.getCode()) {
-                                log.info("收到直播间 {} 的通知消息: {}", up.getRoomId(), data.toJSONString());
+                                connector.eventParser.parse(data, connector.getLiveStreamerInfo())
+                                        .ifPresent(connector.eventPublisher::publishEvent);
                             } else if (dataPackType == DataPackType.HEARTBEAT_RESPONSE.getCode()) {
                                 connector.lastHeartBeatResponseTime = Instant.now();
                             } else if (dataPackType == DataPackType.VERIFY_SUCCESS_RESPONSE.getCode()) {
                                 connector.status = ConnectStatus.CONNECTED;
                                 log.info("已成功连接到 {} 的直播间 {}", up.getUname(), up.getRoomId());
+
+                                BilibiliConnectedEvent event = new BilibiliConnectedEvent(connector.getLiveStreamerInfo());
+                                connector.eventPublisher.publishEvent(event);
                             } else {
                                 log.warn("收到直播间 {} 的未知类型({})消息: {}", up.getRoomId(), dataPackType, data.toJSONString());
                             }

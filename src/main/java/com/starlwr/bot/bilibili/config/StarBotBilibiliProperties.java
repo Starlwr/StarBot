@@ -157,5 +157,10 @@ public class StarBotBilibiliProperties {
          * 礼物数据缓存时间，单位：秒
          */
         private int giftCacheExpire = 3600;
+
+        /**
+         * 是否自动补全事件中缺失的信息，开启后可能会因网络请求耗时导致事件延迟发布
+         */
+        private boolean completeEvent = false;
     }
 }

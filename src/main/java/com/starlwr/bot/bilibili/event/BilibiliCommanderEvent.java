@@ -1,0 +1,45 @@
+package com.starlwr.bot.bilibili.event;
+
+import com.starlwr.bot.bilibili.enums.GuardOperateType;
+import com.starlwr.bot.common.enums.Platform;
+import com.starlwr.bot.common.event.live.common.MembershipEvent;
+import com.starlwr.bot.common.model.LiveStreamerInfo;
+import com.starlwr.bot.common.model.UserInfo;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
+
+import java.time.Instant;
+
+/**
+ * <h3>Bilibili 开通提督事件</h3>
+ * <h4>触发条件：</h4>
+ * <ul>
+ *     <li>USER_TOAST_MSG（开通舰长、提督、总督）</li>
+ * </ul>
+ * <h4>示例：</h4>
+ * <p>参见 {@link BilibiliCaptainEvent}</p>
+ * <h4>备注：</h4>
+ * <p>无粉丝勋章信息，无荣耀等级信息</p>
+ */
+@Getter
+@Setter
+@NoArgsConstructor
+@ToString(callSuper = true)
+public class BilibiliCommanderEvent extends MembershipEvent {
+    /**
+     * 操作类型
+     */
+    private GuardOperateType operateType;
+
+    public BilibiliCommanderEvent(LiveStreamerInfo source, UserInfo sender, GuardOperateType operateType, Double price, Integer count, String unit) {
+        super(Platform.BILIBILI, source, sender, price, count, unit);
+        this.operateType = operateType;
+    }
+
+    public BilibiliCommanderEvent(LiveStreamerInfo source, UserInfo sender, GuardOperateType operateType, Double price, Integer count, String unit, Instant instant) {
+        super(Platform.BILIBILI, source, sender, price, count, unit, instant);
+        this.operateType = operateType;
+    }
+}

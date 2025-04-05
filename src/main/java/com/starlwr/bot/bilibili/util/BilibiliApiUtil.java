@@ -217,6 +217,48 @@ public class BilibiliApiUtil {
     }
 
     /**
+     * 根据 UID 获取 UP 主昵称
+     * @param uid UID
+     * @return UP 主昵称
+     */
+    public Optional<String> getUnameByUid(@NonNull Long uid) {
+        try {
+            return Optional.ofNullable(bilibili.getUpInfoByUid(uid).getUname());
+        } catch (Exception e) {
+            log.error("获取昵称失败", e);
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 根据 UID 获取 UP 主房间号
+     * @param uid UID
+     * @return UP 主房间号
+     */
+    public Optional<Long> getRoomIdByUid(@NonNull Long uid) {
+        try {
+            return Optional.ofNullable(bilibili.getUpInfoByUid(uid).getRoomId());
+        } catch (Exception e) {
+            log.error("获取房间号失败", e);
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 根据 UID 获取 UP 主头像
+     * @param uid UID
+     * @return UP 主头像
+     */
+    public Optional<String> getFaceByUid(@NonNull Long uid) {
+        try {
+            return Optional.ofNullable(bilibili.getUpInfoByUid(uid).getFace());
+        } catch (Exception e) {
+            log.error("获取头像失败", e);
+            return Optional.empty();
+        }
+    }
+
+    /**
      * 获取直播间连接信息
      * @param roomId 房间号
      * @return 直播间连接信息
