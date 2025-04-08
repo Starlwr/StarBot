@@ -42,6 +42,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -66,6 +67,9 @@ public class BilibiliLiveRoomConnector {
 
     @Resource
     private BilibiliAccountService accountService;
+
+    @Resource
+    private BilibiliLiveRoomConnectTaskService taskService;
 
     @Resource
     private BilibiliEventParser eventParser;
@@ -93,6 +97,19 @@ public class BilibiliLiveRoomConnector {
     public BilibiliLiveRoomConnector(Up up) {
         this.up = up;
         this.status = ConnectStatus.INIT;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        BilibiliLiveRoomConnector that = (BilibiliLiveRoomConnector) o;
+        return Objects.equals(up, that.up);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(up);
     }
 
     /**
@@ -467,7 +484,7 @@ public class BilibiliLiveRoomConnector {
                         Thread.sleep(interval);
                     } catch (InterruptedException ignored) {
                     }
-                    connector.connect();
+                    connector.taskService.add(connector);
                 } else {
                     connector.status = ConnectStatus.CLOSED;
                 }
@@ -498,7 +515,7 @@ public class BilibiliLiveRoomConnector {
                     Thread.sleep(interval);
                 } catch (InterruptedException ignored) {
                 }
-                connector.connect();
+                connector.taskService.add(connector);
             });
         }
 

@@ -20,17 +20,10 @@ public class StarBotBilibiliService implements ApplicationListener<ApplicationRe
     @Resource
     private BilibiliAccountService accountService;
 
-    @Resource
-    private BilibiliLiveRoomService liveRoomService;
-
     @Override
     public void onApplicationEvent(@NonNull ApplicationReadyEvent event) {
         log.info("开始启动 StarBot Bilibili - v{}", properties.getVersion().getNumber());
 
         accountService.login();
-
-        log.info("开始连接直播间");
-
-        liveRoomService.start();
     }
 }
