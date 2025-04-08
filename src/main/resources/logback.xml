@@ -47,4 +47,10 @@
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="AsyncRollingFile"/>
     </root>
+
+    <appender name="RawMessageAppender" class="com.starlwr.bot.bilibili.config.RawMessageLogFileAppender"/>
+
+    <logger name="RawMessageLogger" level="DEBUG" additivity="false">
+        <appender-ref ref="RawMessageAppender"/>
+    </logger>
 </configuration>

@@ -18,6 +18,9 @@ public class StarBotBilibiliProperties {
     private final Log log = new Log();
 
     @Getter
+    private final Debug debug = new Debug();
+
+    @Getter
     private final Version version = new Version();
 
     @Getter
@@ -47,6 +50,18 @@ public class StarBotBilibiliProperties {
          * 文件日志级别
          */
         private Level file;
+    }
+
+    /**
+     * 调试相关
+     */
+    @Getter
+    @Setter
+    public static class Debug {
+        /**
+         * 是否记录直播间原始消息日志
+         */
+        private boolean liveRoomRawMessageLog = false;
     }
 
     /**

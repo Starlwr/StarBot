@@ -16,10 +16,15 @@ import com.starlwr.bot.common.util.MathUtil;
 import jakarta.annotation.Resource;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.function.BiFunction;
 
 /**
@@ -28,6 +33,8 @@ import java.util.function.BiFunction;
 @Slf4j
 @Service
 public class BilibiliEventParser {
+    private static final Logger rawMessageLogger = LoggerFactory.getLogger("RawMessageLogger");
+
     @Resource
     private StarBotBilibiliProperties properties;
 
@@ -56,7 +63,9 @@ public class BilibiliEventParser {
      */
     public Optional<StarBotBaseLiveEvent> parse(JSONObject data, LiveStreamerInfo source) {
         String type = data.getString("cmd");
-        log.debug("收到直播间 {} 的 {} 消息: {}", source.getRoomId(), type, data.toJSONString());
+        if (properties.getDebug().isLiveRoomRawMessageLog()) {
+            rawMessageLogger.debug("{}: {} -> {}", type, source.getRoomId(), data.toJSONString());
+        }
 
         if (parsers.containsKey(type)) {
             try {

@@ -1,4 +1,5 @@
 .idea/
 target/
 logs/
+RawMessageDebug/
 src/main/resources/application-dev.yml
