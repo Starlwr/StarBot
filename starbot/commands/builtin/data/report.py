@@ -48,6 +48,9 @@ async def live_report(app: Ariadne, source: Source, sender: Union[Friend, Group]
         return
 
     for up in ups:
+        if up.room_id is None:
+            continue
+
         live_report_param = await up.generate_live_report_param()
 
         target = list(filter(

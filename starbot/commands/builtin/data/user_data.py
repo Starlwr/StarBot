@@ -73,6 +73,9 @@ async def user_data(app: Ariadne, source: Source, sender: Union[Friend, Group], 
         return
 
     for up in ups:
+        if up.room_id is None:
+            continue
+
         width = 1000
         height = 100000
         face_size = 100
