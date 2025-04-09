@@ -122,7 +122,6 @@ public class BilibiliApiUtil {
                     throw new IllegalArgumentException("不支持的请求方法: " + method);
                 }
             } catch (WebClientException e) {
-                log.error("请求失败", e);
                 throw new RequestFailedException("请求失败", e);
             }
 
