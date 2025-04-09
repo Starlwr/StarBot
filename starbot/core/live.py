@@ -774,7 +774,7 @@ class LiveDanmaku(AsyncEvent):
                 elif isinstance(config_proxy, list):
                     proxy = random.choice(config_proxy)
 
-                async with session.ws_connect(uri, headers={"User-Agent": "Mozilla/5.0"}, proxy=proxy) as ws:
+                async with session.ws_connect(uri, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.5845.97 Safari/537.36 Core/1.116.462.400 QQBrowser/13.3.6197.400"}, proxy=proxy) as ws:
                     @self.on('VERIFICATION_SUCCESSFUL')
                     async def on_verification_successful(data):
                         """
