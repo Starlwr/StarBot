@@ -26,7 +26,7 @@ class StarBot:
     """
     StarBot 类
     """
-    VERSION = "2.0.15"
+    VERSION = "2.0.16"
     STARBOT_ASCII_LOGO = "\n".join(
         (
             r"    _____ _             ____        _   ",
