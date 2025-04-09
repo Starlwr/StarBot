@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.event;
 
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
-import com.starlwr.bot.common.enums.Platform;
+import com.starlwr.bot.common.enums.LivePlatform;
 import com.starlwr.bot.common.event.live.common.MembershipEvent;
 import com.starlwr.bot.common.model.LiveStreamerInfo;
 import com.starlwr.bot.common.model.UserInfo;
@@ -47,12 +47,12 @@ public class BilibiliCaptainEvent extends MembershipEvent {
     private GuardOperateType operateType;
 
     public BilibiliCaptainEvent(LiveStreamerInfo source, UserInfo sender, GuardOperateType operateType, Double price, Integer count, String unit) {
-        super(Platform.BILIBILI, source, sender, price, count, unit);
+        super(LivePlatform.BILIBILI, source, sender, price, count, unit);
         this.operateType = operateType;
     }
 
     public BilibiliCaptainEvent(LiveStreamerInfo source, UserInfo sender, GuardOperateType operateType, Double price, Integer count, String unit, Instant instant) {
-        super(Platform.BILIBILI, source, sender, price, count, unit, instant);
+        super(LivePlatform.BILIBILI, source, sender, price, count, unit, instant);
         this.operateType = operateType;
     }
 }

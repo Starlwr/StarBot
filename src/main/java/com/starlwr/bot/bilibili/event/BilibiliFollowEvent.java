@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event;
 
-import com.starlwr.bot.common.enums.Platform;
+import com.starlwr.bot.common.enums.LivePlatform;
 import com.starlwr.bot.common.event.live.common.FollowEvent;
 import com.starlwr.bot.common.model.LiveStreamerInfo;
 import com.starlwr.bot.common.model.UserInfo;
@@ -37,10 +37,10 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class BilibiliFollowEvent extends FollowEvent {
     public BilibiliFollowEvent(LiveStreamerInfo source, UserInfo sender) {
-        super(Platform.BILIBILI, source, sender);
+        super(LivePlatform.BILIBILI, source, sender);
     }
 
     public BilibiliFollowEvent(LiveStreamerInfo source, UserInfo sender, Instant instant) {
-        super(Platform.BILIBILI, source, sender, instant);
+        super(LivePlatform.BILIBILI, source, sender, instant);
     }
 }

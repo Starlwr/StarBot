@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event;
 
-import com.starlwr.bot.common.enums.Platform;
+import com.starlwr.bot.common.enums.LivePlatform;
 import com.starlwr.bot.common.event.live.common.RandomGiftEvent;
 import com.starlwr.bot.common.model.GiftInfo;
 import com.starlwr.bot.common.model.LiveStreamerInfo;
@@ -38,18 +38,18 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class BilibiliRandomGiftEvent extends RandomGiftEvent {
     public BilibiliRandomGiftEvent(LiveStreamerInfo source, UserInfo sender, GiftInfo randomGiftInfo, GiftInfo giftInfo) {
-        super(Platform.BILIBILI, source, sender, randomGiftInfo, giftInfo);
+        super(LivePlatform.BILIBILI, source, sender, randomGiftInfo, giftInfo);
     }
 
     public BilibiliRandomGiftEvent(LiveStreamerInfo source, UserInfo sender, GiftInfo randomGiftInfo, GiftInfo giftInfo, Instant instant) {
-        super(Platform.BILIBILI, source, sender, randomGiftInfo, giftInfo, instant);
+        super(LivePlatform.BILIBILI, source, sender, randomGiftInfo, giftInfo, instant);
     }
 
     public BilibiliRandomGiftEvent(LiveStreamerInfo source, UserInfo sender, GiftInfo randomGiftInfo, GiftInfo giftInfo, Double price, Double value) {
-        super(Platform.BILIBILI, source, sender, randomGiftInfo, giftInfo, price, value);
+        super(LivePlatform.BILIBILI, source, sender, randomGiftInfo, giftInfo, price, value);
     }
 
     public BilibiliRandomGiftEvent(LiveStreamerInfo source, UserInfo sender, GiftInfo randomGiftInfo, GiftInfo giftInfo, Double price, Double value, Instant instant) {
-        super(Platform.BILIBILI, source, sender, randomGiftInfo, giftInfo, price, value, instant);
+        super(LivePlatform.BILIBILI, source, sender, randomGiftInfo, giftInfo, price, value, instant);
     }
 }

@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event;
 
-import com.starlwr.bot.common.enums.Platform;
+import com.starlwr.bot.common.enums.LivePlatform;
 import com.starlwr.bot.common.event.live.common.DisconnectedEvent;
 import com.starlwr.bot.common.model.LiveStreamerInfo;
 import lombok.Getter;
@@ -19,10 +19,10 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class BilibiliDisconnectedEvent extends DisconnectedEvent {
     public BilibiliDisconnectedEvent(LiveStreamerInfo source) {
-        super(Platform.BILIBILI, source);
+        super(LivePlatform.BILIBILI, source);
     }
 
     public BilibiliDisconnectedEvent(LiveStreamerInfo source, Instant instant) {
-        super(Platform.BILIBILI, source, instant);
+        super(LivePlatform.BILIBILI, source, instant);
     }
 }

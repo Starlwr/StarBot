@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event;
 
-import com.starlwr.bot.common.enums.Platform;
+import com.starlwr.bot.common.enums.LivePlatform;
 import com.starlwr.bot.common.event.live.common.SuperChatEvent;
 import com.starlwr.bot.common.model.LiveStreamerInfo;
 import com.starlwr.bot.common.model.UserInfo;
@@ -37,10 +37,10 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class BilibiliSuperChatEvent extends SuperChatEvent {
     public BilibiliSuperChatEvent(LiveStreamerInfo source, UserInfo sender, String content, Double value) {
-        super(Platform.BILIBILI, source, sender, content, value);
+        super(LivePlatform.BILIBILI, source, sender, content, value);
     }
 
     public BilibiliSuperChatEvent(LiveStreamerInfo source, UserInfo sender, String content, Double value, Instant instant) {
-        super(Platform.BILIBILI, source, sender, content, value, instant);
+        super(LivePlatform.BILIBILI, source, sender, content, value, instant);
     }
 }

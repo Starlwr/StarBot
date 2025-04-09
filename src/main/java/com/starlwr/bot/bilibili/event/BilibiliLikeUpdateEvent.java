@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event;
 
-import com.starlwr.bot.common.enums.Platform;
+import com.starlwr.bot.common.enums.LivePlatform;
 import com.starlwr.bot.common.event.live.common.LikeUpdateEvent;
 import com.starlwr.bot.common.model.LiveStreamerInfo;
 import lombok.Getter;
@@ -27,10 +27,10 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class BilibiliLikeUpdateEvent extends LikeUpdateEvent {
     public BilibiliLikeUpdateEvent(LiveStreamerInfo source, Integer count) {
-        super(Platform.BILIBILI, source, count);
+        super(LivePlatform.BILIBILI, source, count);
     }
 
     public BilibiliLikeUpdateEvent(LiveStreamerInfo source, Integer count, Instant instant) {
-        super(Platform.BILIBILI, source, count, instant);
+        super(LivePlatform.BILIBILI, source, count, instant);
     }
 }

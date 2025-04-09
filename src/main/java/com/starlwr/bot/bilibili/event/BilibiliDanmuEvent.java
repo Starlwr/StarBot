@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.event;
 
 import com.starlwr.bot.bilibili.model.BilibiliEmojiInfo;
-import com.starlwr.bot.common.enums.Platform;
+import com.starlwr.bot.common.enums.LivePlatform;
 import com.starlwr.bot.common.event.live.common.DanmuEvent;
 import com.starlwr.bot.common.model.LiveStreamerInfo;
 import com.starlwr.bot.common.model.UserInfo;
@@ -64,89 +64,89 @@ public class BilibiliDanmuEvent extends DanmuEvent {
     private List<BilibiliEmojiInfo> emojis;
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, String content) {
-        super(Platform.BILIBILI, source, sender, content);
+        super(LivePlatform.BILIBILI, source, sender, content);
         this.emojis = new ArrayList<>();
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, String content, Instant instant) {
-        super(Platform.BILIBILI, source, sender, content, instant);
+        super(LivePlatform.BILIBILI, source, sender, content, instant);
         this.emojis = new ArrayList<>();
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, UserInfo reply, String content) {
-        super(Platform.BILIBILI, source, sender, content);
+        super(LivePlatform.BILIBILI, source, sender, content);
         this.reply = reply;
         this.emojis = new ArrayList<>();
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, UserInfo reply, String content, Instant instant) {
-        super(Platform.BILIBILI, source, sender, content, instant);
+        super(LivePlatform.BILIBILI, source, sender, content, instant);
         this.reply = reply;
         this.emojis = new ArrayList<>();
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, String content, String contentText) {
-        super(Platform.BILIBILI, source, sender, content, contentText);
+        super(LivePlatform.BILIBILI, source, sender, content, contentText);
         this.emojis = new ArrayList<>();
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, String content, String contentText, Instant instant) {
-        super(Platform.BILIBILI, source, sender, content, contentText, instant);
+        super(LivePlatform.BILIBILI, source, sender, content, contentText, instant);
         this.emojis = new ArrayList<>();
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, UserInfo reply, String content, String contentText) {
-        super(Platform.BILIBILI, source, sender, content, contentText);
+        super(LivePlatform.BILIBILI, source, sender, content, contentText);
         this.reply = reply;
         this.emojis = new ArrayList<>();
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, UserInfo reply, String content, String contentText, Instant instant) {
-        super(Platform.BILIBILI, source, sender, content, contentText, instant);
+        super(LivePlatform.BILIBILI, source, sender, content, contentText, instant);
         this.reply = reply;
         this.emojis = new ArrayList<>();
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, String content, List<BilibiliEmojiInfo> emojis) {
-        super(Platform.BILIBILI, source, sender, content);
+        super(LivePlatform.BILIBILI, source, sender, content);
         this.emojis = emojis;
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, String content, List<BilibiliEmojiInfo> emojis, Instant instant) {
-        super(Platform.BILIBILI, source, sender, content, instant);
+        super(LivePlatform.BILIBILI, source, sender, content, instant);
         this.emojis = emojis;
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, UserInfo reply, String content, List<BilibiliEmojiInfo> emojis) {
-        super(Platform.BILIBILI, source, sender, content);
+        super(LivePlatform.BILIBILI, source, sender, content);
         this.reply = reply;
         this.emojis = emojis;
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, UserInfo reply, String content, List<BilibiliEmojiInfo> emojis, Instant instant) {
-        super(Platform.BILIBILI, source, sender, content, instant);
+        super(LivePlatform.BILIBILI, source, sender, content, instant);
         this.reply = reply;
         this.emojis = emojis;
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, String content, String contentText, List<BilibiliEmojiInfo> emojis) {
-        super(Platform.BILIBILI, source, sender, content, contentText);
+        super(LivePlatform.BILIBILI, source, sender, content, contentText);
         this.emojis = emojis;
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, String content, String contentText, List<BilibiliEmojiInfo> emojis, Instant instant) {
-        super(Platform.BILIBILI, source, sender, content, contentText, instant);
+        super(LivePlatform.BILIBILI, source, sender, content, contentText, instant);
         this.emojis = emojis;
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, UserInfo reply, String content, String contentText, List<BilibiliEmojiInfo> emojis) {
-        super(Platform.BILIBILI, source, sender, content, contentText);
+        super(LivePlatform.BILIBILI, source, sender, content, contentText);
         this.reply = reply;
         this.emojis = emojis;
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, UserInfo reply, String content, String contentText, List<BilibiliEmojiInfo> emojis, Instant instant) {
-        super(Platform.BILIBILI, source, sender, content, contentText, instant);
+        super(LivePlatform.BILIBILI, source, sender, content, contentText, instant);
         this.reply = reply;
         this.emojis = emojis;
     }
