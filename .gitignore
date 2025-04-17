@@ -2,4 +2,5 @@
 target/
 logs/
 RawMessageDebug/
+datasource.json
 src/main/resources/application-dev.yml

@@ -7,6 +7,7 @@ import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.*;
+import com.starlwr.bot.common.util.CollectionUtil;
 import com.starlwr.bot.common.util.HttpUtil;
 import com.starlwr.bot.common.util.MathUtil;
 import io.micrometer.common.util.StringUtils;
@@ -24,6 +25,7 @@ import org.springframework.web.reactive.function.client.WebClientException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * API 请求工具类
@@ -325,5 +327,38 @@ public class BilibiliApiUtil {
         }
 
         return guards;
+    }
+
+    /**
+     * 根据 UID 列表批量获取直播间信息
+     * @param uids UID 列表
+     * @return 直播间信息
+     */
+    public Map<Long, Room> getLiveInfoByUids(Set<Long> uids) {
+        Map<Long, Room> rooms = new HashMap<>();
+
+        String api = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?uids[]=";
+
+        List<List<Long>> uidLists = CollectionUtil.splitCollection(uids, 100);
+        for (List<Long> uidList : uidLists) {
+            JSONObject result = requestBilibiliApi(api + uidList.stream().map(String::valueOf).collect(Collectors.joining("&uids[]=")));
+            for (String uidString : result.keySet()) {
+                JSONObject roomInfo = result.getJSONObject(uidString);
+
+                Long uid = Long.parseLong(uidString);
+                String uname = roomInfo.getString("uname");
+                Long roomId = roomInfo.getLong("room_id");
+                String face = roomInfo.getString("face");
+                Integer liveStatus = roomInfo.getInteger("live_status");
+                Long liveStartTime = roomInfo.getLong("live_time");
+                String title = roomInfo.getString("title");
+                String cover = roomInfo.getString("cover_from_user");
+
+                Room room = new Room(uid, uname, roomId, face, liveStatus, liveStartTime, title, cover);
+                rooms.put(uid, room);
+            }
+        }
+
+        return rooms;
     }
 }

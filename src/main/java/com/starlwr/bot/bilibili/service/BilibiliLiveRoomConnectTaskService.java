@@ -3,9 +3,10 @@ package com.starlwr.bot.bilibili.service;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.ConnectTask;
 import com.starlwr.bot.bilibili.model.Up;
-import jakarta.annotation.PostConstruct;
+import com.starlwr.bot.common.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.BlockingQueue;
@@ -26,11 +27,11 @@ public class BilibiliLiveRoomConnectTaskService {
 
     private final BlockingQueue<ConnectTask> taskQueue = new LinkedBlockingQueue<>();
 
-    @PostConstruct
-    public void init() {
+    @EventListener(StarBotDataSourceLoadCompleteEvent.class)
+    public void handleLoadCompleteEvent() {
         executor.submit(() -> {
             Thread.currentThread().setName("bilibili-queue");
-            while (true) {
+            while (!Thread.currentThread().isInterrupted()) {
                 try {
                     ConnectTask task = taskQueue.take();
                     synchronized (BilibiliLiveRoomConnectTaskService.this) {
@@ -39,6 +40,8 @@ public class BilibiliLiveRoomConnectTaskService {
                         task.call();
                     }
                     Thread.sleep(properties.getLive().getLiveRoomConnectInterval());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 } catch (Exception e) {
                     log.error("直播间连接队列异常", e);
                 }
