@@ -1,4 +1,4 @@
-package com.starlwr.bot.bilibili.config;
+package com.starlwr.bot.bilibili.log;
 
 import ch.qos.logback.classic.AsyncAppender;
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
@@ -10,6 +10,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 直播间原始消息日志输出配置
+ */
 public class RawMessageLogFileAppender extends AppenderBase<ILoggingEvent> {
     private final Map<String, AsyncAppender> appenders = new ConcurrentHashMap<>();
 
