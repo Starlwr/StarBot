@@ -1,4 +1,4 @@
-package com.starlwr.bot.bilibili.event;
+package com.starlwr.bot.bilibili.event.live;
 
 import com.starlwr.bot.common.enums.LivePlatform;
 import com.starlwr.bot.common.event.live.common.ConnectedEvent;

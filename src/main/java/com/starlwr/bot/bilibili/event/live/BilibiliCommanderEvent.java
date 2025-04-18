@@ -1,4 +1,4 @@
-package com.starlwr.bot.bilibili.event;
+package com.starlwr.bot.bilibili.event.live;
 
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.common.enums.LivePlatform;
@@ -13,7 +13,7 @@ import lombok.ToString;
 import java.time.Instant;
 
 /**
- * <h3>Bilibili 开通总督事件</h3>
+ * <h3>Bilibili 开通提督事件</h3>
  * <h4>触发条件：</h4>
  * <ul>
  *     <li>USER_TOAST_MSG（开通舰长、提督、总督）</li>
@@ -27,18 +27,18 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class BilibiliGovernorEvent extends MembershipEvent {
+public class BilibiliCommanderEvent extends MembershipEvent {
     /**
      * 操作类型
      */
     private GuardOperateType operateType;
 
-    public BilibiliGovernorEvent(LiveStreamerInfo source, UserInfo sender, GuardOperateType operateType, Double price, Integer count, String unit) {
+    public BilibiliCommanderEvent(LiveStreamerInfo source, UserInfo sender, GuardOperateType operateType, Double price, Integer count, String unit) {
         super(LivePlatform.BILIBILI, source, sender, price, count, unit);
         this.operateType = operateType;
     }
 
-    public BilibiliGovernorEvent(LiveStreamerInfo source, UserInfo sender, GuardOperateType operateType, Double price, Integer count, String unit, Instant instant) {
+    public BilibiliCommanderEvent(LiveStreamerInfo source, UserInfo sender, GuardOperateType operateType, Double price, Integer count, String unit, Instant instant) {
         super(LivePlatform.BILIBILI, source, sender, price, count, unit, instant);
         this.operateType = operateType;
     }
