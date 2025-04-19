@@ -85,9 +85,14 @@ public class BilibiliEventParser {
      * @return 事件
      */
     private StarBotBaseLiveEvent parseLiveOnData(JSONObject data, LiveStreamerInfo source) {
-        Instant timestamp = Instant.ofEpochSecond(data.getLong("live_time"));
+        Long liveTime = data.getLong("live_time");
 
-        return new BilibiliLiveOnEvent(source, timestamp);
+        if (liveTime != null) {
+            Instant timestamp = Instant.ofEpochSecond(liveTime);
+            return new BilibiliLiveOnEvent(source, timestamp);
+        }
+
+        return null;
     }
 
     /**
