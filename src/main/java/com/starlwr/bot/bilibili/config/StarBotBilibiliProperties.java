@@ -35,6 +35,9 @@ public class StarBotBilibiliProperties {
     @Getter
     private final Live live = new Live();
 
+    @Getter
+    private final Dynamic dynamic = new Dynamic();
+
     /**
      * 日志相关
      */
@@ -62,6 +65,11 @@ public class StarBotBilibiliProperties {
          * 是否记录直播间原始消息日志
          */
         private boolean liveRoomRawMessageLog = false;
+
+        /**
+         * 是否记录原始动态信息日志
+         */
+        private boolean dynamicRawMessageLog = false;
     }
 
     /**
@@ -177,5 +185,17 @@ public class StarBotBilibiliProperties {
          * 是否自动补全事件中缺失的信息，开启后可能会因网络请求耗时导致事件延迟发布
          */
         private boolean completeEvent = false;
+    }
+
+    /**
+     * 动态相关
+     */
+    @Getter
+    @Setter
+    public static class Dynamic {
+        /**
+         * 动态接口请求频率，单位：秒
+         */
+        public int apiRequestInterval = 10;
     }
 }

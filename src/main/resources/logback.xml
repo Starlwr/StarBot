@@ -55,4 +55,10 @@
     <logger name="RawMessageLogger" level="DEBUG" additivity="false">
         <appender-ref ref="RawMessageAppender"/>
     </logger>
+
+    <appender name="DynamicAppender" class="com.starlwr.bot.bilibili.log.DynamicLogFileAppender"/>
+
+    <logger name="DynamicLogger" level="DEBUG" additivity="false">
+        <appender-ref ref="DynamicAppender"/>
+    </logger>
 </configuration>

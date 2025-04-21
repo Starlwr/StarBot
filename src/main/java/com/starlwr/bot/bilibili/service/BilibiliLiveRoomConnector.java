@@ -255,8 +255,12 @@ public class BilibiliLiveRoomConnector {
                 return;
             }
 
-            send(DataHeaderType.HEARTBEAT, DataPackType.HEARTBEAT, "[object Object]".getBytes(StandardCharsets.UTF_8));
-            bilibili.liveRoomHeartbeat(up.getRoomId());
+            try {
+                send(DataHeaderType.HEARTBEAT, DataPackType.HEARTBEAT, "[object Object]".getBytes(StandardCharsets.UTF_8));
+                bilibili.liveRoomHeartbeat(up.getRoomId());
+            } catch (Exception e) {
+                log.error("发送心跳包异常", e);
+            }
         }), Instant.now().plusSeconds(10), Duration.ofSeconds(30));
     }
 

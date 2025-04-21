@@ -2,5 +2,6 @@
 target/
 logs/
 RawMessageDebug/
+DynamicDebug/
 datasource.json
 src/main/resources/application-dev.yml
