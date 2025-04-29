@@ -258,18 +258,22 @@ class Bot(BaseModel):
                     elements.insert(chain.index(AtAll), AtAll())
                     chain = MessageChain(elements)
 
-            if At in message:
-                # 过滤已不在群内的群成员的 @ 消息
-                member_list = [member.id for member in await self.__bot.get_member_list(message.id)]
-                elements = [e for e in chain if (not isinstance(e, At)) or (e.target in member_list)]
-
-                # 移除开播 @ 列表和动态 @ 列表中的元素
-                filtered = [e for e in chain if (isinstance(e, At)) and (e.target not in member_list)]
-                for at in filtered:
-                    if await redis.exists_live_on_at(message.id, at.target):
-                        await redis.delete_live_on_at(message.id, at.target)
-                    if await redis.exists_dynamic_at(message.id, at.target):
-                        await redis.delete_dynamic_at(message.id, at.target)
+            # 过滤已不在群内的群成员的 @ 消息
+            elements = []
+            for element in chain.content:
+                if isinstance(element, At):
+                    try:
+                        if await self.__bot.get_member(message.id, element.target):
+                            elements.append(element)
+                    except UnknownTarget:
+                        # 移除开播 @ 列表和动态 @ 列表中的元素
+                        logger.debug(f"群成员({element.target})不在群({message.id})内，移除该失效at")
+                        if await redis.exists_live_on_at(message.id, element.target):
+                            await redis.delete_live_on_at(message.id, element.target)
+                        if await redis.exists_dynamic_at(message.id, element.target):
+                            await redis.delete_dynamic_at(message.id, element.target)
+                else:
+                    elements.append(element)
 
                 chain = MessageChain(elements)
 
