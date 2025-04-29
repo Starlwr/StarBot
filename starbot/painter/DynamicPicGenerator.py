@@ -225,7 +225,8 @@ class DynamicPicGenerator:
         elif dynamic_type == 2:
             # 带图动态
             await cls.__draw_content(pic, modules, text_margin, forward)
-            await cls.__draw_picture_area(pic, card["item"]["pictures"], img_margin, forward)
+            if card["item"]["pictures"]:
+                await cls.__draw_picture_area(pic, card["item"]["pictures"], img_margin, forward)
         elif dynamic_type == 4:
             # 纯文字动态
             await cls.__draw_content(pic, modules, text_margin, forward)
