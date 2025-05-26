@@ -18,7 +18,7 @@ from aiohttp.client_ws import ClientWebSocketResponse
 from loguru import logger
 
 from ..exception.LiveException import LiveException
-from ..utils import config
+from ..utils import config, wbi
 from ..utils.AsyncEvent import AsyncEvent
 from ..utils.Credential import Credential
 from ..utils.Danmaku import Danmaku
@@ -155,6 +155,8 @@ class LiveRoom:
         params = {
             "id": self.room_display_id
         }
+        img, sub = await wbi.get_wbi_keys()
+        params = wbi.enc_wbi(params, img, sub)
         return await request(api['method'], api["url"], params, credential=self.credential)
 
     async def get_room_info(self):
