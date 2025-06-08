@@ -348,7 +348,11 @@ public class BilibiliApiUtil {
      * @return 直播间连接信息
      */
     public ConnectInfo getLiveRoomConnectInfo(@NonNull Long roomId) {
-        String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id=" + roomId;
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", roomId);
+
+        String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo" + BilibiliWbiUtil.getWbiSign(params, sign.getImgKey(), sign.getSubKey());
+
         JSONObject result = requestBilibiliApi(api);
 
         String token = result.getString("token");
