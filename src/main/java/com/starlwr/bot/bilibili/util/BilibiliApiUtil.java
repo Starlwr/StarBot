@@ -10,6 +10,7 @@ import com.starlwr.bot.bilibili.model.*;
 import com.starlwr.bot.common.util.CollectionUtil;
 import com.starlwr.bot.common.util.HttpUtil;
 import com.starlwr.bot.common.util.MathUtil;
+import com.starlwr.bot.common.util.StringUtil;
 import io.micrometer.common.util.StringUtils;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
@@ -21,10 +22,13 @@ import org.springframework.retry.backoff.FixedBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 import org.springframework.web.reactive.function.client.WebClientException;
 
+import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -150,6 +154,85 @@ public class BilibiliApiUtil {
 
             return rtn;
         });
+    }
+
+    /**
+     * 使用默认 bilibili 请求头获取 Bilibili 图片
+     * @param url URL
+     * @return 图片
+     */
+    public Optional<BufferedImage> getBilibiliImage(String url) {
+        return getBilibiliImage(url, getBilibiliHeaders());
+    }
+
+    /**
+     * 获取 Bilibili 图片
+     * @param url URL
+     * @param headers 请求头
+     * @return 图片
+     */
+    public Optional<BufferedImage> getBilibiliImage(String url, Map<String, String> headers) {
+        if (StringUtil.isEmpty(url)) {
+            return Optional.empty();
+        }
+
+        return http.getBufferedImage(url, headers);
+    }
+
+    /**
+     * 异步获取 Bilibili 图片
+     * @param url URL
+     * @return 图片
+     */
+    public CompletableFuture<Optional<BufferedImage>> asyncGetBilibiliImage(String url) {
+        return asyncGetBilibiliImage(url, getBilibiliHeaders());
+    }
+
+    /**
+     * 异步获取 Bilibili 图片
+     * @param url URL
+     * @param headers 请求头
+     * @return 图片
+     */
+    public CompletableFuture<Optional<BufferedImage>> asyncGetBilibiliImage(String url, Map<String, String> headers) {
+        if (StringUtil.isEmpty(url)) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+
+        return http.asyncGetBufferedImage(url, headers);
+    }
+
+    /**
+     * 批量异步获取 Bilibili 图片
+     * @param urls URL 列表
+     * @return 图片列表
+     */
+    public CompletableFuture<List<Optional<BufferedImage>>> asyncGetBilibiliImages(List<String> urls) {
+        return asyncGetBilibiliImages(urls, getBilibiliHeaders());
+    }
+
+    /**
+     * 批量异步获取 Bilibili 图片
+     * @param urls URL 列表
+     * @param headers 请求头
+     * @return 图片列表
+     */
+    public CompletableFuture<List<Optional<BufferedImage>>> asyncGetBilibiliImages(List<String> urls, Map<String, String> headers) {
+        if (CollectionUtils.isEmpty(urls)) {
+            return CompletableFuture.completedFuture(Collections.emptyList());
+        }
+
+        List<CompletableFuture<Optional<BufferedImage>>> downloadPictureTasks = new ArrayList<>();
+
+        for (String url : urls) {
+            CompletableFuture<Optional<BufferedImage>> task = bilibili.asyncGetBilibiliImage(url, headers);
+            downloadPictureTasks.add(task);
+        }
+
+        return CompletableFuture.allOf(downloadPictureTasks.toArray(new CompletableFuture[0]))
+                .thenApply(v -> downloadPictureTasks.stream()
+                        .map(CompletableFuture::join)
+                        .collect(Collectors.toList()));
     }
 
     /**
