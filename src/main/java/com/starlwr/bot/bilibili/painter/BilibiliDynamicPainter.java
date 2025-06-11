@@ -95,6 +95,14 @@ public class BilibiliDynamicPainter {
 
     /**
      * 根据给定动态信息生成动态图片
+     * @return 动态图片的 Base64 字符串
+     */
+    public Optional<String> paint() {
+        return paint(null);
+    }
+
+    /**
+     * 根据给定动态信息生成动态图片
      * @param path 图片保存路径
      * @return 动态图片的 Base64 字符串
      */
@@ -310,7 +318,7 @@ public class BilibiliDynamicPainter {
             data = data.getJSONObject("summary");
         }
 
-        List<JSONObject> nodes = data.getJSONArray("rich_text_nodes").toList(JSONObject.class);;
+        List<JSONObject> nodes = data.getJSONArray("rich_text_nodes").toList(JSONObject.class);
 
         List<BufferedImage> images = getContentLineImages(nodes);
 

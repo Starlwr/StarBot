@@ -456,7 +456,6 @@ public class BilibiliApiUtil {
     public List<Dynamic> getDynamicUpdateList() {
         String api = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?features=itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete,onlyfansQaCard,commentsNewVersion";
         JSONObject result = requestBilibiliApi(api);
-        log.debug("获取动态更新列表: {}", result.toJSONString());
 
         try {
             return result.getJSONArray("items").toList(Dynamic.class);
