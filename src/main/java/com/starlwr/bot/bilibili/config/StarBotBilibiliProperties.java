@@ -24,7 +24,7 @@ public class StarBotBilibiliProperties {
     private final Version version = new Version();
 
     @Getter
-    private final Thread thread = new Thread();
+    private final BilibiliThread bilibiliThread = new BilibiliThread();
 
     @Getter
     private final Cookie cookie = new Cookie();
@@ -94,7 +94,7 @@ public class StarBotBilibiliProperties {
      */
     @Getter
     @Setter
-    public static class Thread {
+    public static class BilibiliThread {
         /**
          * 线程池核心线程数
          */
