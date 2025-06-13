@@ -5,7 +5,7 @@ ${AnsiColor.YELLOW}
     \___ \| __/ _` | '__|  _ < / _ \| __|
     ____) | || (_| | |  | |_) | (_) | |_
    |_____/ \__\__,_|_|  |____/ \___/ \__|${AnsiColor.CYAN}${AnsiStyle.ITALIC}
-       StarBot - (v${starbot.bilibili.version.number})  ${starbot.bilibili.version.release-date}
+       StarBot - (v3.0.0)  2025-06-15
              Platform: Bilibili${AnsiStyle.NORMAL}
  Github: https://github.com/Starlwr/StarBot
 

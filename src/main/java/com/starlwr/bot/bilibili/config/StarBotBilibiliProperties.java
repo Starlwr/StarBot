@@ -21,9 +21,6 @@ public class StarBotBilibiliProperties {
     private final Debug debug = new Debug();
 
     @Getter
-    private final Version version = new Version();
-
-    @Getter
     private final BilibiliThread bilibiliThread = new BilibiliThread();
 
     @Getter
@@ -70,23 +67,6 @@ public class StarBotBilibiliProperties {
          * 是否记录原始动态信息日志
          */
         private boolean dynamicRawMessageLog = false;
-    }
-
-    /**
-     * 版本相关
-     */
-    @Getter
-    @Setter
-    public static class Version {
-        /**
-         * 版本号
-         */
-        private String number;
-
-        /**
-         * 发布日期
-         */
-        private String releaseDate;
     }
 
     /**

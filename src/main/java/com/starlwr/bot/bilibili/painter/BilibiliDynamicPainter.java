@@ -3,7 +3,6 @@ package com.starlwr.bot.bilibili.painter;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.common.factory.StarBotCommonPainterFactory;
@@ -18,6 +17,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
+import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.annotation.Scope;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.data.util.Pair;
@@ -46,7 +46,7 @@ public class BilibiliDynamicPainter {
     private ResourceLoader resourceLoader;
 
     @Resource
-    private StarBotBilibiliProperties properties;
+    private BuildProperties properties;
 
     @Resource
     private FontUtil fontUtil;
@@ -1311,7 +1311,7 @@ public class BilibiliDynamicPainter {
      */
     private void drawBottom() {
         this.painter.movePos(0, this.painter.getRowSpace());
-        this.painter.drawCopyright(properties.getVersion().getNumber(), TEXT_MARGIN);
+        this.painter.drawCopyright(properties.getVersion(), TEXT_MARGIN);
     }
 
     /**
