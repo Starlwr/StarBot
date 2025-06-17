@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.service;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.ConnectTask;
 import com.starlwr.bot.bilibili.model.Up;
-import com.starlwr.bot.common.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
+import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;

@@ -1,10 +1,10 @@
 package com.starlwr.bot.bilibili.event.live;
 
 import com.starlwr.bot.bilibili.model.BilibiliEmojiInfo;
-import com.starlwr.bot.common.enums.LivePlatform;
-import com.starlwr.bot.common.event.live.common.DanmuEvent;
-import com.starlwr.bot.common.model.LiveStreamerInfo;
-import com.starlwr.bot.common.model.UserInfo;
+import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.core.event.live.common.DanmuEvent;
+import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.model.UserInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;

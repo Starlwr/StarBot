@@ -7,11 +7,10 @@ import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.*;
-import com.starlwr.bot.common.util.CollectionUtil;
-import com.starlwr.bot.common.util.HttpUtil;
-import com.starlwr.bot.common.util.MathUtil;
-import com.starlwr.bot.common.util.StringUtil;
-import io.micrometer.common.util.StringUtils;
+import com.starlwr.bot.core.util.CollectionUtil;
+import com.starlwr.bot.core.util.HttpUtil;
+import com.starlwr.bot.core.util.MathUtil;
+import com.starlwr.bot.core.util.StringUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.NonNull;
@@ -72,7 +71,7 @@ public class BilibiliApiUtil {
         Map<String, String> headers = new HashMap<>();
         headers.put("Referer", "https://www.bilibili.com");
         headers.put("User-Agent", properties.getNetwork().getUserAgent());
-        if (StringUtils.isNotBlank(properties.getCookie().getSessData()) && StringUtils.isNotBlank(properties.getCookie().getBuvid3()) && StringUtils.isNotBlank(properties.getCookie().getBiliJct())) {
+        if (StringUtil.isNotBlank(properties.getCookie().getSessData()) && StringUtil.isNotBlank(properties.getCookie().getBuvid3()) && StringUtil.isNotBlank(properties.getCookie().getBiliJct())) {
             headers.put(
                     "Cookie", String.format(
                             "SESSDATA=%s; buvid3=%s; bili_jct=%s; bili_ticket=%s; bili_ticket_expires=%s; ",

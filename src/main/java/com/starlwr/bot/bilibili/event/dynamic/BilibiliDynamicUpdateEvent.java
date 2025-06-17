@@ -1,9 +1,9 @@
 package com.starlwr.bot.bilibili.event.dynamic;
 
 import com.starlwr.bot.bilibili.model.Dynamic;
-import com.starlwr.bot.common.enums.LivePlatform;
-import com.starlwr.bot.common.event.dynamic.StarBotBaseDynamicEvent;
-import com.starlwr.bot.common.model.LiveStreamerInfo;
+import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.core.event.dynamic.StarBotBaseDynamicEvent;
+import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;

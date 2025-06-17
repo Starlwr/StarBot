@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
-import com.starlwr.bot.common.datasource.AbstractDataSource;
+import com.starlwr.bot.core.datasource.AbstractDataSource;
 import jakarta.annotation.Resource;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;

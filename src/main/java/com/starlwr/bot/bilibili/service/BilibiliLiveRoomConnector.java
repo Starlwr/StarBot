@@ -12,7 +12,7 @@ import com.starlwr.bot.bilibili.model.ConnectAddress;
 import com.starlwr.bot.bilibili.model.ConnectInfo;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.common.model.LiveStreamerInfo;
+import com.starlwr.bot.core.model.LiveStreamerInfo;
 import jakarta.annotation.Resource;
 import jakarta.websocket.ClientEndpoint;
 import lombok.Getter;

@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.model;
 
-import com.starlwr.bot.common.model.UserInfo;
+import com.starlwr.bot.core.model.UserInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;

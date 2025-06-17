@@ -40,7 +40,7 @@
     <dependencies>
         <dependency>
             <groupId>com.starlwr</groupId>
-            <artifactId>starbot-common</artifactId>
+            <artifactId>starbot-core</artifactId>
             <version>1.0.0</version>
         </dependency>
 
@@ -150,4 +150,28 @@
             </plugin>
         </plugins>
     </build>
+
+<!-- 作为依赖打包时使用以下配置 -->
+
+<!--    <build>-->
+<!--        <finalName>StarBotBilibili</finalName>-->
+<!--        <plugins>-->
+<!--            <plugin>-->
+<!--                <artifactId>maven-resources-plugin</artifactId>-->
+<!--                <configuration>-->
+<!--                    <resources>-->
+<!--                        <resource>-->
+<!--                            <directory>src/main/resources</directory>-->
+<!--                            <excludes>-->
+<!--                                <exclude>application.yml</exclude>-->
+<!--                                <exclude>application-dev.yml</exclude>-->
+<!--                                <exclude>banner.txt</exclude>-->
+<!--                                <exclude>logback.xml</exclude>-->
+<!--                            </excludes>-->
+<!--                        </resource>-->
+<!--                    </resources>-->
+<!--                </configuration>-->
+<!--            </plugin>-->
+<!--        </plugins>-->
+<!--    </build>-->
 </project>
