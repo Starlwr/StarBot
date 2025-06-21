@@ -4,10 +4,6 @@ server:
 spring:
   main:
     allow-circular-references: true
-  cache:
-    cache-names: apiCache
-    caffeine:
-      spec: expireAfterAccess=5m, maximumSize=100000
   jpa:
     database: mysql
     hibernate:

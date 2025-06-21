@@ -270,7 +270,7 @@ public class BilibiliApiUtil {
      * @param uid UID
      * @return UP 主信息
      */
-    @Cacheable(value = "apiCache", keyGenerator = "cacheKeyGenerator")
+    @Cacheable(value = "bilibiliApiCache", keyGenerator = "cacheKeyGenerator")
     public Up getUpInfoByUid(@NonNull Long uid) {
         String api = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + uid;
         JSONObject result = requestBilibiliApi(api);
@@ -287,7 +287,7 @@ public class BilibiliApiUtil {
      * @param roomId 房间号
      * @return UP 主信息
      */
-    @Cacheable(value = "apiCache", keyGenerator = "cacheKeyGenerator")
+    @Cacheable(value = "bilibiliApiCache", keyGenerator = "cacheKeyGenerator")
     public Up getUpInfoByRoomId(@NonNull Long roomId) {
         if (roomId == 0) {
             throw new IllegalArgumentException("房间号不能为 0");

@@ -18,6 +18,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.boot.info.BuildProperties;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Scope;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.data.util.Pair;
@@ -97,6 +98,7 @@ public class BilibiliDynamicPainter {
      * 根据给定动态信息生成动态图片
      * @return 动态图片的 Base64 字符串
      */
+    @Cacheable(value = "bilibiliDynamicImageCache", keyGenerator = "cacheKeyGenerator")
     public Optional<String> paint() {
         return paint(null);
     }
@@ -106,6 +108,7 @@ public class BilibiliDynamicPainter {
      * @param path 图片保存路径
      * @return 动态图片的 Base64 字符串
      */
+    @Cacheable(value = "bilibiliDynamicImageCache", keyGenerator = "cacheKeyGenerator")
     public Optional<String> paint(String path) {
         try {
             drawLogo();
