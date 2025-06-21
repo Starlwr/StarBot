@@ -778,9 +778,11 @@ public class BilibiliDynamicPainter {
 
                 JSONObject badge = common.getJSONObject("badge");
                 String badgeText = badge.getString("text");
-                Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(badgeText);
-                painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, 30, size.getFirst() + 16, size.getSecond() + 10, 10, new Color(Integer.parseInt(badge.getString("bg_color").substring(1), 16)));
-                painter.drawText(badgeText, new Color(Integer.parseInt(badge.getString("color").substring(1), 16)), new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, 35));
+                if (StringUtil.isNotBlank(badgeText)) {
+                    Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(badgeText);
+                    painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getSecond() - 10) / 2, size.getFirst() + 16, size.getSecond() + 10, 10, new Color(Integer.parseInt(badge.getString("bg_color").substring(1), 16)));
+                    painter.drawText(badgeText, new Color(Integer.parseInt(badge.getString("color").substring(1), 16)), new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getSecond() - 10) / 2 + 5));
+                }
 
                 BufferedImage image = painter.getImage();
 
