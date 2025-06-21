@@ -177,5 +177,10 @@ public class StarBotBilibiliProperties {
          * 动态接口请求频率，单位：秒
          */
         public int apiRequestInterval = 10;
+
+        /**
+         * 是否自动保存绘制的动态图片
+         */
+        public boolean autoSaveImage = false;
     }
 }

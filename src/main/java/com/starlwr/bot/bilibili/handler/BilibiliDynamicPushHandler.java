@@ -1,0 +1,92 @@
+package com.starlwr.bot.bilibili.handler;
+
+import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
+import com.starlwr.bot.bilibili.factory.BilibiliDynamicPainterFactory;
+import com.starlwr.bot.bilibili.painter.BilibiliDynamicPainter;
+import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.model.Message;
+import com.starlwr.bot.core.model.PushMessage;
+import com.starlwr.bot.core.model.PushTarget;
+import com.starlwr.bot.core.sender.StarBotPushMessageSender;
+import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * <h3>Bilibili 动态推送处理器</h3>
+ * <h4>参数格式:</h4>
+ * <pre>
+ *     {
+ *         "message": String (推送消息模版) [必填]
+ *     }
+ * </pre>
+ * <h4>推送消息模版支持的参数：</h4>
+ * <ul>
+ *     <li>{uname}: 昵称</li>
+ *     <li>{action}: 动态操作类型（发表了新动态，转发了动态，投稿了新视频...）</li>
+ *     <li>{url}: 动态链接</li>
+ *     <li>{picture}: 动态图片</li>
+ * </ul>
+ */
+@Slf4j
+@Component
+public class BilibiliDynamicPushHandler implements StarBotEventHandler {
+    @Resource
+    private StarBotBilibiliProperties properties;
+
+    @Resource
+    private BilibiliDynamicPainterFactory factory;
+
+    @Resource
+    private StarBotPushMessageSender sender;
+
+    @Override
+    public void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage) {
+        BilibiliDynamicUpdateEvent event = (BilibiliDynamicUpdateEvent) baseEvent;
+
+        BilibiliDynamicPainter painter = factory.create(event.getDynamic());
+
+        Optional<String> optionalBase64;
+        if (properties.getDynamic().isAutoSaveImage()) {
+            Path path = Paths.get("DynamicImage", event.getDynamic().getId() + ".png");
+            try {
+                Files.createDirectories(path.getParent());
+            } catch (IOException e) {
+                log.error("创建动态图片保存目录失败: {}", path.getParent(), e);
+            }
+            String savePath = path.toString();
+            optionalBase64 = painter.paint(savePath);
+        } else {
+            optionalBase64 = painter.paint();
+        }
+
+        if (optionalBase64.isPresent()) {
+            String base64 = optionalBase64.get();
+
+            JSONObject params = pushMessage.getParamsJsonObject();
+
+            String raw = params.getString("message");
+            String content = raw.replace("{uname}", event.getSource().getUname())
+                    .replace("{action}", event.getAction())
+                    .replace("{url}", event.getUrl())
+                    .replace("{picture}", "{image_base64=" + base64 + "}");
+
+            PushTarget target = pushMessage.getTarget();
+            List<Message> messages = Message.create(target.getPlatform(), target.getType(), target.getNum(), content);
+
+            for (Message message : messages) {
+                sender.send(message);
+            }
+        }
+    }
+}

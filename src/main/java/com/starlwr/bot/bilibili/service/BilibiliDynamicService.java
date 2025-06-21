@@ -81,8 +81,26 @@ public class BilibiliDynamicService {
                     Optional<PushUser> optionalUser = dataSource.getUser(LivePlatform.BILIBILI.getName(), uid);
                     if (optionalUser.isPresent()) {
                         PushUser user = optionalUser.get();
+
+                        String action;
+                        switch (dynamic.getType()) {
+                            case "DYNAMIC_TYPE_ARTICLE" -> action = "投稿了新文章";
+                            case "DYNAMIC_TYPE_AV" -> action = "投稿了新视频";
+                            case "DYNAMIC_TYPE_FORWARD" -> action = "转发了动态";
+                            default -> action = "发表了新动态";
+                        }
+                        String url;
+                        if (dynamic.getType().equals("DYNAMIC_TYPE_AV")) {
+                            String bvId = dynamic.getModules().getJSONObject("module_dynamic").getJSONObject("major").getJSONObject("archive").getString("bvid");
+                            url = "https://www.bilibili.com/video/" + bvId;
+                        } else {
+                            url = "https://t.bilibili.com/" + dynamic.getId();
+                        }
+
+                        log.info("[{}] [动态更新] {}: {}", user.getPlatform(), user.getUname(), url);
+
                         LiveStreamerInfo info = new LiveStreamerInfo(user.getUid(), user.getUname(), user.getRoomId(), user.getFace());
-                        eventPublisher.publishEvent(new BilibiliDynamicUpdateEvent(info, dynamic, Instant.now()));
+                        eventPublisher.publishEvent(new BilibiliDynamicUpdateEvent(info, dynamic, action, url, Instant.now()));
                     }
                 }
             } catch (Exception e) {

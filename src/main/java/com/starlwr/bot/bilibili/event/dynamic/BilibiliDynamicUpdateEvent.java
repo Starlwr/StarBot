@@ -24,13 +24,27 @@ public class BilibiliDynamicUpdateEvent extends StarBotBaseDynamicEvent {
      */
     private Dynamic dynamic;
 
-    public BilibiliDynamicUpdateEvent(LiveStreamerInfo source, Dynamic dynamic) {
+    /**
+     * 动态操作类型（发表了新动态，转发了动态，投稿了新视频...）
+     */
+    private String action;
+
+    /**
+     * 动态链接
+     */
+    private String url;
+
+    public BilibiliDynamicUpdateEvent(LiveStreamerInfo source, Dynamic dynamic, String action, String url) {
         super(LivePlatform.BILIBILI, source);
         this.dynamic = dynamic;
+        this.action = action;
+        this.url = url;
     }
 
-    public BilibiliDynamicUpdateEvent(LiveStreamerInfo source, Dynamic dynamic, Instant instant) {
+    public BilibiliDynamicUpdateEvent(LiveStreamerInfo source, Dynamic dynamic, String action, String url, Instant instant) {
         super(LivePlatform.BILIBILI, source, instant);
         this.dynamic = dynamic;
+        this.action = action;
+        this.url = url;
     }
 }
