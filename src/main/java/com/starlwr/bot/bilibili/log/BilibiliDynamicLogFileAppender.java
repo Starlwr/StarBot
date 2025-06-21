@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 原始动态信息日志输出配置
  */
-public class DynamicLogFileAppender extends AppenderBase<ILoggingEvent> {
+public class BilibiliDynamicLogFileAppender extends AppenderBase<ILoggingEvent> {
     private final Map<String, AsyncAppender> appenders = new ConcurrentHashMap<>();
 
     @Override

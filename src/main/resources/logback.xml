@@ -50,13 +50,13 @@
         <appender-ref ref="AsyncRollingFile"/>
     </root>
 
-    <appender name="RawMessageAppender" class="com.starlwr.bot.bilibili.log.RawMessageLogFileAppender"/>
+    <appender name="RawMessageAppender" class="com.starlwr.bot.bilibili.log.BilibiliLiveLogFileAppender"/>
 
     <logger name="RawMessageLogger" level="DEBUG" additivity="false">
         <appender-ref ref="RawMessageAppender"/>
     </logger>
 
-    <appender name="DynamicAppender" class="com.starlwr.bot.bilibili.log.DynamicLogFileAppender"/>
+    <appender name="DynamicAppender" class="com.starlwr.bot.bilibili.log.BilibiliDynamicLogFileAppender"/>
 
     <logger name="DynamicLogger" level="DEBUG" additivity="false">
         <appender-ref ref="DynamicAppender"/>

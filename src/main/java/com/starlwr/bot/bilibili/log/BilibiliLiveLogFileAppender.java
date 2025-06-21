@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 直播间原始消息日志输出配置
  */
-public class RawMessageLogFileAppender extends AppenderBase<ILoggingEvent> {
+public class BilibiliLiveLogFileAppender extends AppenderBase<ILoggingEvent> {
     private final Map<String, AsyncAppender> appenders = new ConcurrentHashMap<>();
 
     @Override
@@ -28,7 +28,7 @@ public class RawMessageLogFileAppender extends AppenderBase<ILoggingEvent> {
         FileAppender<ILoggingEvent> fileAppender = new FileAppender<>();
 
         fileAppender.setName("FILE-" + type);
-        fileAppender.setFile("RawMessageDebug/" + type + ".log");
+        fileAppender.setFile("LiveDebug/" + type + ".log");
         fileAppender.setAppend(true);
 
         PatternLayoutEncoder encoder = new PatternLayoutEncoder();

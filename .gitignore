@@ -1,7 +1,7 @@
 .idea/
 target/
 logs/
-RawMessageDebug/
+LiveDebug/
 DynamicDebug/
 datasource.json
 src/main/resources/application-dev.yml
