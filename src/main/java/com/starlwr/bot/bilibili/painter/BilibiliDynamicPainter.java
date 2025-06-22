@@ -915,7 +915,11 @@ public class BilibiliDynamicPainter {
                 JSONObject common = data.getJSONObject("common");
 
                 String headText = common.getString("head_text");
-                this.painter.drawTip(headText);
+                BufferedImage headImage = getOmitTextImage(headText, WIDTH - TEXT_MARGIN * 2, 25, 25, Color.LIGHT_GRAY);
+                if (isForward) {
+                    this.painter.drawRectangle(0, this.painter.getY(), this.painter.getWidth(), headImage.getHeight() + this.painter.getRowSpace(), COLOR_FORWARD);
+                }
+                this.painter.drawImage(headImage);
 
                 CommonPainter painter = factory.create(WIDTH - IMAGE_MARGIN * 2, 200, false);
                 if (isForward) {
@@ -962,7 +966,11 @@ public class BilibiliDynamicPainter {
                 JSONObject goods = data.getJSONObject("goods");
 
                 String headText = goods.getString("head_text");
-                this.painter.drawTip(headText);
+                BufferedImage headImage = getOmitTextImage(headText, WIDTH - TEXT_MARGIN * 2, 25, 25, Color.LIGHT_GRAY);
+                if (isForward) {
+                    this.painter.drawRectangle(0, this.painter.getY(), this.painter.getWidth(), headImage.getHeight() + this.painter.getRowSpace(), COLOR_FORWARD);
+                }
+                this.painter.drawImage(headImage);
 
                 CommonPainter painter = factory.create(WIDTH - IMAGE_MARGIN * 2, 200, false);
                 if (isForward) {
@@ -1045,7 +1053,11 @@ public class BilibiliDynamicPainter {
                 JSONObject match = data.getJSONObject("match");
 
                 String headText = match.getString("head_text");
-                this.painter.drawTip(headText);
+                BufferedImage headImage = getOmitTextImage(headText, WIDTH - TEXT_MARGIN * 2, 25, 25, Color.LIGHT_GRAY);
+                if (isForward) {
+                    this.painter.drawRectangle(0, this.painter.getY(), this.painter.getWidth(), headImage.getHeight() + this.painter.getRowSpace(), COLOR_FORWARD);
+                }
+                this.painter.drawImage(headImage);
 
                 CommonPainter painter = factory.create(WIDTH - IMAGE_MARGIN * 2, 200, false);
                 if (isForward) {
