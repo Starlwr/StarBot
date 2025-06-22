@@ -6,6 +6,7 @@ import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import com.starlwr.bot.bilibili.factory.BilibiliDynamicPainterFactory;
 import com.starlwr.bot.bilibili.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.handler.DefaultHandlerForEvent;
 import com.starlwr.bot.core.handler.StarBotEventHandler;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
@@ -37,9 +38,16 @@ import java.util.Optional;
  *     <li>{url}: 动态链接</li>
  *     <li>{picture}: 动态图片</li>
  * </ul>
+ * <h4>默认参数:</h4>
+ * <pre>
+ *     {
+ *         "message": "{uname} {action}\n{url}{next}{picture}"
+ *     }
+ * </pre>
  */
 @Slf4j
 @Component
+@DefaultHandlerForEvent(event = "com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent")
 public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     @Resource
     private StarBotBilibiliProperties properties;
@@ -88,5 +96,14 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
                 sender.send(message);
             }
         }
+    }
+
+    @Override
+    public JSONObject getDefaultParams() {
+        JSONObject params = new JSONObject();
+
+        params.put("message", "{uname} {action}\n{url}{next}{picture}");
+
+        return params;
     }
 }
