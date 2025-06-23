@@ -101,7 +101,7 @@ public class BilibiliApiUtil {
      * @param params 请求参数
      * @return 请求结果
      */
-    public JSONObject requestBilibiliApi(String url, Map<String, Object> params) {
+    public JSONObject requestBilibiliApi(String url, Object params) {
         return requestBilibiliApi(url, "POST", getBilibiliHeaders(), params);
     }
 
@@ -113,7 +113,7 @@ public class BilibiliApiUtil {
      * @param params 请求参数
      * @return 请求结果
      */
-    public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params) {
+    public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers, Object params) {
         return retryTemplate.execute((RetryCallback<JSONObject, NetworkException>) retryContext -> {
             JSONObject rtn;
             JSONObject result;
