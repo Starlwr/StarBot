@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.handler;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
@@ -15,6 +16,7 @@ import com.starlwr.bot.core.sender.StarBotPushMessageSender;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -28,7 +30,10 @@ import java.util.Optional;
  * <h4>参数格式:</h4>
  * <pre>
  *     {
- *         "message": String (推送消息模版) [必填]
+ *         "message": String (推送消息模版)
+ *         “white_list”: List&lt;String&gt; (类型白名单) [与 black_list 二选一配置，二者均配置以白名单优先]
+ *         "black_list": List&lt;String&gt; (类型黑名单) [与 white_list 二选一配置，二者均配置以白名单优先]
+ *         "only_self_origin": Boolean (是否仅推送源动态作者为自己的转发动态)
  *     }
  * </pre>
  * <h4>推送消息模版支持的参数：</h4>
@@ -42,6 +47,9 @@ import java.util.Optional;
  * <pre>
  *     {
  *         "message": "{uname} {action}\n{url}{next}{picture}"
+ *         "white_list": [],
+ *         "black_list": [],
+ *         "only_self_origin": false
  *     }
  * </pre>
  */
@@ -61,6 +69,31 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     @Override
     public void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage) {
         BilibiliDynamicUpdateEvent event = (BilibiliDynamicUpdateEvent) baseEvent;
+        JSONObject params = pushMessage.getParamsJsonObject();
+
+        String type = event.getDynamic().getType();
+        JSONArray whiteList = params.getJSONArray("white_list");
+        JSONArray blackList = params.getJSONArray("black_list");
+        if (!CollectionUtils.isEmpty(whiteList)) {
+            if (!whiteList.contains(type)) {
+                log.info("[{}] {} 的动态类型 {} 不在白名单中，跳过推送", event.getPlatform(), event.getSource().getUname(), type);
+                return;
+            }
+        } else if (!CollectionUtils.isEmpty(blackList)) {
+            if (blackList.contains(type)) {
+                log.info("[{}] {} 的动态类型 {} 在黑名单中，跳过推送", event.getPlatform(), event.getSource().getUname(), type);
+                return;
+            }
+        }
+
+        boolean onlySelfOrigin = params.getBooleanValue("only_self_origin", false);
+        if ("DYNAMIC_TYPE_FORWARD".equals(type) && onlySelfOrigin) {
+            Long originUid = event.getDynamic().getOrigin().getModules().getJSONObject("module_author").getLong("mid");
+            if (!event.getSource().getUid().equals(originUid)) {
+                log.info("[{}] {} 的转发动态源作者不为自己，跳过推送", event.getPlatform(), event.getSource().getUname());
+                return;
+            }
+        }
 
         BilibiliDynamicPainter painter = factory.create(event.getDynamic());
 
@@ -80,8 +113,6 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
 
         if (optionalBase64.isPresent()) {
             String base64 = optionalBase64.get();
-
-            JSONObject params = pushMessage.getParamsJsonObject();
 
             String raw = params.getString("message");
             String content = raw.replace("{uname}", event.getSource().getUname())
@@ -103,6 +134,9 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
         JSONObject params = new JSONObject();
 
         params.put("message", "{uname} {action}\n{url}{next}{picture}");
+        params.put("white_list", List.of());
+        params.put("black_list", List.of());
+        params.put("only_self_origin", false);
 
         return params;
     }
