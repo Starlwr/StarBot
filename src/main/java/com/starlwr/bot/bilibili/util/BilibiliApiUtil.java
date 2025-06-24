@@ -26,6 +26,9 @@ import org.springframework.web.reactive.function.client.WebClientException;
 
 import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -48,6 +51,8 @@ public class BilibiliApiUtil {
     private final RetryTemplate retryTemplate = new RetryTemplate();
 
     private WebSign sign;
+
+    private DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @PostConstruct
     public void init() {
@@ -446,6 +451,36 @@ public class BilibiliApiUtil {
         }
 
         return rooms;
+    }
+
+    /**
+     * 根据房间号获取直播间信息，该接口无昵称及头像信息
+     * @param roomId 房间号
+     * @return 直播间信息
+     */
+    public Room getLiveInfoByRoomId(@NonNull Long roomId) {
+        if (roomId == 0) {
+            throw new IllegalArgumentException("房间号不能为 0");
+        }
+
+        String api = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=" + roomId;
+        JSONObject result = requestBilibiliApi(api);
+
+        Long uid = result.getLong("uid");
+        Long realRoomId = result.getLong("room_id");
+        Integer liveStatus = result.getInteger("live_status");
+
+        long liveStartTime = 0L;
+        if (liveStatus == 1) {
+            liveStartTime = LocalDateTime.parse(result.getString("live_time"), formatter)
+                    .atZone(ZoneId.systemDefault())
+                    .toEpochSecond();
+        }
+
+        String title = result.getString("title");
+        String cover = result.getString("user_cover");
+
+        return new Room(uid, null, realRoomId, liveStatus, liveStartTime, title, cover);
     }
 
     /**
