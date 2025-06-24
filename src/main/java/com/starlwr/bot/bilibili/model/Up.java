@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.model;
 
-import lombok.AllArgsConstructor;
+import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -13,38 +13,25 @@ import java.util.Objects;
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
-public class Up {
-    /**
-     * UID
-     */
-    private Long uid;
+public class Up extends LiveStreamerInfo {
+    public Up(Long uid, String uname, Long roomId) {
+        super(uid, uname, roomId);
+    }
 
-    /**
-     * 昵称
-     */
-    private String uname;
-
-    /**
-     * 房间号
-     */
-    private Long roomId;
-
-    /**
-     * 头像
-     */
-    private String face;
+    public Up(Long uid, String uname, Long roomId, String face) {
+        super(uid, uname, roomId, face);
+    }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Up up = (Up) o;
-        return Objects.equals(uid, up.uid);
+        return Objects.equals(getUid(), up.getUid());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(uid);
+        return Objects.hash(getUid());
     }
 }

@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.model;
 
+import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.*;
 
 /**
@@ -7,30 +8,9 @@ import lombok.*;
  */
 @Getter
 @Setter
-@ToString
 @NoArgsConstructor
-@AllArgsConstructor
-public class Room {
-    /**
-     * UID
-     */
-    private Long uid;
-
-    /**
-     * 昵称
-     */
-    private String uname;
-
-    /**
-     * 房间号
-     */
-    private Long roomId;
-
-    /**
-     * 头像
-     */
-    private String face;
-
+@ToString(callSuper = true)
+public class Room extends LiveStreamerInfo {
     /**
      * 直播间状态
      */
@@ -50,4 +30,20 @@ public class Room {
      * 直播间封面
      */
     private String cover;
+
+    public Room(Long uid, String uname, Long roomId, Integer liveStatus, Long liveStartTime, String title, String cover) {
+        super(uid, uname, roomId);
+        this.liveStatus = liveStatus;
+        this.liveStartTime = liveStartTime;
+        this.title = title;
+        this.cover = cover;
+    }
+
+    public Room(Long uid, String uname, Long roomId, String face, Integer liveStatus, Long liveStartTime, String title, String cover) {
+        super(uid, uname, roomId, face);
+        this.liveStatus = liveStatus;
+        this.liveStartTime = liveStartTime;
+        this.title = title;
+        this.cover = cover;
+    }
 }
