@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>StarBot Bilibili 扫码登录</title>
+</head>
+<body>
+<div th:if="${base64}">
+    <h2>请使用 Bilibili APP 扫描以下二维码进行登录:</h2>
+    <img th:src="'data:image/png;base64,' + ${base64}" alt="二维码"/>
+</div>
+
+<div th:unless="${base64}">
+    <h2 th:text="${error}" style="color:red;"></h2>
+</div>
+</body>
+</html>

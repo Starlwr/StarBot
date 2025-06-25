@@ -3,5 +3,6 @@ target/
 logs/
 LiveDebug/
 DynamicDebug/
+cookies.json
 datasource.json
 src/main/resources/application-dev.yml

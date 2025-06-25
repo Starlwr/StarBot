@@ -24,9 +24,6 @@ public class StarBotBilibiliProperties {
     private final BilibiliThread bilibiliThread = new BilibiliThread();
 
     @Getter
-    private final Cookie cookie = new Cookie();
-
-    @Getter
     private final Network network = new Network();
 
     @Getter
@@ -94,28 +91,6 @@ public class StarBotBilibiliProperties {
          * 非核心线程存活时间，单位：秒
          */
         private int keepAliveSeconds = 300;
-    }
-
-    /**
-     * 登录相关
-     */
-    @Getter
-    @Setter
-    public static class Cookie {
-        /**
-         * Cookie 中的 SESSDATA
-         */
-        private String sessData;
-
-        /**
-         * Cookie 中的 buvid3
-         */
-        private String buvid3;
-
-        /**
-         * Cookie 中的 bili_jct
-         */
-        private String biliJct;
     }
 
     /**

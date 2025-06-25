@@ -1,7 +1,9 @@
 package com.starlwr.bot.bilibili.util;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
@@ -13,9 +15,12 @@ import com.starlwr.bot.core.util.MathUtil;
 import com.starlwr.bot.core.util.StringUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.util.Pair;
 import org.springframework.retry.RetryCallback;
 import org.springframework.retry.backoff.FixedBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
@@ -26,11 +31,16 @@ import org.springframework.web.reactive.function.client.WebClientException;
 
 import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -51,6 +61,14 @@ public class BilibiliApiUtil {
     private final RetryTemplate retryTemplate = new RetryTemplate();
 
     private WebSign sign;
+
+    @Getter
+    @Setter
+    private Cookies cookies = new Cookies();
+
+    private Pattern sessDataPattern = Pattern.compile("SESSDATA=(.*?)&");
+
+    private Pattern biliJctPattern = Pattern.compile("bili_jct=(.*?)&");
 
     private DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -76,13 +94,13 @@ public class BilibiliApiUtil {
         Map<String, String> headers = new HashMap<>();
         headers.put("Referer", "https://www.bilibili.com");
         headers.put("User-Agent", properties.getNetwork().getUserAgent());
-        if (StringUtil.isNotBlank(properties.getCookie().getSessData()) && StringUtil.isNotBlank(properties.getCookie().getBuvid3()) && StringUtil.isNotBlank(properties.getCookie().getBiliJct())) {
+        if (StringUtil.isNotBlank(cookies.getSessData()) && StringUtil.isNotBlank(cookies.getBuvid3()) && StringUtil.isNotBlank(cookies.getBiliJct())) {
             headers.put(
                     "Cookie", String.format(
                             "SESSDATA=%s; buvid3=%s; bili_jct=%s; bili_ticket=%s; bili_ticket_expires=%s; ",
-                            properties.getCookie().getSessData(),
-                            properties.getCookie().getBuvid3(),
-                            properties.getCookie().getBiliJct(),
+                            cookies.getSessData(),
+                            cookies.getBuvid3(),
+                            cookies.getBiliJct(),
                             sign.getTicket(),
                             sign.getTicketExpires()
                     )
@@ -244,7 +262,7 @@ public class BilibiliApiUtil {
      * @return Bilibili Web Api 签名
      */
     public WebSign generateBilibiliWebSign() {
-        String api = BilibiliTicketUtil.getBilibiliTicketUrl(properties.getCookie().getBiliJct());
+        String api = BilibiliTicketUtil.getBilibiliTicketUrl(cookies.getBiliJct());
         JSONObject result = requestBilibiliApi(api, "POST", new HashMap<>(), new HashMap<>());
         String ticket = result.getString("ticket");
         Integer ticketExpires = result.getInteger("created_at") + result.getInteger("ttl");
@@ -257,6 +275,66 @@ public class BilibiliApiUtil {
         sign = new WebSign(ticket, ticketExpires, imgKey, subKey);
 
         return sign;
+    }
+
+    /**
+     * 获取 Cookies 中 buvid3 字段
+     * @return buvid3 字段
+     */
+    public String getBuvid3() {
+        String api = "https://api.bilibili.com/x/web-frontend/getbuvid";
+        JSONObject result = requestBilibiliApi(api);
+        return result.getString("buvid");
+    }
+
+    /**
+     * 获取扫码登录信息
+     * @return 扫码登录链接, 二维码 Token
+     */
+    public Pair<String, String> getQrCodeLoginInfo() {
+        String api = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
+        JSONObject result = requestBilibiliApi(api);
+        return Pair.of(result.getString("url"), result.getString("qrcode_key"));
+    }
+
+    /**
+     * 获取扫码登录状态
+     * @param token 二维码 Token
+     * @return 是否登录成功
+     */
+    public Boolean getQrCodeLoginStatus(String token) {
+        String api = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=" + token;
+        JSONObject result = requestBilibiliApi(api);
+
+        Integer code = result.getInteger("code");
+        if (code == 0) {
+            String url = result.getString("url");
+
+            Matcher sessDataMatcher = sessDataPattern.matcher(url);
+            Matcher biliJctMatcher = biliJctPattern.matcher(url);
+            if (sessDataMatcher.find() && biliJctMatcher.find()) {
+                String sessData = sessDataMatcher.group(1);
+                String biliJct = biliJctMatcher.group(1);
+                String buvid3 = getBuvid3();
+                cookies = new Cookies(sessData, biliJct, buvid3);
+            } else {
+                log.error("二维码登录失败, 原始接口返回结果: {}", result.toJSONString());
+                return false;
+            }
+
+            Path cookiePath = Path.of("cookies.json");
+            try {
+                Files.writeString(cookiePath, JSON.toJSONString(cookies, JSONWriter.Feature.PrettyFormat), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            } catch (Exception e) {
+                log.error("保存登录凭据文件失败", e);
+            }
+
+            return true;
+        } else if (code == 86038) {
+            return false;
+        } else {
+            return null;
+        }
     }
 
     /**

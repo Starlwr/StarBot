@@ -219,7 +219,7 @@ public class BilibiliLiveRoomConnector {
                 "uid", accountService.getAccountInfo().getUid(),
                 "roomid", up.getRoomId(),
                 "protover", 3,
-                "buvid", properties.getCookie().getBuvid3(),
+                "buvid", bilibili.getCookies().getBuvid3(),
                 "platform", "web",
                 "type", 2,
                 "key", connectInfo.getToken()
