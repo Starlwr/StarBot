@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.painter;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
@@ -47,7 +48,10 @@ public class BilibiliDynamicPainter {
     private ResourceLoader resourceLoader;
 
     @Resource
-    private BuildProperties properties;
+    private BuildProperties buildProperties;
+
+    @Resource
+    private StarBotBilibiliProperties properties;
 
     @Resource
     private FontUtil fontUtil;
@@ -132,11 +136,15 @@ public class BilibiliDynamicPainter {
      * 绘制 StarBot Logo
      */
     private void drawLogo() {
-        try {
-            BufferedImage logo = ImageIO.read(resourceLoader.getResource("classpath:logo.png").getInputStream());
-            this.painter.drawImage(logo, new Point(200, 55)).setPos(175, 300);
-        } catch (IOException e) {
-            log.error("加载 StarBot Logo 失败", e);
+        if (properties.getDynamic().isDrawLogo()) {
+            try {
+                BufferedImage logo = ImageIO.read(resourceLoader.getResource("classpath:logo.png").getInputStream());
+                this.painter.drawImage(logo, new Point(200, 55)).setPos(175, 300);
+            } catch (IOException e) {
+                log.error("加载 StarBot Logo 失败", e);
+            }
+        } else {
+            this.painter.setPos(175, 50);
         }
     }
 
@@ -1328,7 +1336,7 @@ public class BilibiliDynamicPainter {
      */
     private void drawBottom() {
         this.painter.movePos(0, this.painter.getRowSpace());
-        this.painter.drawCopyright(properties.getVersion(), TEXT_MARGIN);
+        this.painter.drawCopyright(buildProperties.getVersion(), TEXT_MARGIN);
     }
 
     /**
