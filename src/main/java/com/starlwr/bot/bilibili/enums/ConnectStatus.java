@@ -15,7 +15,8 @@ public enum ConnectStatus {
     CLOSING(3, "断开连接中"),
     CLOSED(4, "已断开"),
     TIMEOUT(5, "心跳响应超时"),
-    ERROR(6, "错误");
+    ERROR(6, "错误"),
+    RISK(7, "直播间数据风控");
 
     private final int code;
     private final String msg;

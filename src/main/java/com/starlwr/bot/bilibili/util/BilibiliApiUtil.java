@@ -66,11 +66,11 @@ public class BilibiliApiUtil {
     @Setter
     private Cookies cookies = new Cookies();
 
-    private Pattern sessDataPattern = Pattern.compile("SESSDATA=(.*?)&");
+    private final Pattern sessDataPattern = Pattern.compile("SESSDATA=(.*?)&");
 
-    private Pattern biliJctPattern = Pattern.compile("bili_jct=(.*?)&");
+    private final Pattern biliJctPattern = Pattern.compile("bili_jct=(.*?)&");
 
-    private DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @PostConstruct
     public void init() {
@@ -457,6 +457,30 @@ public class BilibiliApiUtil {
     }
 
     /**
+     * 获取直播间最新弹幕
+     * @param roomId 房间号
+     * @return 最新弹幕列表
+     */
+    public List<Pair<Long, String>> getLiveRoomLatestDanmus(@NonNull Long roomId) {
+        List<Pair<Long, String>> danmus = new ArrayList<>();
+
+        try {
+            String api = "https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory?roomid=" + roomId;
+            JSONObject result = requestBilibiliApi(api);
+
+            JSONArray messages = result.getJSONArray("room");
+            for (JSONObject message : messages.toList(JSONObject.class)) {
+                danmus.add(Pair.of(message.getLong("uid"), message.getString("text")));
+            }
+
+            return danmus;
+        } catch (Exception e) {
+            log.error("获取直播间 {} 最新弹幕失败", roomId, e);
+            return Collections.emptyList();
+        }
+    }
+
+    /**
      * 获取礼物信息
      * @return 礼物信息列表
      */
@@ -467,8 +491,7 @@ public class BilibiliApiUtil {
         JSONObject result = requestBilibiliApi(api);
 
         JSONArray giftInfos = result.getJSONObject("global_gift").getJSONArray("list");
-        for (int i = 0; i < giftInfos.size(); i++) {
-            JSONObject giftInfo = giftInfos.getJSONObject(i);
+        for (JSONObject giftInfo: giftInfos.toList(JSONObject.class)) {
             Long giftId = giftInfo.getLong("id");
             String giftName = giftInfo.getString("name");
             double giftPrice = MathUtil.divide(giftInfo.getInteger("price"), 1000.0);
@@ -490,8 +513,7 @@ public class BilibiliApiUtil {
         JSONObject result = requestBilibiliApi(api);
 
         JSONArray guardInfos = result.getJSONArray("guard_resources");
-        for (int i = 0; i < guardInfos.size(); i++) {
-            JSONObject guardInfo = guardInfos.getJSONObject(i);
+        for (JSONObject guardInfo: guardInfos.toList(JSONObject.class)) {
             guards.put(guardInfo.getString("name"), guardInfo.getString("img"));
         }
 

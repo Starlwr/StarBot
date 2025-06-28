@@ -140,6 +140,21 @@ public class StarBotBilibiliProperties {
          * 是否自动补全事件中缺失的信息，开启后可能会因网络请求耗时导致事件延迟发布
          */
         private boolean completeEvent = false;
+
+        /**
+         * 是否自动检测直播间数据风控，检测到后会自动重新连接直播间
+         */
+        private boolean autoDetectLiveRoomRisk = true;
+
+        /**
+         * 自动检测直播间数据风控的时间间隔，单位：秒
+         */
+        private int autoDetectLiveRoomRiskInterval = 60;
+
+        /**
+         * 直播间数据风控检测阈值，范围：0 ~ 100，数值越高检测越严格
+         */
+        private int autoDetectLiveRoomRiskRatio = 50;
     }
 
     /**
