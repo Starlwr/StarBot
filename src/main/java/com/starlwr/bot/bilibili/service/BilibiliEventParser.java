@@ -193,8 +193,18 @@ public class BilibiliEventParser {
         JSONObject senderInfo = metaInfo.getJSONObject("user");
         JSONObject senderBaseInfo = senderInfo.getJSONObject("base");
         Long senderUid = senderInfo.getLong("uid");
-        String senderUname = senderBaseInfo.getString("name");
-        String senderFace = senderBaseInfo.getString("face");
+
+        String senderUname = null;
+        String senderFace = null;
+        if (senderBaseInfo != null) {
+            senderUname = senderBaseInfo.getString("name");
+            senderFace = senderBaseInfo.getString("face");
+        } else {
+            if (completeEvent) {
+                senderUname = completeUname(senderUid, source).orElse(null);
+                senderFace = completeFace(senderUid, source).orElse(null);
+            }
+        }
 
         FansMedal fansMedal = null;
         JSONArray fansMedalInfo = info.getJSONArray(3);
