@@ -12,13 +12,13 @@ import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.MathUtil;
 import jakarta.annotation.Resource;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,7 +31,7 @@ import java.util.function.BiFunction;
  * Bilibili 事件解析器
  */
 @Slf4j
-@Service
+@StarBotComponent
 public class BilibiliEventParser {
     private static final Logger rawMessageLogger = LoggerFactory.getLogger("RawMessageLogger");
 

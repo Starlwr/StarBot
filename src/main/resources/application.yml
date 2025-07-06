@@ -2,8 +2,6 @@ server:
   port: 7827
 
 spring:
-  main:
-    allow-circular-references: true
   jpa:
     database: mysql
     hibernate:
@@ -11,9 +9,11 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
+  main:
+    allow-circular-references: true
 
 starbot:
-  bilibili:
+  core:
     log:
       console: INFO
       file: INFO

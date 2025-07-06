@@ -8,10 +8,10 @@ import com.starlwr.bot.core.handler.StarBotEventHandler;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.sender.StarBotPushMessageSender;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 
@@ -35,7 +35,7 @@ import java.util.List;
  * </pre>
  */
 @Slf4j
-@Component
+@StarBotComponent
 @DefaultHandlerForEvent(event = "com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent")
 public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
     @Resource

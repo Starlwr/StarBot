@@ -16,6 +16,7 @@ import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.FixedSizeSetQueue;
 import jakarta.annotation.Resource;
 import jakarta.websocket.ClientEndpoint;
@@ -30,7 +31,6 @@ import org.springframework.context.annotation.Scope;
 import org.springframework.data.util.Pair;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.springframework.stereotype.Service;
 import org.springframework.web.socket.*;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 
@@ -53,8 +53,8 @@ import java.util.concurrent.TimeoutException;
  * Bilibili 直播间连接器
  */
 @Slf4j
-@Service
 @ClientEndpoint
+@StarBotComponent
 @Scope(value = ConfigurableBeanFactory.SCOPE_PROTOTYPE)
 public class BilibiliLiveRoomConnector {
     @Resource

@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.config;
 
-import ch.qos.logback.classic.Level;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -12,11 +12,9 @@ import org.springframework.context.annotation.Configuration;
 @Getter
 @Setter
 @Configuration
+@StarBotComponent
 @ConfigurationProperties(prefix = "starbot.bilibili")
 public class StarBotBilibiliProperties {
-    @Getter
-    private final Log log = new Log();
-
     @Getter
     private final Debug debug = new Debug();
 
@@ -31,23 +29,6 @@ public class StarBotBilibiliProperties {
 
     @Getter
     private final Dynamic dynamic = new Dynamic();
-
-    /**
-     * 日志相关
-     */
-    @Getter
-    @Setter
-    public static class Log {
-        /**
-         * 控制台日志级别
-         */
-        private Level console;
-
-        /**
-         * 文件日志级别
-         */
-        private Level file;
-    }
 
     /**
      * 调试相关

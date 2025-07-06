@@ -4,11 +4,11 @@ import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.DataSourceService;
 import com.starlwr.bot.core.service.DataSourceServiceInterface;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  * Bilibili 数据源服务
  */
 @Slf4j
-@Service
+@StarBotComponent
 @DataSourceService(name = "bilibili")
 public class BilibiliDataSourceService implements DataSourceServiceInterface {
     @Resource

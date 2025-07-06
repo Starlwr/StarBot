@@ -7,16 +7,20 @@ import com.starlwr.bot.bilibili.model.Cookies;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.model.WebSign;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.QrCodeUtil;
 import jakarta.annotation.Resource;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.web.context.WebServerApplicationContext;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.data.util.Pair;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,8 +29,9 @@ import java.nio.file.Path;
  * Bilibili 账号服务
  */
 @Slf4j
-@Service
-public class BilibiliAccountService {
+@Order(-10000)
+@StarBotComponent
+public class BilibiliAccountService implements ApplicationListener<ApplicationReadyEvent> {
     @Resource
     private ApplicationContext context;
 
@@ -41,6 +46,11 @@ public class BilibiliAccountService {
 
     @Getter
     private String loginUrl = "";
+
+    @Override
+    public void onApplicationEvent(@NonNull ApplicationReadyEvent event) {
+        login();
+    }
 
     /**
      * 使用登录凭据登录 B 站账号，登录失败会退出程序
@@ -148,5 +158,10 @@ public class BilibiliAccountService {
         log.info("开始更新 Bilibili Web Api 签名");
         WebSign sign = bilibili.generateBilibiliWebSign();
         log.info("Bilibili Web Api 签名获取成功, ticket: {}, imgKey: {}, subKey: {}", sign.getTicket(), sign.getImgKey(), sign.getSubKey());
+    }
+
+    @Override
+    public boolean supportsAsyncExecution() {
+        return false;
     }
 }

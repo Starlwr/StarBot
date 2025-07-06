@@ -6,16 +6,16 @@ import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceAddEvent;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
 import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Component;
 
 /**
  * Bilibili 数据源事件监听器
  */
 @Slf4j
-@Component
+@StarBotComponent
 public class BilibiliDataSourceEventListener {
     @Resource
     private BilibiliLiveRoomService liveRoomService;

@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.controller;
 
 import com.starlwr.bot.bilibili.service.BilibiliAccountService;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.QrCodeUtil;
 import com.starlwr.bot.core.util.StringUtil;
 import jakarta.annotation.Resource;
@@ -14,6 +15,7 @@ import java.util.Optional;
 
 @Slf4j
 @Controller
+@StarBotComponent
 @RequestMapping("/bilibili/login")
 public class BilibiliLoginController {
     @Resource

@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.config;
 
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -14,6 +15,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 @Slf4j
 @Configuration
+@StarBotComponent
 public class StarBotBilibiliThreadPoolConfig {
     @Resource
     private StarBotBilibiliProperties properties;

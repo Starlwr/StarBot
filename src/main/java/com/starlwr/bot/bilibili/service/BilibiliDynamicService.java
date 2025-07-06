@@ -10,13 +10,13 @@ import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.HashSet;
@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
  * Bilibili 动态服务
  */
 @Slf4j
-@Service
+@StarBotComponent
 public class BilibiliDynamicService {
     private static final Logger dynamicLogger = LoggerFactory.getLogger("DynamicLogger");
 

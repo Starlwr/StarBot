@@ -2,14 +2,14 @@ package com.starlwr.bot.bilibili.factory;
 
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.painter.BilibiliDynamicPainter;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import jakarta.annotation.Resource;
 import org.springframework.context.ApplicationContext;
-import org.springframework.stereotype.Component;
 
 /**
  * Bilibili 动态绘图器工厂
  */
-@Component
+@StarBotComponent
 public class BilibiliDynamicPainterFactory {
     @Resource
     private ApplicationContext applicationContext;

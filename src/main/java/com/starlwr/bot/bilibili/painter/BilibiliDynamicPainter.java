@@ -9,6 +9,7 @@ import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.painter.CommonPainter;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.CollectionUtil;
 import com.starlwr.bot.core.util.FontUtil;
 import com.starlwr.bot.core.util.ImageUtil;
@@ -18,12 +19,11 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
-import org.springframework.boot.info.BuildProperties;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Scope;
+import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.data.util.Pair;
-import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -41,15 +41,9 @@ import java.util.stream.Collectors;
  * Bilibili 动态绘图器
  */
 @Slf4j
-@Component
+@StarBotComponent
 @Scope(value = ConfigurableBeanFactory.SCOPE_PROTOTYPE)
 public class BilibiliDynamicPainter {
-    @Resource
-    private ResourceLoader resourceLoader;
-
-    @Resource
-    private BuildProperties buildProperties;
-
     @Resource
     private StarBotBilibiliProperties properties;
 
@@ -61,6 +55,8 @@ public class BilibiliDynamicPainter {
 
     @Resource
     private StarBotCommonPainterFactory factory;
+
+    private ResourceLoader resourceLoader;
 
     private CommonPainter painter;
 
@@ -90,6 +86,7 @@ public class BilibiliDynamicPainter {
 
     @PostConstruct
     public void init() {
+        this.resourceLoader = new DefaultResourceLoader(getClass().getClassLoader());
         this.painter = factory.create(WIDTH, 5000, true);
         iconUrlMap.put("RICH_TEXT_NODE_TYPE_WEB", "classpath:images/dynamic/link.png");
         iconUrlMap.put("RICH_TEXT_NODE_TYPE_BV", "classpath:images/dynamic/video.png");
@@ -1336,7 +1333,11 @@ public class BilibiliDynamicPainter {
      */
     private void drawBottom() {
         this.painter.movePos(0, this.painter.getRowSpace());
-        this.painter.drawCopyright(buildProperties.getVersion(), TEXT_MARGIN);
+
+        Package currentPackage = getClass().getPackage();
+        TextWithStyle text = new TextWithStyle("Designed by starbot-bilibili-plugin v" + currentPackage.getImplementationVersion(), CommonPainter.TEXT_FONT_SIZE, COLOR_PINK);
+
+        this.painter.drawCopyright(List.of(List.of(text)), List.of(), TEXT_MARGIN);
     }
 
     /**

@@ -3,9 +3,9 @@ package com.starlwr.bot.bilibili.service;
 import com.starlwr.bot.bilibili.factory.BilibiliLiveRoomConnectorFactory;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -14,7 +14,7 @@ import java.util.Map;
  * Bilibili 直播间服务
  */
 @Slf4j
-@Service
+@StarBotComponent
 public class BilibiliLiveRoomService {
     @Resource
     private BilibiliApiUtil bilibili;

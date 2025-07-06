@@ -9,6 +9,7 @@ import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.*;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.CollectionUtil;
 import com.starlwr.bot.core.util.HttpUtil;
 import com.starlwr.bot.core.util.MathUtil;
@@ -25,7 +26,6 @@ import org.springframework.retry.RetryCallback;
 import org.springframework.retry.backoff.FixedBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
 import org.springframework.retry.support.RetryTemplate;
-import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.reactive.function.client.WebClientException;
 
@@ -47,7 +47,7 @@ import java.util.stream.Collectors;
  * API 请求工具类
  */
 @Slf4j
-@Component
+@StarBotComponent
 public class BilibiliApiUtil {
     @Resource
     private StarBotBilibiliProperties properties;

@@ -2,14 +2,14 @@ package com.starlwr.bot.bilibili.factory;
 
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.service.BilibiliLiveRoomConnector;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import jakarta.annotation.Resource;
 import org.springframework.context.ApplicationContext;
-import org.springframework.stereotype.Component;
 
 /**
  * Bilibili 直播间连接器工厂
  */
-@Component
+@StarBotComponent
 public class BilibiliLiveRoomConnectorFactory {
     @Resource
     private ApplicationContext applicationContext;

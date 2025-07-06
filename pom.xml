@@ -12,7 +12,7 @@
 
     <groupId>com.starlwr</groupId>
     <artifactId>starbot-bilibili</artifactId>
-    <version>3.0.0</version>
+    <version>1.0.0</version>
     <name>StarBotBilibili</name>
     <description>StarBot For Bilibili</description>
     <url>https://bot.starlwr.com</url>
@@ -37,20 +37,18 @@
         <java.version>17</java.version>
     </properties>
 
+    <repositories>
+        <repository>
+            <id>starbot-maven-repository</id>
+            <url>https://maven.starlwr.com/</url>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>com.starlwr</groupId>
             <artifactId>starbot-core</artifactId>
-            <version>1.0.0</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.retry</groupId>
-            <artifactId>spring-retry</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-aop</artifactId>
+            <version>3.0.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -90,63 +88,80 @@
     </dependencies>
 
     <build>
-        <finalName>StarBotBilibili</finalName>
+        <finalName>${project.artifactId}-${project.version}</finalName>
         <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <layout>ZIP</layout>
-                    <additionalProperties>
-                        <version>${project.version}</version>
-                    </additionalProperties>
-                    <includes>
-                        <include>
-                            <groupId>non-exists</groupId>
-                            <artifactId>non-exists</artifactId>
-                        </include>
-                    </includes>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>repackage</goal>
-                            <goal>build-info</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>copy-dependencies</id>
-                        <phase>package</phase>
+                        <id>list-dependencies</id>
+                        <phase>generate-resources</phase>
                         <goals>
-                            <goal>copy-dependencies</goal>
+                            <goal>tree</goal>
                         </goals>
                         <configuration>
-                            <includeScope>runtime</includeScope>
-                            <stripVersion>false</stripVersion>
-                            <excludeTransitive>false</excludeTransitive>
-                            <outputDirectory>${project.build.directory}/lib/</outputDirectory>
+                            <outputFile>${project.build.directory}/dependencies.txt</outputFile>
+                            <appendOutput>false</appendOutput>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>convert-dependencies-to-json</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>powershell</executable>
+                            <arguments>
+                                <argument>-ExecutionPolicy</argument>
+                                <argument>Bypass</argument>
+                                <argument>-NoProfile</argument>
+                                <argument>-NonInteractive</argument>
+                                <argument>-Command</argument>
+                                <argument>${basedir}\convert.ps1</argument>
+                            </arguments>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
             <plugin>
                 <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.build.directory}</directory>
+                                    <includes>
+                                        <include>dependency.json</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
                 <configuration>
                     <resources>
                         <resource>
                             <directory>src/main/resources</directory>
                             <excludes>
+                                <exclude>application.yml</exclude>
+                                <exclude>application.properties</exclude>
                                 <exclude>application-dev.yml</exclude>
+                                <exclude>application-dev.properties</exclude>
                             </excludes>
                         </resource>
                     </resources>
@@ -154,28 +169,4 @@
             </plugin>
         </plugins>
     </build>
-
-<!-- 作为依赖打包时使用以下配置 -->
-
-<!--    <build>-->
-<!--        <finalName>StarBotBilibili</finalName>-->
-<!--        <plugins>-->
-<!--            <plugin>-->
-<!--                <artifactId>maven-resources-plugin</artifactId>-->
-<!--                <configuration>-->
-<!--                    <resources>-->
-<!--                        <resource>-->
-<!--                            <directory>src/main/resources</directory>-->
-<!--                            <excludes>-->
-<!--                                <exclude>application.yml</exclude>-->
-<!--                                <exclude>application-dev.yml</exclude>-->
-<!--                                <exclude>banner.txt</exclude>-->
-<!--                                <exclude>logback.xml</exclude>-->
-<!--                            </excludes>-->
-<!--                        </resource>-->
-<!--                    </resources>-->
-<!--                </configuration>-->
-<!--            </plugin>-->
-<!--        </plugins>-->
-<!--    </build>-->
 </project>

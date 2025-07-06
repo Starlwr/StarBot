@@ -2,12 +2,14 @@ package com.starlwr.bot.bilibili.painter;
 
 import com.alibaba.fastjson2.JSON;
 import com.starlwr.bot.bilibili.config.TestBuildPropertiesConfig;
+import com.starlwr.bot.bilibili.config.TestContextConfig;
 import com.starlwr.bot.bilibili.factory.BilibiliDynamicPainterFactory;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ContextConfiguration;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -17,8 +19,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(TestBuildPropertiesConfig.class)
+@ContextConfiguration(classes = TestContextConfig.class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public class BilibiliDynamicPainterTest {
     @Resource
     private BilibiliDynamicPainterFactory factory;
