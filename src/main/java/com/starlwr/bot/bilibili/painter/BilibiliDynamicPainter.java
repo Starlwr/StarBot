@@ -224,9 +224,8 @@ public class BilibiliDynamicPainter {
                 drawOriginDynamicUname();
                 drawByType(true);
             }
-            case "DYNAMIC_TYPE_LIVE_RCMD" -> {
-                // 系统自动发送，暂不处理
-            }
+            case "DYNAMIC_TYPE_LIVE" -> drawLiveShare(isForward);
+            case "DYNAMIC_TYPE_LIVE_RCMD" -> drawCommonArea(isForward);
             case "DYNAMIC_TYPE_PGC_UNION" -> {
                 // 纪录片等更新，暂不处理
             }
@@ -880,6 +879,53 @@ public class BilibiliDynamicPainter {
                 this.painter.drawImageWithBorder(image, new Point(IMAGE_MARGIN, this.painter.getY()), Color.LIGHT_GRAY, 10, 1);
                 this.painter.setPos(TEXT_MARGIN, this.painter.getY() + height);
             }
+            case "MAJOR_TYPE_LIVE_RCMD" -> {
+                JSONObject liveRcmd = data.getJSONObject("live_rcmd");
+
+                JSONObject liveInfo = JSON.parseObject(liveRcmd.getString("content")).getJSONObject("live_play_info");
+
+                String coverUrl = liveInfo.getString("cover");
+                Optional<BufferedImage> optionalImage = bilibili.getBilibiliImage(coverUrl);
+                optionalImage.ifPresent(sourceImage -> {
+                    BufferedImage image = ImageUtil.maskToRoundedRectangle(ImageUtil.resizeByWidth(sourceImage, this.painter.getWidth() - IMAGE_MARGIN * 2), 10);
+
+                    int height = image.getHeight() + this.painter.getRowSpace();
+                    if (isForward) {
+                        this.painter.drawRectangle(0, this.painter.getY(), this.painter.getWidth(), height, COLOR_FORWARD);
+                    }
+
+                    this.painter.drawImage(image, new Point(IMAGE_MARGIN, this.painter.getY()));
+
+                    String watchedText = liveInfo.getJSONObject("watched_show").getString("text_large");
+                    Pair<Integer, Integer> watchedTextSize = this.painter.getStringWidthAndHeight(watchedText, CommonPainter.TIP_FONT_SIZE);
+
+                    this.painter.drawRectangle(this.painter.getWidth() - IMAGE_MARGIN - 8 - (watchedTextSize.getFirst() + 16) * 2, this.painter.getY() + 8, watchedTextSize.getFirst() + 16, watchedTextSize.getSecond() + 10, new Color(115, 115, 115, 153));
+                    this.painter.drawTip(watchedText, Color.WHITE, new Point(this.painter.getWidth() - IMAGE_MARGIN - (watchedTextSize.getFirst() + 16) * 2, this.painter.getY() + 13));
+
+                    String livingText = "直播中";
+                    Pair<Integer, Integer> livingTextSize = this.painter.getStringWidthAndHeight(livingText, CommonPainter.TIP_FONT_SIZE);
+                    int offset = ((watchedTextSize.getFirst() + 16) - livingTextSize.getFirst()) / 2;
+                    this.painter.drawRectangle(this.painter.getWidth() - IMAGE_MARGIN - 8 - watchedTextSize.getFirst() - 16, this.painter.getY() + 8, watchedTextSize.getFirst() + 16, watchedTextSize.getSecond() + 10, COLOR_PINK);
+                    this.painter.drawTip(livingText, Color.WHITE, new Point(this.painter.getWidth() - IMAGE_MARGIN - watchedTextSize.getFirst() - 24 + offset, this.painter.getY() + 13));
+
+                    String areaName = liveInfo.getString("area_name");
+                    Pair<Integer, Integer> areaNameSize = this.painter.getStringWidthAndHeight(areaName);
+                    this.painter.drawText(areaName, Color.WHITE, new Point(IMAGE_MARGIN + 16, this.painter.getY() + image.getHeight() - 16 - areaNameSize.getSecond()));
+
+                    this.painter.setPos(TEXT_MARGIN, this.painter.getY() + height);
+                });
+
+                String title = liveInfo.getString("title");
+
+                BufferedImage image = getOmitTextImage(title, WIDTH - TEXT_MARGIN * 2, 40);
+
+                if (isForward) {
+                    int height = image.getHeight() + this.painter.getRowSpace();
+                    this.painter.drawRectangle(0, this.painter.getY(), this.painter.getWidth(), height, COLOR_FORWARD);
+                }
+
+                this.painter.drawImage(image);
+            }
         }
     }
 
@@ -896,9 +942,104 @@ public class BilibiliDynamicPainter {
         List<BufferedImage> images = getContentLineImages(List.of(node));
 
         int height = images.stream().mapToInt(BufferedImage::getHeight).sum() + this.painter.getRowSpace() * images.size();
-        this.painter.drawRectangle(0, this.painter.getY(), this.painter.getWidth(), height, COLOR_FORWARD);
+        this.painter.drawRectangle(0, this.painter.getY(), this.painter.getWidth(), height + 10, COLOR_FORWARD);
+
+        this.painter.movePos(0, 10);
 
         images.forEach(this.painter::drawImage);
+    }
+
+    /**
+     * 绘制直播分享
+     * @param isForward 是否为转发源动态
+     */
+    private void drawLiveShare(boolean isForward) {
+        Dynamic currentDynamic = getCurrentDynamic(isForward);
+        JSONObject data = currentDynamic.getModules().getJSONObject("module_dynamic").getJSONObject("major");
+
+        JSONObject liveInfo = data.getJSONObject("live");
+
+        CommonPainter painter = factory.create(WIDTH - IMAGE_MARGIN * 2, 200, false);
+        if (isForward) {
+            painter.drawRoundedRectangle(0, 0, painter.getWidth(), painter.getHeight(), 10, Color.WHITE);
+        } else {
+            painter.drawRoundedRectangle(0, 0, painter.getWidth(), painter.getHeight(), 10, COLOR_FORWARD);
+        }
+
+        int imageWidth = 0;
+        String coverUrl = liveInfo.getString("cover");
+        Optional<BufferedImage> optionalImage = bilibili.getBilibiliImage(coverUrl);
+        if (optionalImage.isPresent()) {
+            BufferedImage image = ImageUtil.resizeByHeight(optionalImage.get(), 200);
+            imageWidth = image.getWidth();
+            painter.drawImage(image);
+
+            try {
+                BufferedImage tv = ImageUtil.resizeByHeight(ImageIO.read(resourceLoader.getResource("classpath:images/dynamic/tv.png").getInputStream()), 60);
+                painter.drawImage(tv, new Point(image.getWidth() - tv.getWidth() - 16, this.painter.getY() + image.getHeight() - tv.getHeight() - 13));
+            } catch (IOException e) {
+                log.error("加载图标失败", e);
+            }
+        }
+
+        int badgeWidth = 0;
+        JSONObject badge = liveInfo.getJSONObject("badge");
+        String badgeText = badge.getString("text");
+        if (StringUtil.isNotBlank(badgeText)) {
+            Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(badgeText);
+            badgeWidth = size.getFirst() + 16;
+            painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, IMAGE_MARGIN * 2, badgeWidth, size.getSecond() + 10, 10, new Color(Integer.parseInt(badge.getString("bg_color").substring(1), 16)));
+            painter.drawText(badgeText, new Color(Integer.parseInt(badge.getString("color").substring(1), 16)), new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, IMAGE_MARGIN * 2 + 5));
+        }
+
+        String title = liveInfo.getString("title");
+        List<BufferedImage> lineImages = new ArrayList<>();
+        int lineWidth = painter.getWidth() - imageWidth - badgeWidth - IMAGE_MARGIN * 8;
+
+        CommonPainter currentPainter = factory.create(lineWidth, 40, true);
+        List<Integer> tail = "...".codePoints().boxed().toList();
+        for (int codePoint : title.codePoints().toArray()) {
+            Font font = fontUtil.findFontForCharacter(codePoint).deriveFont(30f);
+            if (lineImages.isEmpty()) {
+                if (currentPainter.isNeedWrap(codePoint, TEXT_MARGIN, font)) {
+                    lineImages.add(currentPainter.getImage());
+                    currentPainter = factory.create(lineWidth, 40, true);
+                }
+            } else {
+                List<Integer> codePoints = new ArrayList<>();
+                codePoints.add(codePoint);
+                codePoints.addAll(tail);
+                if (currentPainter.isNeedWrap(codePoints, TEXT_MARGIN, font)) {
+                    for (int tailCodePoint : tail) {
+                        currentPainter.drawElement(tailCodePoint);
+                    }
+                    break;
+                }
+            }
+            currentPainter.drawElement(codePoint, font);
+        }
+        lineImages.add(currentPainter.getImage());
+
+        String desc = liveInfo.getString("desc_first") + "   " + liveInfo.getString("desc_second");
+        BufferedImage descImage = getOmitTextImage(desc, lineWidth, 30, 25, Color.LIGHT_GRAY);
+
+        int heightTotal = lineImages.get(0).getHeight() * 2 + descImage.getHeight() + this.painter.getRowSpace() * 2;
+        painter.setPos(imageWidth + IMAGE_MARGIN * 4, (painter.getHeight() - heightTotal) / 2);
+        for (BufferedImage image : lineImages) {
+            painter.drawImage(image);
+        }
+
+        painter.drawImage(descImage, new Point(painter.getX(), painter.getHeight() - descImage.getHeight() - (painter.getHeight() - heightTotal) / 2));
+
+        BufferedImage image = painter.getImage();
+
+        int height = image.getHeight() + this.painter.getRowSpace();
+        if (isForward) {
+            this.painter.drawRectangle(0, this.painter.getY(), this.painter.getWidth(), height, COLOR_FORWARD);
+        }
+
+        this.painter.drawImage(image, new Point(IMAGE_MARGIN, this.painter.getY()));
+        this.painter.setPos(TEXT_MARGIN, this.painter.getY() + height);
     }
 
     /**
