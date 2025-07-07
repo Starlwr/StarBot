@@ -109,7 +109,7 @@ public class BilibiliAccountService implements ApplicationListener<ApplicationRe
 
         loginUrl = url;
 
-        log.info("请使用 Bilibili APP 扫描以下二维码进行登录, 若终端二维码无法扫描, 请打开 http://localhost:{}/bilibili/login/qrcode 扫描:", webContext.getWebServer().getPort());
+        log.info("请使用 Bilibili APP 扫描以下二维码进行登录, 若终端二维码无法扫描, 请打开 http://localhost:{}/bilibili/login/qrcode 扫描, 若当前为外网环境部署, 请将 localhost 替换为相应的 IP 或域名:", webContext.getWebServer().getPort());
         QrCodeUtil.generateQrCodeAndPrint(url, 50);
 
         while (true) {

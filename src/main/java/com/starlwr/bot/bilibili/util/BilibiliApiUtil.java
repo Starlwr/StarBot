@@ -451,7 +451,7 @@ public class BilibiliApiUtil {
         String hbParam = Base64.getEncoder().encodeToString(("60|" + roomId + "|1|0").getBytes(StandardCharsets.UTF_8));
         http.asyncGet(api + hbParam, getBilibiliHeaders()).whenComplete((response, exception) -> {
             if (exception != null) {
-                log.error("直播间 {} 发送 Web 心跳包异常", roomId, exception);
+                log.error("直播间 {} 发送 Web 心跳包异常, 偶然出现此异常为网络波动引起的正常现象: {}", roomId, exception.getClass().getName());
             }
         });
     }
@@ -475,7 +475,7 @@ public class BilibiliApiUtil {
 
             return danmus;
         } catch (Exception e) {
-            log.error("获取直播间 {} 最新弹幕失败", roomId, e);
+            log.error("直播间风控检测获取直播间 {} 最新弹幕失败, 偶然出现此异常为网络波动引起的正常现象: {}", roomId, e.getClass().getName());
             return Collections.emptyList();
         }
     }
