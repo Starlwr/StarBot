@@ -77,6 +77,10 @@ public class BilibiliDynamicService {
                         dynamicLogger.debug("{}: {}", dynamic.getType(), JSON.toJSONString(dynamic));
                     }
 
+                    if ("DYNAMIC_TYPE_LIVE_RCMD".equals(dynamic.getType())) {
+                        continue;
+                    }
+
                     Long uid = dynamic.getModules().getJSONObject("module_author").getLong("mid");
                     Optional<PushUser> optionalUser = dataSource.getUser(LivePlatform.BILIBILI.getName(), uid);
                     if (optionalUser.isPresent()) {
