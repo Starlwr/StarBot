@@ -210,7 +210,7 @@ public class BilibiliLiveRoomConnector {
             try {
                 session.close();
             } catch (Exception e) {
-                log.error("断开 Websocket 连接异常", e);
+                log.error("断开 {} 的直播间 {} 的 Websocket 连接异常", up.getUname(), up.getRoomId(), e);
             }
         }
 
@@ -258,7 +258,7 @@ public class BilibiliLiveRoomConnector {
                 try {
                     session.close();
                 } catch (Exception e) {
-                    log.error("断开 Websocket 连接异常", e);
+                    log.error("断开 {} 的直播间 {} 的 Websocket 连接异常", up.getUname(), up.getRoomId(), e);
                 }
 
                 return;
@@ -268,7 +268,7 @@ public class BilibiliLiveRoomConnector {
                 send(DataHeaderType.HEARTBEAT, DataPackType.HEARTBEAT, "[object Object]".getBytes(StandardCharsets.UTF_8));
                 bilibili.liveRoomHeartbeat(up.getRoomId());
             } catch (Exception e) {
-                log.error("发送心跳包异常", e);
+                log.error("发送 {} 的直播间 {} 的心跳包异常", up.getUname(), up.getRoomId(), e);
             }
         }), Instant.now().plusSeconds(10), Duration.ofSeconds(30));
     }
@@ -319,7 +319,7 @@ public class BilibiliLiveRoomConnector {
                 try {
                     session.close();
                 } catch (Exception e) {
-                    log.error("断开 Websocket 连接异常", e);
+                    log.error("断开 {} 的直播间 {} 的 Websocket 连接异常", up.getUname(), up.getRoomId(), e);
                 }
             }
         }), Instant.now().plusSeconds(interval), Duration.ofSeconds(interval));
@@ -345,7 +345,7 @@ public class BilibiliLiveRoomConnector {
         try {
             session.sendMessage(new BinaryMessage(packedData));
         } catch (IOException e) {
-            log.error("发送 Websocket 消息异常", e);
+            log.error("发送 {} 的直播间 {} 的 Websocket 消息异常", up.getUname(), up.getRoomId(), e);
         }
     }
 
@@ -489,11 +489,13 @@ public class BilibiliLiveRoomConnector {
          */
         @Override
         public void afterConnectionEstablished(@NonNull WebSocketSession session) {
-            executor.submit(() -> {
-                log.info("与 {} 的直播间 {} Websocket 连接成功, 开始发送认证数据", up.getUname(), up.getRoomId());
-                sessionFuture.complete(session);
+            log.info("与 {} 的直播间 {} 的 Websocket 连接成功, 开始发送认证数据", up.getUname(), up.getRoomId());
+            sessionFuture.complete(session);
+            try {
                 connector.sendVerifyData();
-            });
+            } catch (Exception e) {
+                log.error("发送 {} 的直播间 {} 的认证数据异常", up.getUname(), up.getRoomId(), e);
+            }
         }
 
         /**
@@ -538,12 +540,12 @@ public class BilibiliLiveRoomConnector {
                                 BilibiliConnectedEvent event = new BilibiliConnectedEvent(connector.getLiveStreamerInfo());
                                 connector.eventPublisher.publishEvent(event);
                             } else {
-                                log.warn("收到直播间 {} 的未知类型({})消息: {}", up.getRoomId(), dataPackType, data.toJSONString());
+                                log.warn("收到 {} 的直播间 {} 的未知类型({})消息: {}", up.getUname(), up.getRoomId(), dataPackType, data.toJSONString());
                             }
                         }
                     }
                 } catch (Exception e) {
-                    log.error("处理 WebSocket 消息异常", e);
+                    log.error("处理 {} 的直播间 {} 的 WebSocket 消息异常", up.getUname(), up.getRoomId(), e);
                 }
             });
         }
