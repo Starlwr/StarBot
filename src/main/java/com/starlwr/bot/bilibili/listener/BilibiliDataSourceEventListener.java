@@ -33,15 +33,6 @@ public class BilibiliDataSourceEventListener {
     private BilibiliLiveRoomService liveRoomService;
 
     /**
-     * 将推送用户转换为 Up 主
-     * @param user 推送用户
-     * @return Up 主
-     */
-    private Up convertToUp(PushUser user) {
-        return new Up(user.getUid(), user.getUname(), user.getRoomId(), user.getFace());
-    }
-
-    /**
      * 推送用户是否监听直播事件
      * @param user 推送用户
      * @return 是否监听直播事件
@@ -79,7 +70,7 @@ public class BilibiliDataSourceEventListener {
             return;
         }
 
-        liveRoomService.addUp(convertToUp(user));
+        liveRoomService.addUp(new Up(user));
     }
 
     @EventListener
@@ -95,7 +86,7 @@ public class BilibiliDataSourceEventListener {
             return;
         }
 
-        liveRoomService.removeUp(convertToUp(user));
+        liveRoomService.removeUp(new Up(user));
     }
 
     @EventListener
@@ -109,10 +100,10 @@ public class BilibiliDataSourceEventListener {
         if (properties.getLive().isOnlyConnectNecessaryRooms()) {
             if (hasEnabledLiveEvent(user) && !liveRoomService.hasUp(user.getUid())) {
                 log.info("推送用户 (UID: {}, 昵称: {}, 房间号: {}, 平台: {}) 监听了直播事件, 准备连接到直播间", user.getUid(), user.getUname(), user.getRoomId(), user.getPlatform());
-                liveRoomService.addUp(convertToUp(user));
+                liveRoomService.addUp(new Up(user));
             } else if (!hasEnabledLiveEvent(user) && liveRoomService.hasUp(user.getUid())) {
                 log.info("推送用户 (UID: {}, 昵称: {}, 房间号: {}, 平台: {}) 未监听直播事件, 准备断开直播间连接", user.getUid(), user.getUname(), user.getRoomId(), user.getPlatform());
-                liveRoomService.removeUp(convertToUp(user));
+                liveRoomService.removeUp(new Up(user));
             }
         }
     }

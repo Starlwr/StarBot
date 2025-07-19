@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.model;
 
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.model.PushUser;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -20,6 +21,10 @@ public class Up extends LiveStreamerInfo {
 
     public Up(Long uid, String uname, Long roomId, String face) {
         super(uid, uname, roomId, face);
+    }
+
+    public Up(PushUser user) {
+        super(user.getUid(), user.getUname(), user.getRoomId(), user.getFace());
     }
 
     @Override
