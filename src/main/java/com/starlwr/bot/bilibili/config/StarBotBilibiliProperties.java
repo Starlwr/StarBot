@@ -103,6 +103,11 @@ public class StarBotBilibiliProperties {
     @Setter
     public static class Live {
         /**
+         * 是否仅连接启用了直播推送的直播间
+         */
+        private boolean onlyConnectNecessaryRooms = false;
+
+        /**
          * 连接两个直播间之间的时间间隔，单位：毫秒
          */
         private int liveRoomConnectInterval = 1000;

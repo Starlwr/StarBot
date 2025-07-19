@@ -32,6 +32,15 @@ public class BilibiliLiveRoomService {
     private final Map<Long, BilibiliLiveRoomConnector> connectors = new HashMap<>();
 
     /**
+     * 是否存在指定 UID 的 UP 主
+     * @param uid UID
+     * @return 是否存在指定 UID 的 UP 主
+     */
+    public boolean hasUp(Long uid) {
+        return ups.containsKey(uid);
+    }
+
+    /**
      * 根据 UID 添加直播间监听
      * @param uid UID
      */
