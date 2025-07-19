@@ -158,8 +158,8 @@ public class BilibiliApiUtil {
             }
             Integer code = result.getInteger("code");
             if (code != 0) {
-                // 4101131: 加载错误，请稍后再试, 4101132: 加载错误，请稍后再试, 22015: 您的账号异常，请稍后再试
-                if (code == 4101131 || code == 4101132 || code == 22015) {
+                // 4101130: 请求数据发生错误，请刷新或稍后重试, 4101131: 加载错误，请稍后再试, 4101132: 加载错误，请稍后再试, 22015: 您的账号异常，请稍后再试
+                if (code == 4101130 || code == 4101131 || code == 4101132 || code == 22015) {
                     throw new NetworkException(code);
                 }
                 String message = result.containsKey("message") ? result.getString("message") : "接口未返回错误信息";
