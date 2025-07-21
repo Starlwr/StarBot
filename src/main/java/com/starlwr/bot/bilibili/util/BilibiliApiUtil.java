@@ -9,6 +9,7 @@ import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.*;
+import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.CollectionUtil;
 import com.starlwr.bot.core.util.HttpUtil;
@@ -57,6 +58,9 @@ public class BilibiliApiUtil {
 
     @Resource
     private HttpUtil http;
+
+    @Resource
+    private BilibiliAccountService accountService;
 
     private final RetryTemplate retryTemplate = new RetryTemplate();
 
@@ -124,7 +128,7 @@ public class BilibiliApiUtil {
      * @param params 请求参数
      * @return 请求结果
      */
-    public JSONObject requestBilibiliApi(String url, Object params) {
+    public JSONObject requestBilibiliApi(String url, Map<String, Object> params) {
         return requestBilibiliApi(url, "POST", getBilibiliHeaders(), params);
     }
 
@@ -136,7 +140,7 @@ public class BilibiliApiUtil {
      * @param params 请求参数
      * @return 请求结果
      */
-    public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers, Object params) {
+    public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params) {
         return retryTemplate.execute((RetryCallback<JSONObject, NetworkException>) retryContext -> {
             JSONObject rtn;
             JSONObject result;
@@ -145,7 +149,7 @@ public class BilibiliApiUtil {
                 if ("GET".equalsIgnoreCase(method)) {
                     result = http.getJson(url, headers);
                 } else if ("POST".equalsIgnoreCase(method)) {
-                    result = http.postJson(url, headers, params);
+                    result = http.postJsonAsForm(url, headers, params);
                 } else {
                     throw new IllegalArgumentException("不支持的请求方法: " + method);
                 }
@@ -597,5 +601,59 @@ public class BilibiliApiUtil {
             log.error("获取动态更新列表失败, 原始接口返回内容: {}", result.toJSONString(), e);
             return Collections.emptyList();
         }
+    }
+
+    /**
+     * 获取关注的 UP 主列表，该接口无房间号信息
+     * @return 关注的 UP 主列表
+     */
+    public List<Up> getFollowingUps() {
+        List<Up> ups = new ArrayList<>();
+
+        int page = 1;
+
+        while(true) {
+            String api = "https://api.bilibili.com/x/relation/followings?vmid=" + accountService.getAccountInfo().getUid() + "&pn=" + page + "&ps=50";
+            JSONObject result = requestBilibiliApi(api);
+
+            JSONArray followings = result.getJSONArray("list");
+            for (JSONObject following : followings.toList(JSONObject.class)) {
+                Long uid = following.getLong("mid");
+                String uname = following.getString("uname");
+                String face = following.getString("face");
+                ups.add(new Up(uid, uname, null, face));
+            }
+
+            if (followings.size() < 50) {
+                break;
+            }
+
+            page++;
+        }
+
+        return ups;
+    }
+
+    /**
+     * 关注 UP 主
+     * @param uid 要关注的 UP 主 UID
+     */
+    public void followUp(Long uid) {
+        String api = "https://api.bilibili.com/x/relation/modify";
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("fid", uid);
+        params.put("act", 1);
+        params.put("re_src", 11);
+        params.put("csrf", cookies.getBiliJct());
+
+        try {
+            requestBilibiliApi(api, params);
+        } catch (RequestFailedException e) {
+            if (!e.getMessage().startsWith("API 返回数据未含 data 或 result 字段")) {
+                throw e;
+            }
+        }
+
     }
 }

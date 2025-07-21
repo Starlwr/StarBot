@@ -4,13 +4,16 @@ import com.alibaba.fastjson2.JSON;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import com.starlwr.bot.bilibili.model.Dynamic;
+import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.util.CollectionUtil;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
@@ -19,13 +22,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 
 import java.time.Instant;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 /**
@@ -48,12 +46,41 @@ public class BilibiliDynamicService {
     @Resource
     private BilibiliApiUtil bilibili;
 
+    @Resource
+    private BilibiliAccountService accountService;
+
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+
+    private final BlockingQueue<Up> autoFollowQueue = new LinkedBlockingQueue<>();
+
+    private final Set<Up> alreadyFollowUps = new HashSet<>();
 
     private final Set<String> dynamicIds = new HashSet<>();
 
+    /**
+     * 关注 UP 主
+     * @param up UP 主
+     */
+    public void followUp(Up up) {
+        if (alreadyFollowUps.contains(up) || autoFollowQueue.contains(up)) {
+            return;
+        }
+
+        autoFollowQueue.add(up);
+    }
+
     @EventListener(StarBotDataSourceLoadCompleteEvent.class)
     public void handleLoadCompleteEvent() {
+        startDynamicPush();
+        autoFollowUps();
+    }
+
+    /**
+     * 启动动态推送服务
+     */
+    private void startDynamicPush() {
         int interval = properties.getDynamic().getApiRequestInterval();
         if (interval < 10) {
             log.warn("检测到动态推送抓取频率设置过小, 可能会造成动态抓取 API 访问被暂时封禁, 推荐将其设置为 10 以上的数值");
@@ -113,5 +140,76 @@ public class BilibiliDynamicService {
         }, interval, interval, TimeUnit.SECONDS);
 
         log.info("动态推送服务已启动");
+    }
+
+    /**
+     * 自动关注开启了动态推送的 UP 主
+     */
+    private void autoFollowUps() {
+        if (!properties.getDynamic().isAutoFollow()) {
+            log.warn("未启用自动关注开启了动态推送的 UP 主, 未关注的 UP 主的动态将无法被推送, 请手动关注所有需要动态推送的 UP 主");
+            return;
+        }
+
+        List<Up> needFollowUps = dataSource.getUsers(LivePlatform.BILIBILI.getName()).stream()
+                .filter(user -> user.getTargets().stream()
+                        .map(PushTarget::getMessages)
+                        .flatMap(List::stream)
+                        .anyMatch(message -> "com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent".equals(message.getEvent()))
+                ).map(Up::new)
+                .toList();
+
+        if (needFollowUps.isEmpty()) {
+            log.info("不存在打开了动态推送但未关注的 UP 主");
+            return;
+        }
+
+        alreadyFollowUps.addAll(bilibili.getFollowingUps());
+        alreadyFollowUps.add(accountService.getAccountInfo());
+
+        List<Up> notFollowUps = new ArrayList<>();
+        CollectionUtil.compareCollectionDiff(alreadyFollowUps, needFollowUps, notFollowUps, new ArrayList<>(), new ArrayList<>());
+
+        if (notFollowUps.isEmpty()) {
+            log.info("不存在打开了动态推送但未关注的 UP 主");
+            return;
+        }
+
+        log.info("检测到 {} 个打开了动态推送但未关注的 UP 主: [{}], 开始自动关注", notFollowUps.size(), notFollowUps.stream().map(up -> up.getUname() + "(" + up.getUid() + ")").collect(Collectors.joining(", ")));
+
+        autoFollowQueue.addAll(notFollowUps);
+
+        executor.submit(() -> {
+            Thread.currentThread().setName("auto-follow-queue");
+
+            if (properties.getDynamic().getAutoFollowInterval() < 30) {
+                log.warn("检测到自动关注 UP 主的间隔时间设置过小, 可能会造成 API 访问被暂时封禁, 推荐将其设置为 30 以上的数值");
+            }
+
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    Up up = autoFollowQueue.take();
+                    log.info("尝试关注 UP 主: {} ({})", up.getUname(), up.getUid());
+                    bilibili.followUp(up.getUid());
+                    alreadyFollowUps.add(up);
+                    log.info("关注 {} ({}) 成功: ", up.getUname(), up.getUid());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("自动关注中断", e);
+                    return;
+                } catch (Exception e) {
+                    log.error("自动关注异常", e);
+                }
+
+                try {
+                    if (!autoFollowQueue.isEmpty()) {
+                        log.info("即将在 {} 秒后关注下一个 UP 主, 自动关注队列中还剩余 {} 个 UP 主", properties.getDynamic().getAutoFollowInterval(), autoFollowQueue.size());
+                    }
+                    Thread.sleep(properties.getDynamic().getAutoFollowInterval() * 1000L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
     }
 }

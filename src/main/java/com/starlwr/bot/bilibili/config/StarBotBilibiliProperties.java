@@ -150,6 +150,16 @@ public class StarBotBilibiliProperties {
     @Setter
     public static class Dynamic {
         /**
+         * 是否自动关注开启了动态推送的 UP 主
+         */
+        private boolean autoFollow = true;
+
+        /**
+         * 自动关注的时间间隔，单位：秒
+         */
+        private int autoFollowInterval = 30;
+
+        /**
          * 动态接口请求频率，单位：秒
          */
         private int apiRequestInterval = 10;
