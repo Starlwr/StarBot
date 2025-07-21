@@ -168,7 +168,7 @@ public class BilibiliLiveRoomConnector {
                 BilibiliWebSocketHandler handler = new BilibiliWebSocketHandler(this, interval, sessionFuture);
                 webSocketClient.execute(handler, headers, URI.create(url));
 
-                this.session = sessionFuture.get(3, TimeUnit.SECONDS);
+                sessionFuture.get(3, TimeUnit.SECONDS);
 
                 lastHeartBeatResponseTime = Instant.now();
                 startHeartBeat();
@@ -489,13 +489,16 @@ public class BilibiliLiveRoomConnector {
          */
         @Override
         public void afterConnectionEstablished(@NonNull WebSocketSession session) {
-            log.info("与 {} 的直播间 {} 的 Websocket 连接成功, 开始发送认证数据", up.getUname(), up.getRoomId());
-            sessionFuture.complete(session);
-            try {
-                connector.sendVerifyData();
-            } catch (Exception e) {
-                log.error("发送 {} 的直播间 {} 的认证数据异常", up.getUname(), up.getRoomId(), e);
-            }
+            executor.submit(() -> {
+                log.info("与 {} 的直播间 {} 的 Websocket 连接成功, 开始发送认证数据", up.getUname(), up.getRoomId());
+                sessionFuture.complete(session);
+                connector.session = session;
+                try {
+                    connector.sendVerifyData();
+                } catch (Exception e) {
+                    log.error("发送 {} 的直播间 {} 的认证数据异常", up.getUname(), up.getRoomId(), e);
+                }
+            });
         }
 
         /**
