@@ -159,14 +159,12 @@ public class BilibiliLiveRoomConnector {
             try {
                 String url = getConnectUrl();
 
-                CompletableFuture<WebSocketSession> sessionFuture = new CompletableFuture<>();
-
                 WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
                 headers.add("User-Agent", properties.getNetwork().getUserAgent());
 
                 StandardWebSocketClient webSocketClient = new StandardWebSocketClient();
-                BilibiliWebSocketHandler handler = new BilibiliWebSocketHandler(this, interval, sessionFuture);
-                webSocketClient.execute(handler, headers, URI.create(url));
+                BilibiliWebSocketHandler handler = new BilibiliWebSocketHandler(this, interval);
+                CompletableFuture<WebSocketSession> sessionFuture = webSocketClient.execute(handler, headers, URI.create(url));
 
                 sessionFuture.get(3, TimeUnit.SECONDS);
 
@@ -473,14 +471,11 @@ public class BilibiliLiveRoomConnector {
 
         private final int interval;
 
-        private final CompletableFuture<WebSocketSession> sessionFuture;
-
-        private BilibiliWebSocketHandler(BilibiliLiveRoomConnector connector, int interval, CompletableFuture<WebSocketSession> sessionFuture) {
+        private BilibiliWebSocketHandler(BilibiliLiveRoomConnector connector, int interval) {
             this.connector = connector;
             this.executor = connector.executor;
             this.up = connector.up;
             this.interval = interval;
-            this.sessionFuture = sessionFuture;
         }
 
         /**
@@ -491,7 +486,6 @@ public class BilibiliLiveRoomConnector {
         public void afterConnectionEstablished(@NonNull WebSocketSession session) {
             executor.submit(() -> {
                 log.info("与 {} 的直播间 {} 的 Websocket 连接成功, 开始发送认证数据", up.getUname(), up.getRoomId());
-                sessionFuture.complete(session);
                 connector.session = session;
                 try {
                     connector.sendVerifyData();
