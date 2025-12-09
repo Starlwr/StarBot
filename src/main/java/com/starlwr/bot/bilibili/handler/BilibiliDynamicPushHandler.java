@@ -13,7 +13,7 @@ import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.sender.StarBotPushMessageSender;
+import com.starlwr.bot.core.sender.StarBotMessageSender;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.CollectionUtils;
@@ -59,12 +59,12 @@ import java.util.Optional;
 public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     private final StarBotBilibiliProperties properties;
 
-    private final StarBotPushMessageSender sender;
+    private final StarBotMessageSender sender;
 
     private final BilibiliDynamicService service;
 
     @Autowired
-    public BilibiliDynamicPushHandler(StarBotBilibiliProperties properties, StarBotPushMessageSender sender, BilibiliDynamicService service) {
+    public BilibiliDynamicPushHandler(StarBotBilibiliProperties properties, StarBotMessageSender sender, BilibiliDynamicService service) {
         this.properties = properties;
         this.sender = sender;
         this.service = service;
