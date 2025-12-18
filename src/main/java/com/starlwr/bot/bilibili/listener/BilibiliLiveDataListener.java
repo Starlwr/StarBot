@@ -95,7 +95,7 @@ public class BilibiliLiveDataListener {
 
         Set<Long> uids = event.getUsers().stream()
                 .filter(user -> LivePlatform.BILIBILI.getName().equals(user.getPlatform()))
-                .filter(PushUser::hasEnabledLiveEvent)
+                .filter(user -> !properties.getLive().isOnlyConnectNecessaryRooms() || user.hasEnabledLiveEvent())
                 .map(PushUser::getUid)
                 .collect(Collectors.toSet());
 
