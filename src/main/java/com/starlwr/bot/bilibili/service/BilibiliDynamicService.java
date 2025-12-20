@@ -12,7 +12,6 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
-import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.CollectionUtil;
@@ -218,11 +217,8 @@ public class BilibiliDynamicService {
         });
 
         List<Up> needFollowUps = dataSource.getUsers(LivePlatform.BILIBILI.getName()).stream()
-                .filter(user -> user.getTargets().stream()
-                        .map(PushTarget::getMessages)
-                        .flatMap(List::stream)
-                        .anyMatch(message -> "com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent".equals(message.getEvent()))
-                ).map(Up::new)
+                .filter(PushUser::hasEnabledDynamicEvent)
+                .map(Up::new)
                 .toList();
 
         if (needFollowUps.isEmpty()) {

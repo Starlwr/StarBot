@@ -6,7 +6,6 @@ import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.DefaultHandlerForEvent;
 import com.starlwr.bot.core.handler.StarBotEventHandler;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
@@ -47,7 +46,6 @@ import java.util.Optional;
  */
 @Slf4j
 @StarBotComponent
-@DefaultHandlerForEvent(event = "com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent")
 public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
     private final BilibiliApiUtil bilibili;
 
@@ -62,6 +60,11 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
         this.liveDataService = liveDataService;
     }
 
+    /**
+     * 处理事件
+     * @param baseEvent 事件
+     * @param pushMessage 推送消息
+     */
     @Override
     public void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage) {
         BilibiliLiveOffEvent event = (BilibiliLiveOffEvent) baseEvent;
@@ -115,6 +118,20 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
         }
     }
 
+    /**
+     * 获取事件处理器处理的事件类型
+     *
+     * @return 事件类型
+     */
+    @Override
+    public Class<? extends StarBotExternalBaseEvent> getEventType() {
+        return BilibiliLiveOffEvent.class;
+    }
+
+    /**
+     * 获取事件处理器默认参数
+     * @return 默认参数
+     */
     @Override
     public JSONObject getDefaultParams() {
         JSONObject params = new JSONObject();
