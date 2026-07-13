@@ -123,7 +123,6 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
      *
      * @return 事件类型
      */
-    @Override
     public Class<? extends StarBotExternalBaseEvent> getEventType() {
         return BilibiliLiveOffEvent.class;
     }

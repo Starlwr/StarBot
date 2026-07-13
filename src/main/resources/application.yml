@@ -11,6 +11,24 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
 
 starbot:
+  bilibili:
+    live-report:
+      storage:
+        # sqlite (default), redis, mysql, or memory
+        type: sqlite
+        # SQLite defaults to the directory containing the external config file.
+        # sqlite-file: ./config/starbot-live-report.sqlite3
+        redis-uri: redis://localhost:6379/0
+        redis-prefix: starbot:report:v1
+        # jdbc-url: jdbc:mysql://localhost:3306/starbot
+        # username: starbot
+        # password: change-me
+        fail-fast: false
+        migrate-legacy: true
+        v2-redis-uri: redis://localhost:6379/0
+        buffer-capacity: 20000
+        batch-size: 500
+        flush-millis: 1000
   core:
     log:
       console: INFO

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -14,6 +15,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 @Slf4j
 @StarBotComponent
+@EnableAsync
 public class StarBotBilibiliThreadPoolConfig {
     private final StarBotBilibiliProperties properties;
 
@@ -31,6 +33,20 @@ public class StarBotBilibiliThreadPoolConfig {
         executor.setKeepAliveSeconds(properties.getBilibiliThread().getKeepAliveSeconds());
         executor.setThreadNamePrefix("bilibili-thread-");
         executor.setRejectedExecutionHandler(new BilibiliWithLogCallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    /** Isolates optional report API baselines from the live-room websocket executor. */
+    @Bean
+    public ThreadPoolTaskExecutor bilibiliLiveReportThreadPool() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(1000);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("bilibili-report-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
         return executor;
     }

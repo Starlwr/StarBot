@@ -99,17 +99,25 @@ public class BilibiliApiUtil {
         Map<String, String> headers = new HashMap<>();
         headers.put("Referer", "https://www.bilibili.com");
         headers.put("User-Agent", properties.getNetwork().getUserAgent());
-        if (StringUtil.isNotBlank(cookies.getSessData()) && StringUtil.isNotBlank(cookies.getBuvid3()) && StringUtil.isNotBlank(cookies.getBiliJct())) {
-            headers.put(
-                    "Cookie", String.format(
-                            "SESSDATA=%s; buvid3=%s; bili_jct=%s; bili_ticket=%s; bili_ticket_expires=%s; ",
-                            cookies.getSessData(),
-                            cookies.getBuvid3(),
-                            cookies.getBiliJct(),
-                            sign.getTicket(),
-                            sign.getTicketExpires()
-                    )
-            );
+        if (StringUtil.isNotBlank(cookies.getSessData()) && StringUtil.isNotBlank(cookies.getBiliJct())) {
+            Map<String, String> values = new LinkedHashMap<>();
+            values.put("SESSDATA", cookies.getSessData());
+            values.put("bili_jct", cookies.getBiliJct());
+            values.put("buvid3", cookies.getBuvid3());
+            values.put("buvid4", cookies.getBuvid4());
+            values.put("DedeUserID", cookies.getDedeUserId());
+            values.put("b_nut", cookies.getBNut());
+            if (sign != null) {
+                values.put("bili_ticket", sign.getTicket());
+                values.put("bili_ticket_expires", String.valueOf(sign.getTicketExpires()));
+            }
+            if (cookies.getExtraCookies() != null) {
+                values.putAll(cookies.getExtraCookies());
+            }
+            headers.put("Cookie", values.entrySet().stream()
+                    .filter(entry -> StringUtil.isNotBlank(entry.getValue()))
+                    .map(entry -> entry.getKey() + "=" + entry.getValue())
+                    .collect(Collectors.joining("; ")));
         }
         return headers;
     }
@@ -274,6 +282,8 @@ public class BilibiliApiUtil {
         String subKey = sub.substring(sub.lastIndexOf("/") + 1, sub.lastIndexOf("."));
 
         sign = new WebSign(ticket, ticketExpires, imgKey, subKey);
+        cookies.setBiliTicket(ticket);
+        cookies.setBiliTicketExpires(ticketExpires.longValue());
 
         return sign;
     }
@@ -749,5 +759,33 @@ public class BilibiliApiUtil {
             }
         }
 
+    }
+
+    /**
+     * 获取直播报告的可选基线数据。每个接口独立容错，缺失字段表示未知，调用方不得按 0 处理。
+     */
+    public JSONObject getLiveReportBaseStats(Long uid, Long roomId) {
+        JSONObject stats = new JSONObject();
+        try {
+            JSONObject room = requestBilibiliApi("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=" + roomId);
+            if (room.containsKey("attention")) stats.put("fans", room.getLong("attention"));
+        } catch (Exception e) {
+            log.warn("获取直播报告粉丝基线失败, uid={}, roomId={}", uid, roomId, e);
+        }
+        try {
+            JSONObject medal = requestBilibiliApi("https://api.live.bilibili.com/xlive/app-ucenter/v1/fansMedal/fans_medal_info?target_id=" + uid + "&room_id=" + roomId);
+            if (medal.containsKey("fans_medal_light_count")) stats.put("fans_medal", medal.getLong("fans_medal_light_count"));
+        } catch (Exception e) {
+            log.warn("获取直播报告粉丝团基线失败, uid={}, roomId={}", uid, roomId, e);
+        }
+        try {
+            JSONObject guard = requestBilibiliApi("https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew?roomid=" + roomId
+                    + "&page=1&ruid=" + uid + "&page_size=1&typ=5&platform=web");
+            JSONObject info = guard.getJSONObject("info");
+            if (info != null && info.containsKey("num")) stats.put("guard", info.getLong("num"));
+        } catch (Exception e) {
+            log.warn("获取直播报告大航海基线失败, uid={}, roomId={}", uid, roomId, e);
+        }
+        return stats;
     }
 }

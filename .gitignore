@@ -6,4 +6,9 @@ DynamicDebug/
 data.json
 cookies.json
 datasource.json
+config/*.sqlite3
+config/*.sqlite3-*
+data/live-report-recovery-*.pb
 src/main/resources/application-dev.yml
+release/
+release-template/
