@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.springframework.scheduling.annotation.EnableAsync;
 
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -15,7 +14,6 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 @Slf4j
 @StarBotComponent
-@EnableAsync
 public class StarBotBilibiliThreadPoolConfig {
     private final StarBotBilibiliProperties properties;
 

@@ -34,6 +34,12 @@
     </licenses>
 
     <properties>
+        <!-- Standalone boot entry points must not be component-scanned when this artifact is loaded as a Core plugin. -->
+        <standalone.application.exclude>com/starlwr/bot/bilibili/StarBotBilibiliApplication*</standalone.application.exclude>
+        <standalone.hints.exclude>com/starlwr/bot/bilibili/StarBotNativeRuntimeHints*</standalone.hints.exclude>
+        <!-- Keep builds reproducible on Windows installations whose regional code page is not UTF-8. -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
         <kotlin.version>2.2.21</kotlin.version>
         <kotlin.compiler.jvmTarget>17</kotlin.compiler.jvmTarget>
@@ -103,6 +109,9 @@
         <dependency>
             <groupId>com.google.protobuf</groupId><artifactId>protobuf-java</artifactId><version>4.33.2</version>
         </dependency>
+        <dependency>
+            <groupId>com.huaban</groupId><artifactId>jieba-analysis</artifactId><version>1.0.2</version>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -114,6 +123,17 @@
     <build>
         <finalName>${project.artifactId}-${project.version}</finalName>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+                <configuration>
+                    <excludes>
+                        <exclude>${standalone.application.exclude}</exclude>
+                        <exclude>${standalone.hints.exclude}</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
             <!-- Kotlin 2.x uses the K2 compiler. Compile Kotlin before Java so both
                  languages can live in this plugin during the v2 migration. -->
             <plugin>

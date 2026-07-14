@@ -60,19 +60,21 @@ data class LiveReportSnapshot(
             stat.count += d.count; stat.value += d.value; stat.profit += d.profit
         }
         if (delta.occurredAt > 0) {
-            val minute = delta.occurredAt / 60_000 * 60_000
-            buckets.computeIfAbsent(key) { ConcurrentHashMap() }.merge(minute,
+            // v2 records interaction time rather than minute-only samples. One-second
+            // aggregation preserves its 20-bin curve while bounding long sessions.
+            val second = delta.occurredAt / 1_000 * 1_000
+            buckets.computeIfAbsent(key) { ConcurrentHashMap() }.merge(second,
                 if (delta.value != 0.0) delta.value else delta.count.toDouble(), Double::plus)
         }
         if (delta.metric == ReportMetric.BOX && delta.profit != 0.0 && delta.occurredAt > 0) {
             buckets.computeIfAbsent("box_profit") { ConcurrentHashMap() }
-                .merge(delta.occurredAt / 60_000 * 60_000, delta.profit, Double::plus)
+                .merge(delta.occurredAt / 1_000 * 1_000, delta.profit, Double::plus)
         }
         delta.text?.takeIf { it.isNotBlank() && danmuTexts.size < maxTexts }?.let(danmuTexts::add)
     }
 
     fun copySafe(): LiveReportSnapshot = JSON.parseObject(JSON.toJSONString(this), LiveReportSnapshot::class.java)
-    companion object { const val CURRENT_SCHEMA = 1 }
+    companion object { const val CURRENT_SCHEMA = 2 }
 }
 
 data class ReportSession(
@@ -88,6 +90,7 @@ object LiveReportSchemaMigration {
         require(snapshot.schemaVersion <= LiveReportSnapshot.CURRENT_SCHEMA) { "Unsupported future report schema ${snapshot.schemaVersion}" }
         while (snapshot.schemaVersion < LiveReportSnapshot.CURRENT_SCHEMA) when (snapshot.schemaVersion) {
             0 -> snapshot.schemaVersion = 1
+            1 -> snapshot.schemaVersion = 2 // Epoch-millis bucket keys remain compatible; new data is second-precise.
             else -> error("No report migration from schema ${snapshot.schemaVersion}")
         }
         return snapshot

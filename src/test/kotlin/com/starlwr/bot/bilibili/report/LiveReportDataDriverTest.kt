@@ -9,7 +9,7 @@ class LiveReportDataDriverTest {
     @TempDir lateinit var temp: Path
     private val session = ReportSession("bilibili:1:1000", "bilibili", 1, 2, "tester", 1000)
     private val delta = ReportDelta(ReportMetric.BOX, 2, 30.0, 5.0,
-        ReportUserDelta("9", "sender", count = 2, value = 30.0, profit = 5.0), 60_001, label = "gift")
+        ReportUserDelta("9", "sender", count = 2, value = 30.0, profit = 5.0), 65_432, label = "gift")
 
     @Test fun `memory driver is idempotent`() {
         val driver = InMemoryLiveReportDataDriver(); driver.initialize(); driver.createOrResume(session)
@@ -17,6 +17,7 @@ class LiveReportDataDriverTest {
         val result = driver.snapshot(session.sessionId)!!
         assertEquals(2, result.counts["box"]); assertEquals(5.0, result.profits["box"])
         assertEquals(2, result.users["box"]?.get("9")?.count)
+        assertEquals(setOf(65_000L), result.buckets["box"]?.keys)
     }
 
     @Test fun `sqlite survives reopen and rejects duplicate event`() {
@@ -45,5 +46,14 @@ class LiveReportDataDriverTest {
         assertEquals(25, driver.snapshot(session.sessionId)?.counts?.get("danmu"))
         assertEquals(25, driver.complete(session.sessionId, 2000)?.counts?.get("danmu"))
         driver.close()
+    }
+
+    @Test fun `schema one snapshots migrate without rewriting timestamp keys`() {
+        val legacy = LiveReportSnapshot(schemaVersion = 1).apply {
+            buckets["danmu"] = java.util.concurrent.ConcurrentHashMap(mapOf(60_000L to 3.0))
+        }
+        val migrated = LiveReportSchemaMigration.migrate(legacy)
+        assertEquals(LiveReportSnapshot.CURRENT_SCHEMA, migrated.schemaVersion)
+        assertEquals(mapOf(60_000L to 3.0), migrated.buckets["danmu"])
     }
 }

@@ -3,7 +3,6 @@ package com.starlwr.bot.bilibili.credential
 import com.alibaba.fastjson2.JSON
 import com.alibaba.fastjson2.JSONObject
 import com.alibaba.fastjson2.JSONWriter
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties
 import com.starlwr.bot.bilibili.model.Cookies
 import com.starlwr.bot.core.plugin.StarBotComponent
 import org.slf4j.LoggerFactory
@@ -35,12 +34,23 @@ import javax.crypto.spec.PSource
 class BilibiliCredentialProperties {
     var credentialFile: String = "./config/bilibili-credential.json"
     var legacyCookieFile: String = "./cookies.json"
-    var autoRefresh: Boolean = true
-    var refreshCheckMillis: Long = 6 * 60 * 60 * 1000L
+    var validateCredential: Boolean = true
+    var refreshCredential: Boolean = true
+    var validationMode: String = "both"
+    var validationLeaseSeconds: Long = 180
+    var refreshAtLifecycleRatio: Double = 0.25
+    var externalCredentialInitialRefresh: Boolean = true
+    var maintenanceIntervalMillis: Long = 30_000
+    var refreshRetryBaseSeconds: Long = 300
+    var refreshRetryMaxSeconds: Long = 21_600
     var qrPollMillis: Long = 3_000
     var qrRegenerateOnExpiry: Boolean = true
     var connectTimeoutSeconds: Long = 10
     var requestTimeoutSeconds: Long = 30
+    var userAgent: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/138 Safari/537.36"
+    var uaType: String = "Generic"
+    var chromeUserAgent: String? = null
+    var browserValidationApiKey: String? = null
 }
 
 data class QrCodeSession(val url: String, val key: String)
@@ -52,7 +62,7 @@ data class QrCodePollResult(val state: QrCodeState, val credential: Cookies? = n
 @EnableConfigurationProperties(BilibiliCredentialProperties::class)
 class BilibiliCredentialService(
     private val properties: BilibiliCredentialProperties,
-    private val bilibiliProperties: StarBotBilibiliProperties
+    private val browserIdentity: BilibiliBrowserIdentity
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val client = HttpClient.newBuilder()
@@ -97,15 +107,70 @@ class BilibiliCredentialService(
     }
 
     fun checkValid(credential: Cookies): Boolean {
-        val json = parseJson(request("GET", NAV_URL, credential))
-        return json.getIntValue("code", -1) == 0 && json.getJSONObject("data")?.getBooleanValue("isLogin") == true
+        if (!properties.validateCredential) return true
+        val mode = properties.validationMode.trim().lowercase()
+        val navValid = if (mode in setOf("nav", "both")) {
+            val json = parseJson(request("GET", NAV_URL, credential))
+            json.getIntValue("code", -1) == 0 && json.getJSONObject("data")?.getBooleanValue("isLogin") == true
+        } else true
+        val cookieInfoValid = if (mode in setOf("cookie-info", "cookie_info", "both")) {
+            runCatching { requireSuccess(request("GET", COOKIE_INFO_URL, credential), "validate Credential") }.isSuccess
+        } else true
+        require(mode in setOf("nav", "cookie-info", "cookie_info", "both")) {
+            "validation-mode must be nav, cookie-info, or both"
+        }
+        return navValid && cookieInfoValid
+    }
+
+    fun validateAndUpdateLease(credential: Cookies): Boolean = synchronized(lock) {
+        if (!properties.validateCredential) return true
+        val valid = checkValid(credential)
+        if (valid) {
+            applyLifecycle(credential, null)
+            save(credential)
+        }
+        valid
     }
 
     fun checkRefresh(credential: Cookies): Boolean =
         requireSuccess(request("GET", COOKIE_INFO_URL, credential), "check Credential refresh").getBooleanValue("refresh")
 
     fun refreshIfNeeded(credential: Cookies, force: Boolean = false): Cookies = synchronized(lock) {
-        if (!force && (!properties.autoRefresh || !checkRefresh(credential))) credential else refresh(credential)
+        if (!properties.refreshCredential) return credential
+        if (credential.acTimeValue.isBlank()) return credential
+        val now = System.currentTimeMillis() / 1000
+        val imported = credential.nextRefreshAtEpochSeconds <= 0
+        val lifecycleDue = credential.nextRefreshAtEpochSeconds in 1..now
+        val initialRefresh = imported && properties.externalCredentialInitialRefresh && credential.acTimeValue.isNotBlank()
+        if (!force && !lifecycleDue && !initialRefresh) return credential
+        if (!force && !checkRefresh(credential)) {
+            // Bilibili rejects correspondPath with 404 outside its refresh window.
+            // A successful cookie-info response renews our short validation lease.
+            applyLifecycle(credential, null)
+            save(credential)
+            return credential
+        }
+        refresh(credential)
+    }
+
+    fun maintain(credential: Cookies): Cookies = synchronized(lock) {
+        val now = System.currentTimeMillis() / 1000
+        if ((credential.refreshRetryAfterEpochSeconds ?: 0L) > now) return credential
+        if (properties.validateCredential && (credential.expiresAtEpochSeconds ?: 0L) <= now) {
+            check(validateAndUpdateLease(credential)) { "Bilibili Credential is no longer valid" }
+        }
+        refreshIfNeeded(credential, false)
+    }
+
+    fun recordMaintenanceFailure(credential: Cookies): Long = synchronized(lock) {
+        val failures = ((credential.refreshFailureCount ?: 0) + 1).coerceAtMost(30)
+        val multiplier = 1L shl (failures - 1).coerceAtMost(20)
+        val delay = (properties.refreshRetryBaseSeconds.coerceAtLeast(60) * multiplier)
+            .coerceAtMost(properties.refreshRetryMaxSeconds.coerceAtLeast(60))
+        credential.refreshFailureCount = failures
+        credential.refreshRetryAfterEpochSeconds = System.currentTimeMillis() / 1000 + delay
+        save(credential)
+        delay
     }
 
     fun refresh(old: Cookies): Cookies = synchronized(lock) {
@@ -117,7 +182,7 @@ class BilibiliCredentialService(
             "refresh_token" to old.acTimeValue,
             "source" to "main_web"
         )
-        val response = request("POST", COOKIE_REFRESH_URL, old, form, randomizeBuvid3 = true)
+        val response = request("POST", COOKIE_REFRESH_URL, old, form)
         val data = requireSuccess(response, "refresh Credential")
         val responseCookies = parseSetCookies(response.headers().allValues("set-cookie"))
         val refreshed = copyCredential(old).apply {
@@ -130,6 +195,7 @@ class BilibiliCredentialService(
             responseCookies["b_nut"]?.let { bNut = it }
             extraCookies.putAll(responseCookies.filterKeys { it !in KNOWN_COOKIES })
         }
+        applyLifecycle(refreshed, parseExpiry(response.headers().allValues("set-cookie")))
         val confirm = linkedMapOf("csrf" to refreshed.biliJct, "refresh_token" to old.acTimeValue)
         requireSuccess(request("POST", CONFIRM_REFRESH_URL, refreshed, confirm), "confirm Credential refresh")
         save(refreshed)
@@ -172,6 +238,7 @@ class BilibiliCredentialService(
         }
         if (!credential.hasRefreshableCredential())
             return QrCodePollResult(QrCodeState.ERROR, message = "QR login returned an incomplete Credential")
+        applyLifecycle(credential, null)
         save(credential)
         return QrCodePollResult(QrCodeState.DONE, credential)
     }
@@ -196,12 +263,49 @@ class BilibiliCredentialService(
         if (index <= 0) null else pair.substring(0, index).trim() to pair.substring(index + 1).trim()
     }.toMap(LinkedHashMap())
 
+    internal fun parseExpiry(headers: List<String>): Long? {
+        val now = System.currentTimeMillis() / 1000
+        headers.forEach { header ->
+            header.split(';').drop(1).forEach { attribute ->
+                val name = attribute.substringBefore('=').trim()
+                val value = attribute.substringAfter('=', "").trim()
+                if (name.equals("max-age", true)) value.toLongOrNull()?.let { return now + it }
+                if (name.equals("expires", true)) runCatching {
+                    java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toEpochSecond()
+                }.getOrNull()?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun applyLifecycle(credential: Cookies, serverExpiry: Long?) {
+        val now = System.currentTimeMillis() / 1000
+        val lease = properties.validationLeaseSeconds.coerceIn(60, 300)
+        val expiry = serverExpiry?.takeIf { it > now } ?: (now + lease)
+        val ratio = properties.refreshAtLifecycleRatio.coerceIn(0.01, 0.95)
+        credential.issuedAtEpochSeconds = now
+        credential.expiresAtEpochSeconds = expiry
+        credential.nextRefreshAtEpochSeconds = now + ((expiry - now) * ratio).toLong().coerceAtLeast(1)
+        credential.lastValidatedAtEpochSeconds = now
+        credential.refreshFailureCount = 0
+        credential.refreshRetryAfterEpochSeconds = 0L
+    }
+
     private fun getRefreshCsrf(credential: Cookies): String {
-        val response = request("GET", "https://www.bilibili.com/correspond/1/${correspondPath()}", credential, randomizeBuvid3 = true)
-        if (response.statusCode() == 404) error("Credential correspondPath expired or was rejected")
-        if (response.statusCode() != 200) error("Unable to get refresh CSRF: HTTP ${response.statusCode()}")
-        return REFRESH_CSRF.find(response.body())?.groupValues?.get(1)
-            ?: error("Credential refresh CSRF was absent from correspond response")
+        var lastStatus = 0
+        repeat(3) { attempt ->
+            // Current bilibili binds this page to the established device identity.
+            // Replacing buvid3 (as older bilibili-api-python did) now yields HTTP 404.
+            val response = request("GET", "https://www.bilibili.com/correspond/1/${correspondPath()}", credential)
+            lastStatus = response.statusCode()
+            if (lastStatus == 200) {
+                return REFRESH_CSRF.find(response.body())?.groupValues?.get(1)
+                    ?: error("Credential refresh CSRF was absent from correspond response")
+            }
+            if (lastStatus != 404) error("Unable to get refresh CSRF: HTTP $lastStatus")
+            if (attempt < 2) Thread.sleep(250L shl attempt)
+        }
+        error("Credential correspondPath was rejected after 3 attempts (HTTP $lastStatus)")
     }
 
     private fun correspondPath(): String {
@@ -214,8 +318,8 @@ class BilibiliCredentialService(
 
     private fun request(method: String, url: String, credential: Cookies? = null, form: Map<String, String>? = null, randomizeBuvid3: Boolean = false): HttpResponse<String> {
         val builder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(properties.requestTimeoutSeconds))
-            .header("User-Agent", bilibiliProperties.network.userAgent).header("Referer", "https://www.bilibili.com")
-            .header("Accept", "application/json, text/plain, */*")
+            .header("Referer", "https://www.bilibili.com").header("Accept", "application/json, text/plain, */*")
+        browserIdentity.headers(properties.userAgent).forEach(builder::header)
         if (credential != null) builder.header("Cookie", cookieHeader(credential, randomizeBuvid3))
         if (method == "POST") {
             val body = form.orEmpty().entries.joinToString("&") { "${encode(it.key)}=${encode(it.value)}" }
@@ -250,6 +354,9 @@ class BilibiliCredentialService(
         c.sessData = c.sessData.orEmpty(); c.biliJct = c.biliJct.orEmpty(); c.buvid3 = c.buvid3.orEmpty()
         c.buvid4 = c.buvid4.orEmpty(); c.dedeUserId = c.dedeUserId.orEmpty(); c.acTimeValue = c.acTimeValue.orEmpty()
         c.bNut = c.bNut.orEmpty(); c.biliTicket = c.biliTicket.orEmpty(); c.biliTicketExpires = c.biliTicketExpires ?: 0L
+        c.issuedAtEpochSeconds = c.issuedAtEpochSeconds ?: 0L; c.expiresAtEpochSeconds = c.expiresAtEpochSeconds ?: 0L
+        c.nextRefreshAtEpochSeconds = c.nextRefreshAtEpochSeconds ?: 0L; c.lastValidatedAtEpochSeconds = c.lastValidatedAtEpochSeconds ?: 0L
+        c.refreshFailureCount = c.refreshFailureCount ?: 0; c.refreshRetryAfterEpochSeconds = c.refreshRetryAfterEpochSeconds ?: 0L
         c.extraCookies = c.extraCookies ?: LinkedHashMap()
     }
 
@@ -257,6 +364,9 @@ class BilibiliCredentialService(
         it.sessData=s.sessData; it.biliJct=s.biliJct; it.buvid3=s.buvid3; it.buvid4=s.buvid4
         it.dedeUserId=s.dedeUserId; it.acTimeValue=s.acTimeValue; it.bNut=s.bNut
         it.biliTicket=s.biliTicket; it.biliTicketExpires=s.biliTicketExpires; it.extraCookies=LinkedHashMap(s.extraCookies.orEmpty())
+        it.issuedAtEpochSeconds=s.issuedAtEpochSeconds; it.expiresAtEpochSeconds=s.expiresAtEpochSeconds
+        it.nextRefreshAtEpochSeconds=s.nextRefreshAtEpochSeconds; it.lastValidatedAtEpochSeconds=s.lastValidatedAtEpochSeconds
+        it.refreshFailureCount=s.refreshFailureCount; it.refreshRetryAfterEpochSeconds=s.refreshRetryAfterEpochSeconds
     }
     private fun Cookies.hasLoginCredential() = sessData.isNotBlank() && biliJct.isNotBlank()
     private fun Cookies.hasRefreshableCredential() = hasLoginCredential() && dedeUserId.isNotBlank() && acTimeValue.isNotBlank() && buvid3.isNotBlank()

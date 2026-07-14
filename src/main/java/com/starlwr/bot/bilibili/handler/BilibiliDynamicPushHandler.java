@@ -8,6 +8,7 @@ import com.starlwr.bot.bilibili.service.BilibiliDynamicService;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.DefaultHandlerForEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
@@ -54,6 +55,7 @@ import java.util.Optional;
  */
 @Slf4j
 @StarBotComponent
+@DefaultHandlerForEvent(event = "com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent")
 public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     private final StarBotBilibiliProperties properties;
 

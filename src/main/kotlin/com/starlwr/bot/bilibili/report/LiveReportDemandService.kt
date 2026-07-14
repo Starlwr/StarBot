@@ -4,6 +4,7 @@ import com.starlwr.bot.core.datasource.AbstractDataSource
 import com.starlwr.bot.core.event.datasource.base.StarBotDataSourceChangeEvent
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent
 import com.starlwr.bot.core.plugin.StarBotComponent
+import org.slf4j.LoggerFactory
 import org.springframework.context.event.EventListener
 import java.util.concurrent.ConcurrentHashMap
 
@@ -12,6 +13,7 @@ data class ReportDemand(val enabled: Boolean = false, val sections: Set<String> 
 
 @StarBotComponent
 class LiveReportDemandService(private val dataSource: AbstractDataSource) {
+    private val log = LoggerFactory.getLogger(javaClass)
     private val demands = ConcurrentHashMap<Long, ReportDemand>()
     @EventListener(StarBotDataSourceLoadCompleteEvent::class)
     fun reload() {
@@ -27,6 +29,8 @@ class LiveReportDemandService(private val dataSource: AbstractDataSource) {
                 configs.flatMap { c -> c.charts.filterValues { it }.keys }.toSet(),
                 configs.any { it.wordCloud })
         }
+        val enabled = demands.filterValues { it.enabled }
+        log.info("直播报告采集需求已刷新, 启用主播数={}, UID={}", enabled.size, enabled.keys.sorted())
     }
     @EventListener fun onChange(@Suppress("UNUSED_PARAMETER") event: StarBotDataSourceChangeEvent) = reload()
     fun forUid(uid: Long?) = uid?.let { demands[it] } ?: ReportDemand()

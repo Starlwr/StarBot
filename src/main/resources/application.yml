@@ -2,6 +2,8 @@ server:
   port: 7827
 
 spring:
+  profiles:
+    active: json
   jpa:
     database: mysql
     hibernate:
@@ -12,6 +14,32 @@ spring:
 
 starbot:
   bilibili:
+    onebot-command:
+      enabled: false
+      websocket-url: ws://127.0.0.1:3000/
+      http-url: http://127.0.0.1:3000
+      access-token: ""
+      bot-qq: 0
+      sender-platform: qq-onebot
+      owners: []
+      reconnect-seconds: 3
+    account:
+      credential-file: ./config/bilibili-credential.json
+      legacy-cookie-file: ./cookies.json
+      validate-credential: true
+      refresh-credential: true
+      validation-mode: both
+      validation-lease-seconds: 180
+      refresh-at-lifecycle-ratio: 0.25
+      external-credential-initial-refresh: true
+      maintenance-interval-millis: 30000
+      refresh-retry-base-seconds: 300
+      refresh-retry-max-seconds: 21600
+      qr-poll-millis: 3000
+      qr-regenerate-on-expiry: true
+      ua-type: Generic
+      # chrome-user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36
+      # browser-validation-api-key: leave-empty-to-auto-detect-platform
     live-report:
       storage:
         # sqlite (default), redis, mysql, or memory

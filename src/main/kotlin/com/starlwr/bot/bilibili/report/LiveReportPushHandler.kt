@@ -57,7 +57,10 @@ class LiveReportPushHandler(
             if (!config.textFallback) return else painter.text(snapshot, config)
         }
         val prefix = if (config.atAll && target.type == PushTargetType.GROUP) "{at=all}{next}" else ""
-        Message.create(target.platform, target.type, target.num, prefix + content).forEach(sender::send)
+        val messages = Message.create(target.platform, target.type, target.num, prefix + content)
+        messages.forEach(sender::send)
+        log.info("直播报告已生成并加入发送队列, session={}, target={}:{}, output={}, messages={}",
+            snapshot.sessionId, target.platform, target.num, config.output, messages.size)
     }
 
     override fun getDefaultParams() = JSONObject.parseObject("""{
@@ -65,7 +68,7 @@ class LiveReportPushHandler(
       "sections":{"time":true,"danmu":true,"box":true,"gift":true,"sc":true,"guard":true,"fans":false,"fans_medal":false},
       "rankings":{"danmu":{"enabled":false,"top":3},"box":{"enabled":false,"top":3},"gift":{"enabled":false,"top":3},"sc":{"enabled":false,"top":3},"guard":{"enabled":false,"top":3}},
       "charts":{"danmu":{"enabled":false},"box":{"enabled":false},"box_profit":{"enabled":false},"gift":{"enabled":false},"sc":{"enabled":false},"guard":{"enabled":false}},
-      "word_cloud":{"enabled":false,"max_words":80,"dictionary":null,"stop_words":null},
+      "word_cloud":{"enabled":false,"max_words":80,"max_font_size":200,"dictionary":null,"stop_words":null},
       "logo":null,"save_image":false,"save_directory":"report"
     }""")
     private fun saveImage(snapshot: LiveReportSnapshot, config: LiveReportTargetConfig, base64: String) {

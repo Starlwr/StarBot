@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.credential.BilibiliBrowserIdentity;
 import com.starlwr.bot.bilibili.enums.DanmuType;
 import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
@@ -56,6 +57,8 @@ public class BilibiliApiUtil {
 
     private final HttpUtil http;
 
+    private final BilibiliBrowserIdentity browserIdentity;
+
     private final RetryTemplate retryTemplate = new RetryTemplate();
 
     private WebSign sign;
@@ -71,9 +74,11 @@ public class BilibiliApiUtil {
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Autowired
-    public BilibiliApiUtil(StarBotBilibiliProperties properties, HttpUtil http) {
+    public BilibiliApiUtil(StarBotBilibiliProperties properties, HttpUtil http,
+                           BilibiliBrowserIdentity browserIdentity) {
         this.properties = properties;
         this.http = http;
+        this.browserIdentity = browserIdentity;
     }
 
     @PostConstruct
@@ -98,7 +103,7 @@ public class BilibiliApiUtil {
     public Map<String, String> getBilibiliHeaders() {
         Map<String, String> headers = new HashMap<>();
         headers.put("Referer", "https://www.bilibili.com");
-        headers.put("User-Agent", properties.getNetwork().getUserAgent());
+        headers.putAll(browserIdentity.headers(properties.getNetwork().getUserAgent()));
         if (StringUtil.isNotBlank(cookies.getSessData()) && StringUtil.isNotBlank(cookies.getBiliJct())) {
             Map<String, String> values = new LinkedHashMap<>();
             values.put("SESSDATA", cookies.getSessData());

@@ -7,12 +7,11 @@ import java.awt.image.BufferedImage
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import kotlin.math.max
 
 @StarBotComponent
 class LiveReportPainter(private val factory: StarBotCommonPainterFactory) {
     fun paint(snapshot: LiveReportSnapshot, config: LiveReportTargetConfig): String {
-        val painter = factory.create(1000, 300, true).setRowSpace(18)
+        val painter = factory.create(1000, 300, true).setRowSpace(18).setPos(50, 50)
         painter.drawChapter("直播报告").drawTip("${snapshot.uname} (${snapshot.roomId})")
         config.logo?.let { path -> runCatching { javax.imageio.ImageIO.read(java.nio.file.Path.of(path).toFile()) }.getOrNull()?.let {
             painter.drawImage(resize(it, 160), Point(800, 20))
@@ -22,15 +21,22 @@ class LiveReportPainter(private val factory: StarBotCommonPainterFactory) {
             painter.drawSection("直播时间")
             painter.drawText("${time(snapshot.startedAt)} ~ ${time(end)}  (${duration(end - snapshot.startedAt)})")
         }
-        if (config.section("fans") || config.section("fans_medal")) {
+        val hasBaseData = listOf("fans", "fans_medal", "guard").any {
+            snapshot.metadata.containsKey("before_$it") && snapshot.metadata.containsKey("after_$it")
+        }
+        if (hasBaseData && (config.section("fans") || config.section("fans_medal") || config.section("guard"))) {
             painter.drawSection("基础数据")
             if (config.section("fans")) drawChange(painter, "粉丝", snapshot.metadata["before_fans"], snapshot.metadata["after_fans"])
             if (config.section("fans_medal")) drawChange(painter, "粉丝团", snapshot.metadata["before_fans_medal"], snapshot.metadata["after_fans_medal"])
-            drawChange(painter, "大航海", snapshot.metadata["before_guard"], snapshot.metadata["after_guard"])
+            if (config.section("guard")) drawChange(painter, "大航海", snapshot.metadata["before_guard"], snapshot.metadata["after_guard"])
         }
-        painter.drawSection("直播数据")
-        ReportMetric.entries.forEach { metric ->
-            val key = metric.name.lowercase(); if (!config.section(key)) return@forEach
+        val visibleMetrics = ReportMetric.entries.filter { metric ->
+            val key = metric.name.lowercase()
+            config.section(key) && ((snapshot.counts[key] ?: 0L) != 0L || (snapshot.values[key] ?: 0.0) != 0.0)
+        }
+        if (visibleMetrics.isNotEmpty()) painter.drawSection("直播数据")
+        visibleMetrics.forEach { metric ->
+            val key = metric.name.lowercase()
             val count = snapshot.counts[key] ?: 0; val value = snapshot.values[key] ?: 0.0
             val users = snapshot.users[key]?.size ?: 0
             when (metric) {
@@ -44,19 +50,27 @@ class LiveReportPainter(private val factory: StarBotCommonPainterFactory) {
         if (config.section("guard")) snapshot.labels["guard"]?.takeIf { it.isNotEmpty() }?.let { levels ->
             painter.drawTip("舰长 ${levels["captain"] ?: 0} / 提督 ${levels["commander"] ?: 0} / 总督 ${levels["governor"] ?: 0}")
         }
-        if (config.chart("box_profit")) snapshot.buckets["box_profit"]?.takeIf { it.isNotEmpty() }?.let {
-            painter.drawSection("盲盒盈亏曲线").drawImageWithBorder(lineChart(it.toSortedMap().runningTotals(), 900, 360))
-        }
         ReportMetric.entries.forEach { metric -> drawRanking(painter, snapshot, metric, config.top(metric.name.lowercase())) }
+        val end = snapshot.endedAt ?: System.currentTimeMillis()
+        if (config.chart("box_profit")) snapshot.buckets["box_profit"]?.takeIf { it.isNotEmpty() }?.let {
+            painter.drawSection("盲盒盈亏折线图")
+                .drawImage(V2InteractionChartRenderer.render(it, snapshot.startedAt, end, cumulative = true))
+        }
         ReportMetric.entries.forEach { metric ->
             if (config.chart(metric.name.lowercase())) snapshot.buckets[metric.name.lowercase()]?.takeIf { it.isNotEmpty() }?.let {
-                painter.drawSection("${title(metric)}互动曲线").drawImageWithBorder(lineChart(it, 900, 360))
+                painter.drawSection("${title(metric)}互动曲线图")
+                painter.drawTip(interactionTip(metric))
+                painter.drawImage(V2InteractionChartRenderer.render(it, snapshot.startedAt, end))
             }
         }
         if (config.wordCloud && snapshot.danmuTexts.isNotEmpty()) {
-            painter.drawSection("弹幕词云").drawImageWithBorder(wordCloud(snapshot.danmuTexts, config, 900, 420))
+            painter.drawSection("弹幕词云")
+            painter.drawImage(V2WordCloudRenderer.render(snapshot.danmuTexts, config))
         }
-        painter.drawCopyright(25)
+        painter.drawCopyright(50)
+        // CommonPainter grows in large chunks. Finalizing the background both
+        // makes dark text visible and crops the canvas to the actual draw cursor.
+        painter.createSolidRoundedRectangleBackground(Color.WHITE, 35)
         return painter.base64().orElseThrow { IllegalStateException("直播报告图片编码失败") }
     }
 
@@ -83,46 +97,24 @@ class LiveReportPainter(private val factory: StarBotCommonPainterFactory) {
         if (before == null || after == null) return
         val diff = after - before; p.drawText("$title: $before → $after (${if (diff >= 0) "+" else ""}$diff)")
     }
-    private fun Map<Long, Double>.runningTotals(): Map<Long, Double> {
-        var total = 0.0
-        return entries.associate { entry -> total += entry.value; entry.key to total }
-    }
-
-    private fun lineChart(data: Map<Long, Double>, width: Int, height: Int): BufferedImage {
-        val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB); val g = image.createGraphics()
-        quality(g); g.color = Color.WHITE; g.fillRect(0, 0, width, height); g.color = Color(230,230,230)
-        repeat(6) { val y = 25 + it * (height - 50) / 5; g.drawLine(50, y, width - 25, y) }
-        val points = data.toSortedMap().values.toList(); val maxValue = max(1.0, points.maxOf { kotlin.math.abs(it) })
-        g.color = Color(251, 114, 153); g.stroke = BasicStroke(3f)
-        points.zipWithNext().forEachIndexed { i, (a,b) ->
-            val x1 = 50 + i * (width - 75) / max(1, points.size - 1); val x2 = 50 + (i+1) * (width - 75) / max(1, points.size - 1)
-            val y1 = height / 2 - (a / maxValue * (height / 2 - 30)).toInt(); val y2 = height / 2 - (b / maxValue * (height / 2 - 30)).toInt()
-            g.drawLine(x1,y1,x2,y2)
-        }; g.dispose(); return image
-    }
-
-    private fun wordCloud(texts: List<String>, config: LiveReportTargetConfig, width: Int, height: Int): BufferedImage {
-        val counts = HashMap<String, Int>()
-        val customWords = readLines(config.dictionary)
-        val stopWords = STOP_WORDS + readLines(config.stopWords)
-        texts.asSequence().flatMap { Regex("[\\p{IsHan}]{2,}|[A-Za-z0-9_]{2,}").findAll(it).map { m -> m.value.lowercase() } }
-            .filterNot { it in stopWords }.forEach { counts.merge(it, 1, Int::plus) }
-        customWords.forEach { word -> val n=texts.sumOf { text -> Regex(Regex.escape(word)).findAll(text).count() }; if(n>0) counts[word]=n }
-        val words = counts.entries.sortedByDescending { it.value }.take(config.maxWords)
-        val image = BufferedImage(width,height,BufferedImage.TYPE_INT_ARGB); val g=image.createGraphics(); quality(g)
-        g.color=Color.WHITE; g.fillRect(0,0,width,height); var x=20; var y=45
-        val maxCount = words.firstOrNull()?.value?.coerceAtLeast(1) ?: 1
-        words.forEachIndexed { i, e ->
-            val size = 18 + e.value * 42 / maxCount; g.font=Font("SansSerif",Font.PLAIN,size); val w=g.fontMetrics.stringWidth(e.key)
-            if (x+w>width-20) { x=20; y+=size+16 }; if (y<height-15) { g.color=COLORS[i%COLORS.size]; g.drawString(e.key,x,y); x+=w+18 }
-        }; g.dispose(); return image
-    }
     private fun quality(g: Graphics2D) { g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON); g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON) }
     private fun resize(source:BufferedImage,width:Int):BufferedImage { val height=(source.height*(width.toDouble()/source.width)).toInt().coerceAtLeast(1); val out=BufferedImage(width,height,BufferedImage.TYPE_INT_ARGB); val g=out.createGraphics(); quality(g); g.drawImage(source,0,0,width,height,null); g.dispose(); return out }
-    private fun readLines(path:String?):Set<String> = path?.let { runCatching { java.nio.file.Files.readAllLines(java.nio.file.Path.of(it)).map(String::trim).filter(String::isNotBlank).toSet() }.getOrDefault(emptySet()) } ?: emptySet()
     private fun time(ms:Long)=FORMAT.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
-    private fun duration(ms:Long)="${ms/3_600_000} 小时 ${(ms/60_000)%60} 分钟 ${(ms/1000)%60} 秒"
+    private fun duration(ms:Long):String = buildString {
+        val seconds = ms.coerceAtLeast(0) / 1_000
+        val hours = seconds / 3_600; val minutes = seconds % 3_600 / 60; val remaining = seconds % 60
+        if (hours > 0) append("$hours 小时 ")
+        if (minutes > 0) append("$minutes 分钟 ")
+        if (remaining > 0 || isEmpty()) append("$remaining 秒")
+    }.trim()
     private fun fmt(v:Double)=java.text.DecimalFormat("0.##").format(v)
     private fun title(m:ReportMetric)=mapOf(ReportMetric.DANMU to "弹幕",ReportMetric.BOX to "盲盒",ReportMetric.GIFT to "礼物",ReportMetric.SC to "SC",ReportMetric.GUARD to "大航海").getValue(m)
-    companion object { val FORMAT:DateTimeFormatter=DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"); val COLORS=listOf(Color(251,114,153),Color(0,161,214),Color(126,87,194),Color(76,175,80)); val STOP_WORDS=setOf("这个","那个","就是","然后","但是","可以","不是","一个") }
+    private fun interactionTip(metric: ReportMetric) = when (metric) {
+        ReportMetric.DANMU -> "收获弹幕数量在本场直播中的分布情况"
+        ReportMetric.BOX -> "收获盲盒数量在本场直播中的分布情况"
+        ReportMetric.GIFT -> "收获礼物价值在本场直播中的分布情况"
+        ReportMetric.SC -> "收获 SC（醒目留言）价值在本场直播中的分布情况"
+        ReportMetric.GUARD -> "收获大航海开通数量在本场直播中的分布情况"
+    }
+    companion object { val FORMAT:DateTimeFormatter=DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss") }
 }

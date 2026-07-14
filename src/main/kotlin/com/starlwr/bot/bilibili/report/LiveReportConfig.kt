@@ -13,6 +13,7 @@ data class LiveReportTargetConfig(
     val charts: Map<String, Boolean> = emptyMap(),
     val wordCloud: Boolean = false,
     val maxWords: Int = 80,
+    val maxFontSize: Int = 200,
     val dictionary: String? = null,
     val stopWords: String? = null,
     val logo: String? = null,
@@ -47,6 +48,7 @@ data class LiveReportTargetConfig(
                 atAll = params.getBooleanValue("at_all", false), sections = sections, rankings = rankings, charts = charts,
                 wordCloud = cloud?.getBooleanValue("enabled") == true,
                 maxWords = cloud?.getIntValue("max_words", 80)?.coerceIn(10, 300) ?: 80,
+                maxFontSize = cloud?.getIntValue("max_font_size", 200)?.coerceIn(36, 240) ?: 200,
                 dictionary = cloud?.getString("dictionary"), stopWords = cloud?.getString("stop_words"),
                 logo = params.getString("logo"), saveImage = params.getBooleanValue("save_image", false),
                 saveDirectory = params.getString("save_directory") ?: "report")
