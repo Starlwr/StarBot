@@ -8,14 +8,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
-import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
@@ -27,7 +22,6 @@ public class BilibiliNetworkLogger {
     private static final Logger LOG = LoggerFactory.getLogger(BilibiliNetworkLogger.class);
     private static final Set<String> AVAILABLE_CATEGORIES = Set.of(
             "credential", "dynamic", "live-api", "live-ws", "heartbeat", "image", "onebot", "api", "other");
-    private static final int MAX_DUPLICATE_ENTRIES = 8192;
     private static final Pattern SENSITIVE_KEY = Pattern.compile(
             "(?i)^(authorization|cookie|set-cookie|sessdata|bili_jct|csrf|refresh_csrf|refresh_token|ac_time_value|access_token|token|key|qrcode_key)$");
     private static final Pattern JSON_SECRET = Pattern.compile(
@@ -37,8 +31,7 @@ public class BilibiliNetworkLogger {
 
     private final StarBotBilibiliProperties properties;
     private final AtomicLong requestSequence = new AtomicLong();
-    private final Map<String, DuplicateState> duplicateStates = new HashMap<>();
-    private long duplicateOperations;
+    private final DuplicateLogSuppressor consoleDuplicates = new DuplicateLogSuppressor();
 
     public BilibiliNetworkLogger(StarBotBilibiliProperties properties) {
         this.properties = properties;
@@ -129,41 +122,15 @@ public class BilibiliNetworkLogger {
             return;
         }
 
-        long now = System.nanoTime();
-        long windowNanos = Duration.ofSeconds(duplicateWindowSeconds()).toNanos();
-        String fingerprint = fingerprint(category + '\0' + stableContent);
-        DuplicateDecision decision;
-        synchronized (duplicateStates) {
-            cleanupDuplicateStates(now, windowNanos);
-            DuplicateState state = duplicateStates.get(fingerprint);
-            if (state == null || now - state.lastSeenNanos > windowNanos) {
-                duplicateStates.put(fingerprint, new DuplicateState(now));
-                decision = DuplicateDecision.FULL;
-            } else if (now - state.windowStartedNanos >= windowNanos) {
-                state.windowStartedNanos = now;
-                state.lastSeenNanos = now;
-                int suppressed = state.suppressed + 1;
-                state.suppressed = 0;
-                state.noticeEmitted = false;
-                decision = new DuplicateDecision(DuplicateAction.SUMMARY, suppressed);
-            } else {
-                state.lastSeenNanos = now;
-                state.suppressed++;
-                if (!state.noticeEmitted) {
-                    state.noticeEmitted = true;
-                    decision = DuplicateDecision.NOTICE;
-                } else {
-                    decision = DuplicateDecision.SUPPRESS;
-                }
-            }
-        }
+        DuplicateLogSuppressor.Result decision = consoleDuplicates.evaluate(
+                category + '\0' + stableContent, duplicateWindowSeconds());
 
         switch (decision.action()) {
             case FULL -> logger.debug(renderedMessage);
             case NOTICE -> logger.debug("DEBUG category={} 日志内容未变化；接下来 {} 秒内相同内容将静默抑制, fingerprint={}",
-                    category, duplicateWindowSeconds(), fingerprint.substring(0, 12));
+                    category, duplicateWindowSeconds(), decision.fingerprint().substring(0, 12));
             case SUMMARY -> logger.debug("DEBUG category={} 日志内容仍未变化；过去 {} 秒已抑制 {} 条重复日志, fingerprint={}",
-                    category, duplicateWindowSeconds(), decision.suppressed(), fingerprint.substring(0, 12));
+                    category, duplicateWindowSeconds(), decision.suppressed(), decision.fingerprint().substring(0, 12));
             case SUPPRESS -> { }
         }
     }
@@ -204,31 +171,6 @@ public class BilibiliNetworkLogger {
     private long duplicateWindowSeconds() {
         return Math.min(7 * 24 * 60 * 60L,
                 Math.max(1, properties.getNetwork().getConsoleDeduplicateSeconds()));
-    }
-
-    private String fingerprint(String content) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is unavailable", e);
-        }
-    }
-
-    private void cleanupDuplicateStates(long now, long windowNanos) {
-        duplicateOperations++;
-        if (duplicateOperations % 256 != 0 && duplicateStates.size() < MAX_DUPLICATE_ENTRIES) {
-            return;
-        }
-        duplicateStates.entrySet().removeIf(entry -> now - entry.getValue().lastSeenNanos > windowNanos * 2);
-        if (duplicateStates.size() >= MAX_DUPLICATE_ENTRIES) {
-            int removeCount = duplicateStates.size() - MAX_DUPLICATE_ENTRIES / 2;
-            var iterator = duplicateStates.keySet().iterator();
-            while (removeCount-- > 0 && iterator.hasNext()) {
-                iterator.next();
-                iterator.remove();
-            }
-        }
     }
 
     private String formatHeaders(Map<String, ?> headers) {
@@ -286,23 +228,4 @@ public class BilibiliNetworkLogger {
         }
     }
 
-    private static final class DuplicateState {
-        private long windowStartedNanos;
-        private long lastSeenNanos;
-        private int suppressed;
-        private boolean noticeEmitted;
-
-        private DuplicateState(long now) {
-            this.windowStartedNanos = now;
-            this.lastSeenNanos = now;
-        }
-    }
-
-    private enum DuplicateAction { FULL, NOTICE, SUMMARY, SUPPRESS }
-
-    private record DuplicateDecision(DuplicateAction action, int suppressed) {
-        private static final DuplicateDecision FULL = new DuplicateDecision(DuplicateAction.FULL, 0);
-        private static final DuplicateDecision NOTICE = new DuplicateDecision(DuplicateAction.NOTICE, 0);
-        private static final DuplicateDecision SUPPRESS = new DuplicateDecision(DuplicateAction.SUPPRESS, 0);
-    }
 }

@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.log.BilibiliDebugFileLogger;
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.bilibili.event.live.*;
 import com.starlwr.bot.bilibili.model.*;
@@ -16,8 +17,6 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.MathUtil;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
@@ -33,13 +32,13 @@ import java.util.function.BiFunction;
 @Slf4j
 @StarBotComponent
 public class BilibiliEventParser {
-    private static final Logger liveMessageLogger = LoggerFactory.getLogger("LiveMessageLogger");
-
     private final StarBotBilibiliProperties properties;
 
     private final BilibiliApiUtil bilibili;
 
     private final BilibiliGiftService giftService;
+
+    private final BilibiliDebugFileLogger debugFileLog;
 
     private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, StarBotBaseLiveEvent>> parsers = Map.of(
             "LIVE", BilibiliEventParser.this::parseLiveOnData,
@@ -54,10 +53,11 @@ public class BilibiliEventParser {
     );
 
     @Autowired
-    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliApiUtil bilibili, BilibiliGiftService giftService) {
+    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliApiUtil bilibili, BilibiliGiftService giftService, BilibiliDebugFileLogger debugFileLog) {
         this.properties = properties;
         this.bilibili = bilibili;
         this.giftService = giftService;
+        this.debugFileLog = debugFileLog;
     }
 
     /**
@@ -68,7 +68,7 @@ public class BilibiliEventParser {
     public Optional<StarBotBaseLiveEvent> parse(JSONObject data, LiveStreamerInfo source) {
         String type = data.getString("cmd");
         if (properties.getDebug().isLiveRoomRawMessageLog()) {
-            liveMessageLogger.debug("{}: {} -> {}", type, source.getRoomId(), data.toJSONString());
+            debugFileLog.live(type, source.getRoomId(), data.toJSONString());
         }
 
         if (parsers.containsKey(type)) {

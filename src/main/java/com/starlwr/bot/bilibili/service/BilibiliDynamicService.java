@@ -17,8 +17,7 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.CollectionUtil;
 import com.starlwr.bot.core.util.FixedSizeSetQueue;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.starlwr.bot.bilibili.log.BilibiliDebugFileLogger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
@@ -40,8 +39,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @StarBotComponent
 public class BilibiliDynamicService {
-    private static final Logger dynamicLogger = LoggerFactory.getLogger("DynamicLogger");
-
     private final ApplicationEventPublisher eventPublisher;
 
     private final StarBotBilibiliProperties properties;
@@ -54,6 +51,8 @@ public class BilibiliDynamicService {
 
     private final BilibiliDynamicPainterFactory factory;
 
+    private final BilibiliDebugFileLogger debugFileLog;
+
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -65,13 +64,14 @@ public class BilibiliDynamicService {
     private final FixedSizeSetQueue<String> dynamicIds = new FixedSizeSetQueue<>(1000);
 
     @Autowired
-    public BilibiliDynamicService(ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, AbstractDataSource dataSource, BilibiliApiUtil bilibili, BilibiliAccountService accountService, BilibiliDynamicPainterFactory factory) {
+    public BilibiliDynamicService(ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, AbstractDataSource dataSource, BilibiliApiUtil bilibili, BilibiliAccountService accountService, BilibiliDynamicPainterFactory factory, BilibiliDebugFileLogger debugFileLog) {
         this.eventPublisher = eventPublisher;
         this.properties = properties;
         this.dataSource = dataSource;
         this.bilibili = bilibili;
         this.accountService = accountService;
         this.factory = factory;
+        this.debugFileLog = debugFileLog;
     }
 
     /**
@@ -129,7 +129,7 @@ public class BilibiliDynamicService {
                     dynamicIds.add(dynamic.getId());
 
                     if (properties.getDebug().isDynamicRawMessageLog()) {
-                        dynamicLogger.debug("{}: {}", dynamic.getType(), JSON.toJSONString(dynamic));
+                        debugFileLog.dynamic(dynamic.getType(), dynamic.getId(), JSON.toJSONString(dynamic));
                     }
 
                     if ("DYNAMIC_TYPE_LIVE_RCMD".equals(dynamic.getType())) {

@@ -54,6 +54,11 @@ starbot:
         - all
       console-deduplicate: true
       console-deduplicate-seconds: 300
+      # File selectors also accept values such as live:DANMU_MSG or dynamic:DYNAMIC_TYPE_AV.
+      file-categories:
+        - all
+      file-deduplicate: true
+      file-deduplicate-seconds: 900
     live-report:
       storage:
         # sqlite (default), redis, mysql, or memory
