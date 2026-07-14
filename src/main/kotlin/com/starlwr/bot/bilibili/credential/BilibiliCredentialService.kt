@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.credential
 import com.alibaba.fastjson2.JSON
 import com.alibaba.fastjson2.JSONObject
 import com.alibaba.fastjson2.JSONWriter
+import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger
 import com.starlwr.bot.bilibili.model.Cookies
 import com.starlwr.bot.core.plugin.StarBotComponent
 import org.slf4j.LoggerFactory
@@ -23,6 +24,7 @@ import java.security.KeyFactory
 import java.security.spec.MGF1ParameterSpec
 import java.security.spec.X509EncodedKeySpec
 import java.time.Duration
+import java.time.Instant
 import java.util.Base64
 import java.util.LinkedHashMap
 import java.util.UUID
@@ -62,7 +64,8 @@ data class QrCodePollResult(val state: QrCodeState, val credential: Cookies? = n
 @EnableConfigurationProperties(BilibiliCredentialProperties::class)
 class BilibiliCredentialService(
     private val properties: BilibiliCredentialProperties,
-    private val browserIdentity: BilibiliBrowserIdentity
+    private val browserIdentity: BilibiliBrowserIdentity,
+    private val networkLog: BilibiliNetworkLogger
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val client = HttpClient.newBuilder()
@@ -107,7 +110,10 @@ class BilibiliCredentialService(
     }
 
     fun checkValid(credential: Cookies): Boolean {
-        if (!properties.validateCredential) return true
+        if (!properties.validateCredential) {
+            log.info("跳过 Bilibili Credential 有效性校验: starbot.bilibili.account.validate-credential=false")
+            return true
+        }
         val mode = properties.validationMode.trim().lowercase()
         val navValid = if (mode in setOf("nav", "both")) {
             val json = parseJson(request("GET", NAV_URL, credential))
@@ -119,45 +125,94 @@ class BilibiliCredentialService(
         require(mode in setOf("nav", "cookie-info", "cookie_info", "both")) {
             "validation-mode must be nav, cookie-info, or both"
         }
-        return navValid && cookieInfoValid
+        val valid = navValid && cookieInfoValid
+        log.info("Bilibili Credential 有效性校验完成: mode={}, navValid={}, cookieInfoValid={}, valid={}",
+            mode, navValid, cookieInfoValid, valid)
+        return valid
     }
 
     fun validateAndUpdateLease(credential: Cookies): Boolean = synchronized(lock) {
-        if (!properties.validateCredential) return true
+        if (!properties.validateCredential) {
+            log.info("不重置 Credential 校验租约: 有效性校验已禁用")
+            return true
+        }
         val valid = checkValid(credential)
         if (valid) {
+            val pendingInitialRefresh = credential.nextRefreshAtEpochSeconds <= 0 &&
+                properties.externalCredentialInitialRefresh && credential.acTimeValue.isNotBlank()
             applyLifecycle(credential, null)
+            if (pendingInitialRefresh) credential.nextRefreshAtEpochSeconds = 0L
             save(credential)
+            log.info("Credential 校验租约已重置: expiresAt={}, nextRefreshAt={}, pendingInitialRefresh={}",
+                describeEpoch(credential.expiresAtEpochSeconds), describeEpoch(credential.nextRefreshAtEpochSeconds),
+                pendingInitialRefresh)
+        } else {
+            log.info("Credential 校验失败: 保留现有凭据，不重置租约")
         }
         valid
     }
 
-    fun checkRefresh(credential: Cookies): Boolean =
-        requireSuccess(request("GET", COOKIE_INFO_URL, credential), "check Credential refresh").getBooleanValue("refresh")
+    fun checkRefresh(credential: Cookies): Boolean {
+        val refresh = requireSuccess(request("GET", COOKIE_INFO_URL, credential), "check Credential refresh")
+            .getBooleanValue("refresh")
+        log.info("Bilibili Credential 刷新窗口检查完成: serverRefresh={}", refresh)
+        return refresh
+    }
 
     fun refreshIfNeeded(credential: Cookies, force: Boolean = false): Cookies = synchronized(lock) {
-        if (!properties.refreshCredential) return credential
-        if (credential.acTimeValue.isBlank()) return credential
+        if (!properties.refreshCredential) {
+            log.info("跳过 Bilibili Credential 刷新: starbot.bilibili.account.refresh-credential=false")
+            return credential
+        }
+        if (credential.acTimeValue.isBlank()) {
+            log.info("跳过 Bilibili Credential 刷新: 凭据没有 ac_time_value/refresh_token，无法刷新")
+            return credential
+        }
         val now = System.currentTimeMillis() / 1000
         val imported = credential.nextRefreshAtEpochSeconds <= 0
         val lifecycleDue = credential.nextRefreshAtEpochSeconds in 1..now
         val initialRefresh = imported && properties.externalCredentialInitialRefresh && credential.acTimeValue.isNotBlank()
-        if (!force && !lifecycleDue && !initialRefresh) return credential
+        val reason = when {
+            force -> "调用方强制刷新"
+            lifecycleDue -> "Credential 生命周期已到刷新点 ${describeEpoch(credential.nextRefreshAtEpochSeconds)}"
+            initialRefresh -> "外部导入 Credential 尚未建立生命周期，配置要求首次尝试刷新"
+            else -> null
+        }
+        if (reason == null) {
+            log.info("跳过 Bilibili Credential 刷新: 尚未到刷新点, now={}, nextRefreshAt={}",
+                describeEpoch(now), describeEpoch(credential.nextRefreshAtEpochSeconds))
+            return credential
+        }
+        log.info("准备检查 Bilibili Credential 是否可刷新: reason={}", reason)
         if (!force && !checkRefresh(credential)) {
             // Bilibili rejects correspondPath with 404 outside its refresh window.
             // A successful cookie-info response renews our short validation lease.
             applyLifecycle(credential, null)
             save(credential)
+            log.info("跳过实际 Credential 刷新: Bilibili 返回 refresh=false; 已重置短期租约, nextRefreshAt={}",
+                describeEpoch(credential.nextRefreshAtEpochSeconds))
             return credential
         }
+        log.info("开始刷新 Bilibili Credential: reason={}, force={}", reason, force)
         refresh(credential)
     }
 
     fun maintain(credential: Cookies): Cookies = synchronized(lock) {
         val now = System.currentTimeMillis() / 1000
-        if ((credential.refreshRetryAfterEpochSeconds ?: 0L) > now) return credential
+        if ((credential.refreshRetryAfterEpochSeconds ?: 0L) > now) {
+            log.info("跳过本轮 Credential 维护: 刷新失败退避中, retryAfter={}",
+                describeEpoch(credential.refreshRetryAfterEpochSeconds))
+            return credential
+        }
         if (properties.validateCredential && (credential.expiresAtEpochSeconds ?: 0L) <= now) {
+            log.info("开始 Credential 有效性校验: 校验租约已到期, now={}, expiresAt={}",
+                describeEpoch(now), describeEpoch(credential.expiresAtEpochSeconds))
             check(validateAndUpdateLease(credential)) { "Bilibili Credential is no longer valid" }
+        } else if (!properties.validateCredential) {
+            log.info("跳过本轮 Credential 有效性校验: validate-credential=false")
+        } else {
+            log.info("跳过本轮 Credential 有效性校验: 校验租约仍有效, now={}, expiresAt={}",
+                describeEpoch(now), describeEpoch(credential.expiresAtEpochSeconds))
         }
         refreshIfNeeded(credential, false)
     }
@@ -170,6 +225,8 @@ class BilibiliCredentialService(
         credential.refreshFailureCount = failures
         credential.refreshRetryAfterEpochSeconds = System.currentTimeMillis() / 1000 + delay
         save(credential)
+        log.warn("Credential 维护失败已进入退避: failures={}, delaySeconds={}, retryAfter={}",
+            failures, delay, describeEpoch(credential.refreshRetryAfterEpochSeconds))
         delay
     }
 
@@ -199,7 +256,9 @@ class BilibiliCredentialService(
         val confirm = linkedMapOf("csrf" to refreshed.biliJct, "refresh_token" to old.acTimeValue)
         requireSuccess(request("POST", CONFIRM_REFRESH_URL, refreshed, confirm), "confirm Credential refresh")
         save(refreshed)
-        log.info("Bilibili Credential refreshed and old refresh token confirmed")
+        log.info("Bilibili Credential 刷新成功且旧 refresh token 已确认: issuedAt={}, expiresAt={}, nextRefreshAt={}",
+            describeEpoch(refreshed.issuedAtEpochSeconds), describeEpoch(refreshed.expiresAtEpochSeconds),
+            describeEpoch(refreshed.nextRefreshAtEpochSeconds))
         refreshed
     }
 
@@ -317,16 +376,29 @@ class BilibiliCredentialService(
     }
 
     private fun request(method: String, url: String, credential: Cookies? = null, form: Map<String, String>? = null, randomizeBuvid3: Boolean = false): HttpResponse<String> {
+        val headers = linkedMapOf("Referer" to "https://www.bilibili.com", "Accept" to "application/json, text/plain, */*")
+        headers.putAll(browserIdentity.headers(properties.userAgent))
+        if (credential != null) headers["Cookie"] = cookieHeader(credential, randomizeBuvid3)
+        val body = if (method == "POST") form.orEmpty().entries.joinToString("&") { "${encode(it.key)}=${encode(it.value)}" } else null
+        if (method == "POST") headers["Content-Type"] = "application/x-www-form-urlencoded"
         val builder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(properties.requestTimeoutSeconds))
-            .header("Referer", "https://www.bilibili.com").header("Accept", "application/json, text/plain, */*")
-        browserIdentity.headers(properties.userAgent).forEach(builder::header)
-        if (credential != null) builder.header("Cookie", cookieHeader(credential, randomizeBuvid3))
+        headers.forEach(builder::header)
         if (method == "POST") {
-            val body = form.orEmpty().entries.joinToString("&") { "${encode(it.key)}=${encode(it.value)}" }
-            builder.header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+            builder.POST(HttpRequest.BodyPublishers.ofString(body.orEmpty(), StandardCharsets.UTF_8))
         } else builder.GET()
-        return client.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+        val trace = networkLog.httpRequest("bilibili-credential", method, url, headers, body)
+        return try {
+            client.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)).also { response ->
+                networkLog.httpResponse(trace, response.statusCode(), response.headers().map(), response.body())
+            }
+        } catch (error: Throwable) {
+            networkLog.httpFailure(trace, error)
+            throw error
+        }
     }
+
+    private fun describeEpoch(value: Long?): String = value?.takeIf { it > 0 }
+        ?.let { "${Instant.ofEpochSecond(it)}($it)" } ?: "unset"
 
     private fun requireSuccess(response: HttpResponse<String>, operation: String): JSONObject {
         val json = parseJson(response)

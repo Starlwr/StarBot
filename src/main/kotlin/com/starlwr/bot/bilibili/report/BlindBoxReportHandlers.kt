@@ -1,6 +1,9 @@
 package com.starlwr.bot.bilibili.report
 
 import com.alibaba.fastjson2.JSONObject
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent
+import com.starlwr.bot.bilibili.event.live.BilibiliRandomGiftEvent
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent
 import com.starlwr.bot.core.event.live.common.RandomGiftEvent
 import com.starlwr.bot.core.handler.DefaultHandlerForEvent
@@ -15,6 +18,7 @@ import com.starlwr.bot.core.sender.StarBotMessageSender
 class BlindBoxRecordHandler : StarBotEventHandler {
     /** Compatibility handler; collection is performed once by LiveReportCollector. */
     override fun handle(event: StarBotExternalBaseEvent, pushMessage: PushMessage) = Unit
+    override fun getEventType(): Class<out StarBotExternalBaseEvent> = BilibiliRandomGiftEvent::class.java
     override fun getDefaultParams() = JSONObject().apply { put("note", "record blind-box statistics") }
 }
 
@@ -22,6 +26,7 @@ class BlindBoxRecordHandler : StarBotEventHandler {
 @StarBotComponent
 class BlindBoxLiveOnResetHandler : StarBotEventHandler {
     override fun handle(event: StarBotExternalBaseEvent, pushMessage: PushMessage) = Unit
+    override fun getEventType(): Class<out StarBotExternalBaseEvent> = BilibiliLiveOnEvent::class.java
     override fun getDefaultParams() = JSONObject().apply { put("note", "reset blind-box statistics on live start") }
 }
 
@@ -47,6 +52,8 @@ class BlindBoxLiveOffReportHandler(private val sender: StarBotMessageSender, pri
         val target = pushMessage.target
         Message.create(target.platform, target.type, target.num, content).forEach(sender::send)
     }
+
+    override fun getEventType(): Class<out StarBotExternalBaseEvent> = BilibiliLiveOffEvent::class.java
 
     override fun getDefaultParams() = JSONObject().apply {
         put("only_when_non_empty", true); put("top_limit", 5)

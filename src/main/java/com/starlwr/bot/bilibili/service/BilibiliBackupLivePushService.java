@@ -177,8 +177,9 @@ public class BilibiliBackupLivePushService {
         return user.getTargets().stream()
                 .map(PushTarget::getMessages)
                 .flatMap(List::stream)
-                .map(PushMessage::getEvent)
-                .anyMatch(event -> BilibiliLiveOnEvent.class.getName().equals(event)
-                        || BilibiliLiveOffEvent.class.getName().equals(event));
+                .map(PushMessage::getEventClass)
+                .filter(Objects::nonNull)
+                .anyMatch(eventClass -> BilibiliLiveOnEvent.class.equals(eventClass)
+                        || BilibiliLiveOffEvent.class.equals(eventClass));
     }
 }

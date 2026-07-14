@@ -6,6 +6,10 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
  * StarBotBilibili 配置类
  */
@@ -94,6 +98,33 @@ public class StarBotBilibiliProperties {
          * 接口请求重试间隔，单位：毫秒
          */
         private int apiRetryInterval = 3000;
+
+        /** Log Bilibili HTTP request and response exchanges at DEBUG. */
+        private boolean httpLogEnabled = false;
+
+        /** Log decoded WebSocket messages at DEBUG. */
+        private boolean websocketLogEnabled = false;
+
+        /** Include WebSocket heartbeat request and response messages. */
+        private boolean websocketHeartbeatLogEnabled = false;
+
+        /** Include request and response headers in HTTP diagnostics. */
+        private boolean logHeaders = true;
+
+        /** Preserve reusable credentials and tokens in DEBUG diagnostics. */
+        private boolean includeSensitiveData = false;
+
+        /** Maximum logged body characters; zero disables truncation. */
+        private int logMaxBodyLength = 16384;
+
+        /** DEBUG collection categories emitted to the console; use all to disable category filtering. */
+        private Set<String> consoleCategories = new LinkedHashSet<>(List.of("all"));
+
+        /** Suppress repeated DEBUG payloads while retaining change visibility. */
+        private boolean consoleDeduplicate = true;
+
+        /** Duplicate suppression window in seconds. */
+        private long consoleDeduplicateSeconds = 300;
     }
 
     /**

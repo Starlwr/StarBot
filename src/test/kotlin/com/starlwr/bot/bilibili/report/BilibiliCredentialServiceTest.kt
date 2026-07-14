@@ -1,6 +1,8 @@
 package com.starlwr.bot.bilibili.credential
 
 import com.alibaba.fastjson2.JSON
+import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties
+import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger
 import com.starlwr.bot.bilibili.model.Cookies
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -9,7 +11,9 @@ import org.junit.jupiter.api.Test
 class BilibiliCredentialServiceTest {
     private val properties = BilibiliCredentialProperties()
     private val identity = BilibiliBrowserIdentity(properties)
-    private val service = BilibiliCredentialService(properties, identity)
+    private val service = BilibiliCredentialService(
+        properties, identity, BilibiliNetworkLogger(StarBotBilibiliProperties())
+    )
 
     @Test
     fun `QR query preserves encoded credential values`() {

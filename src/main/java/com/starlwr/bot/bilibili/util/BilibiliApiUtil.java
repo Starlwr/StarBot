@@ -10,6 +10,7 @@ import com.starlwr.bot.bilibili.enums.DanmuType;
 import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
+import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger;
 import com.starlwr.bot.bilibili.model.*;
 import com.starlwr.bot.core.model.UserInfo;
 import com.starlwr.bot.core.plugin.StarBotComponent;
@@ -59,6 +60,8 @@ public class BilibiliApiUtil {
 
     private final BilibiliBrowserIdentity browserIdentity;
 
+    private final BilibiliNetworkLogger networkLog;
+
     private final RetryTemplate retryTemplate = new RetryTemplate();
 
     private WebSign sign;
@@ -75,10 +78,11 @@ public class BilibiliApiUtil {
 
     @Autowired
     public BilibiliApiUtil(StarBotBilibiliProperties properties, HttpUtil http,
-                           BilibiliBrowserIdentity browserIdentity) {
+                           BilibiliBrowserIdentity browserIdentity, BilibiliNetworkLogger networkLog) {
         this.properties = properties;
         this.http = http;
         this.browserIdentity = browserIdentity;
+        this.networkLog = networkLog;
     }
 
     @PostConstruct
@@ -156,15 +160,22 @@ public class BilibiliApiUtil {
      */
     public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params) {
         return retryTemplate.execute(retryContext -> {
+            BilibiliNetworkLogger.HttpTrace trace = networkLog.httpRequest(
+                    "bilibili-api#" + (retryContext.getRetryCount() + 1), method, url, headers, params);
             JSONObject rtn;
             JSONObject result;
-
-            if ("GET".equalsIgnoreCase(method)) {
-                result = http.getJson(url, headers);
-            } else if ("POST".equalsIgnoreCase(method)) {
-                result = http.postJsonAsForm(url, headers, params);
-            } else {
-                throw new IllegalArgumentException("不支持的请求方法: " + method);
+            try {
+                if ("GET".equalsIgnoreCase(method)) {
+                    result = http.getJson(url, headers);
+                } else if ("POST".equalsIgnoreCase(method)) {
+                    result = http.postJsonAsForm(url, headers, params);
+                } else {
+                    throw new IllegalArgumentException("不支持的请求方法: " + method);
+                }
+                networkLog.httpResponse(trace, 200, Collections.emptyMap(), result);
+            } catch (RuntimeException e) {
+                networkLog.httpFailure(trace, e);
+                throw e;
             }
 
             if (!result.containsKey("code")) {
@@ -212,7 +223,17 @@ public class BilibiliApiUtil {
             return Optional.empty();
         }
 
-        return http.getBufferedImage(url, headers);
+        BilibiliNetworkLogger.HttpTrace trace = networkLog.httpRequest("bilibili-image", "GET", url, headers, null);
+        try {
+            Optional<BufferedImage> image = http.getBufferedImage(url, headers);
+            networkLog.httpResponse(trace, image.isPresent() ? 200 : 204, Collections.emptyMap(),
+                    image.<Object>map(value -> Map.of("width", value.getWidth(), "height", value.getHeight()))
+                            .orElse("<empty image>"));
+            return image;
+        } catch (RuntimeException e) {
+            networkLog.httpFailure(trace, e);
+            throw e;
+        }
     }
 
     /**
@@ -235,7 +256,16 @@ public class BilibiliApiUtil {
             return CompletableFuture.completedFuture(Optional.empty());
         }
 
-        return http.asyncGetBufferedImage(url, headers);
+        BilibiliNetworkLogger.HttpTrace trace = networkLog.httpRequest("bilibili-image-async", "GET", url, headers, null);
+        return http.asyncGetBufferedImage(url, headers).whenComplete((image, error) -> {
+            if (error != null) {
+                networkLog.httpFailure(trace, error);
+            } else {
+                networkLog.httpResponse(trace, image.isPresent() ? 200 : 204, Collections.emptyMap(),
+                        image.<Object>map(value -> Map.of("width", value.getWidth(), "height", value.getHeight()))
+                                .orElse("<empty image>"));
+            }
+        });
     }
 
     /**
@@ -464,9 +494,15 @@ public class BilibiliApiUtil {
     public void liveRoomHeartbeat(@NonNull Long roomId) {
         String api = "https://live-trace.bilibili.com/xlive/rdata-interface/v1/heartbeat/webHeartBeat?pf=web&hb=";
         String hbParam = Base64.getEncoder().encodeToString(("60|" + roomId + "|1|0").getBytes(StandardCharsets.UTF_8));
-        http.asyncGet(api + hbParam, getBilibiliHeaders()).whenComplete((response, exception) -> {
+        String url = api + hbParam;
+        Map<String, String> headers = getBilibiliHeaders();
+        BilibiliNetworkLogger.HttpTrace trace = networkLog.httpRequest("bilibili-web-heartbeat", "GET", url, headers, null);
+        http.asyncGet(url, headers).whenComplete((response, exception) -> {
             if (exception != null) {
+                networkLog.httpFailure(trace, exception);
                 log.error("直播间 {} 发送 Web 心跳包异常, 偶然出现此异常可忽略", roomId, exception);
+            } else {
+                networkLog.httpResponse(trace, 200, Collections.emptyMap(), response);
             }
         });
     }

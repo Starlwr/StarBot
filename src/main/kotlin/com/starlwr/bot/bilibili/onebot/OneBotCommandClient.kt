@@ -2,6 +2,7 @@ package com.starlwr.bot.bilibili.onebot
 
 import com.alibaba.fastjson2.JSON
 import com.alibaba.fastjson2.JSONObject
+import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger
 import com.starlwr.bot.bilibili.report.BlindBoxCommandController
 import com.starlwr.bot.core.enums.PushTargetType
 import com.starlwr.bot.core.model.Message
@@ -15,6 +16,7 @@ import org.springframework.context.event.EventListener
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.WebSocket
+import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.CompletionStage
 import java.util.concurrent.Executors
@@ -42,7 +44,8 @@ class OneBotCommandProperties {
 class OneBotCommandClient(
     private val properties: OneBotCommandProperties,
     private val sender: StarBotMessageSender,
-    private val reportCommands: BlindBoxCommandController
+    private val reportCommands: BlindBoxCommandController,
+    private val networkLog: BilibiliNetworkLogger
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(javaClass)
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
@@ -65,13 +68,20 @@ class OneBotCommandClient(
     private fun connect() {
         if (closed || !connecting.compareAndSet(false, true)) return
         val builder = http.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(10))
-        if (properties.accessToken.isNotBlank()) builder.header("Authorization", "Bearer ${properties.accessToken}")
+        val headers = linkedMapOf<String, String>()
+        if (properties.accessToken.isNotBlank()) {
+            headers["Authorization"] = "Bearer ${properties.accessToken}"
+            builder.header("Authorization", headers.getValue("Authorization"))
+        }
+        val trace = networkLog.httpRequest("onebot-command-ws-handshake", "GET", properties.websocketUrl, headers, null)
         builder.buildAsync(URI.create(properties.websocketUrl), Listener()).whenComplete { webSocket, error ->
             connecting.set(false)
             if (error != null) {
+                networkLog.httpFailure(trace, error)
                 log.warn("OneBot command WebSocket connection failed: {}", error.toString())
                 scheduleReconnect()
             } else {
+                networkLog.httpResponse(trace, 101, emptyMap<String, String>(), "<websocket-upgrade>")
                 socket = webSocket
                 log.info("OneBot interactive command WebSocket connected: {}", properties.websocketUrl)
             }
@@ -128,12 +138,16 @@ class OneBotCommandClient(
         val target = if (targetType == PushTargetType.GROUP) groupId else userId
         val messages = Message.create(properties.senderPlatform, targetType, target, message)
         messages.forEach(sender::send)
+        log.debug("OneBot command reply OUT via sender={}, target={}:{}, body={}",
+            properties.senderPlatform, targetType, target, message)
         log.info("OneBot command reply queued through {}, target={}:{}, messages={}",
             properties.senderPlatform, targetType, target, messages.size)
     }
 
     override fun close() {
         closed = true
+        networkLog.websocketOut("onebot-command", null, "CLOSE", "shutdown".toByteArray(StandardCharsets.UTF_8).size,
+            "shutdown", false)
         socket?.sendClose(WebSocket.NORMAL_CLOSURE, "shutdown")
         scheduler.shutdownNow()
     }
@@ -144,7 +158,13 @@ class OneBotCommandClient(
         override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
             synchronized(buffer) {
                 buffer.append(data)
-                if (last) { val message = buffer.toString(); buffer.setLength(0); handle(message) }
+                if (last) {
+                    val message = buffer.toString()
+                    buffer.setLength(0)
+                    networkLog.websocketIn("onebot-command", null, "TEXT",
+                        message.toByteArray(StandardCharsets.UTF_8).size, message, false)
+                    handle(message)
+                }
             }
             webSocket.request(1)
             return null

@@ -117,7 +117,10 @@ public class BilibiliAccountService {
             initialDelayString = "${starbot.bilibili.account.maintenance-interval-millis:30000}")
     public void refreshCredentialIfNeeded() {
         Cookies current = bilibili.getCookies();
-        if (current == null || current.getSessData() == null || current.getSessData().isBlank()) return;
+        if (current == null || current.getSessData() == null || current.getSessData().isBlank()) {
+            log.info("跳过本轮 Bilibili Credential 维护: 当前没有可用的 SESSDATA");
+            return;
+        }
         try {
             Cookies refreshed = credentialService.maintain(current);
             if (refreshed != current) {

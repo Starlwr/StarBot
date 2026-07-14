@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.report
 import com.alibaba.fastjson2.JSONObject
 import com.starlwr.bot.core.enums.PushTargetType
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent
 import com.starlwr.bot.core.handler.StarBotEventHandler
 import com.starlwr.bot.core.model.Message
 import com.starlwr.bot.core.model.PushMessage
@@ -27,6 +28,9 @@ class LiveReportPushHandler(
         try { executor.execute { handleAsync(event, pushMessage) } }
         catch (e: java.util.concurrent.RejectedExecutionException) { log.error("直播报告队列已满，拒绝生成报告", e) }
     }
+
+    override fun getEventType(): Class<out StarBotExternalBaseEvent> = BilibiliLiveOffEvent::class.java
+
     private fun handleAsync(event: StarBotExternalBaseEvent, pushMessage: PushMessage) {
         val config = LiveReportTargetConfig.from(pushMessage.paramsJsonObject)
         if (!config.enabled) return

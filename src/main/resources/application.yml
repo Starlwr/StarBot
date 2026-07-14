@@ -40,6 +40,20 @@ starbot:
       ua-type: Generic
       # chrome-user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36
       # browser-validation-api-key: leave-empty-to-auto-detect-platform
+    network:
+      # Full exchanges are emitted at DEBUG when enabled.
+      http-log-enabled: false
+      websocket-log-enabled: false
+      websocket-heartbeat-log-enabled: false
+      log-headers: true
+      include-sensitive-data: false
+      # 0 disables truncation.
+      log-max-body-length: 16384
+      # Available: all, credential, dynamic, live-api, live-ws, heartbeat, image, onebot, api, other
+      console-categories:
+        - all
+      console-deduplicate: true
+      console-deduplicate-seconds: 300
     live-report:
       storage:
         # sqlite (default), redis, mysql, or memory

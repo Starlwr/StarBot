@@ -7,6 +7,7 @@ import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.enums.DataHeaderType;
 import com.starlwr.bot.bilibili.enums.DataPackType;
 import com.starlwr.bot.bilibili.event.live.*;
+import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger;
 import com.starlwr.bot.bilibili.model.ConnectAddress;
 import com.starlwr.bot.bilibili.model.ConnectInfo;
 import com.starlwr.bot.bilibili.model.Up;
@@ -63,6 +64,8 @@ public class BilibiliLiveRoomConnector {
 
     private final BilibiliApiUtil bilibili;
 
+    private final BilibiliNetworkLogger networkLog;
+
     @Getter
     private final Up up;
 
@@ -94,7 +97,7 @@ public class BilibiliLiveRoomConnector {
         private long timestamp;
     }
 
-    public BilibiliLiveRoomConnector(ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiUtil bilibili, Up up) {
+    public BilibiliLiveRoomConnector(ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiUtil bilibili, BilibiliNetworkLogger networkLog, Up up) {
         this.executor = executor;
         this.taskScheduler = taskScheduler;
         this.eventPublisher = eventPublisher;
@@ -104,6 +107,7 @@ public class BilibiliLiveRoomConnector {
         this.taskService = taskService;
         this.eventParser = eventParser;
         this.bilibili = bilibili;
+        this.networkLog = networkLog;
 
         this.up = up;
 
@@ -151,11 +155,14 @@ public class BilibiliLiveRoomConnector {
             received = false;
 
             CompletableFuture<WebSocketSession> sessionFuture = null;
+            BilibiliNetworkLogger.HttpTrace handshakeTrace = null;
             try {
                 String url = getConnectUrl();
 
                 WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
                 headers.add("User-Agent", properties.getNetwork().getUserAgent());
+                handshakeTrace = networkLog.httpRequest("bilibili-live-ws-handshake", "GET", url,
+                        headers.toSingleValueMap(), null);
 
                 WebSocketContainer container = ContainerProvider.getWebSocketContainer();
                 container.setDefaultMaxBinaryMessageBufferSize(2 * 1024 * 1024);
@@ -164,7 +171,8 @@ public class BilibiliLiveRoomConnector {
                 sessionFuture = webSocketClient.execute(handler, headers, URI.create(url));
 
                 if (handler.awaitConnection()) {
-                    sessionFuture.get();
+                    WebSocketSession connectedSession = sessionFuture.get();
+                    networkLog.httpResponse(handshakeTrace, 101, Collections.emptyMap(), "<websocket-upgrade>");
 
                     lastHeartBeatResponseTime = Instant.now();
                     startHeartBeat();
@@ -176,6 +184,9 @@ public class BilibiliLiveRoomConnector {
                     throw new TimeoutException();
                 }
             } catch (Exception e) {
+                if (handshakeTrace != null) {
+                    networkLog.httpFailure(handshakeTrace, e);
+                }
                 status = ConnectStatus.ERROR;
                 if (e instanceof TimeoutException) {
                     log.warn("与 {} 的直播间 {} 连接超时, 将在 {} 秒后重新连接", up.getUname(), up.getRoomId(), interval / 1000);
@@ -362,6 +373,11 @@ public class BilibiliLiveRoomConnector {
      */
     private void send(DataHeaderType headerType, DataPackType packType, byte[] data) {
         byte[] packedData = pack(headerType, packType, data);
+        networkLog.websocketOut("bilibili-live", up.getRoomId(),
+                packType.name() + "/protocol-" + headerType.getCode(), packedData.length,
+                Map.of("decoded", new String(data, StandardCharsets.UTF_8),
+                        "frameBase64", Base64.getEncoder().encodeToString(packedData)),
+                packType == DataPackType.HEARTBEAT);
         try {
             session.sendMessage(new BinaryMessage(packedData));
         } catch (IOException e) {
@@ -564,11 +580,27 @@ public class BilibiliLiveRoomConnector {
                 try {
                     connector.received = true;
                     if (rawMessage instanceof BinaryMessage message) {
-                        byte[] payload = message.getPayload().array();
+                        ByteBuffer payloadBuffer = message.getPayload().slice();
+                        byte[] payload = new byte[payloadBuffer.remaining()];
+                        payloadBuffer.get(payload);
 
                         List<JSONObject> unpackedDatas = connector.unPack(payload);
+                        boolean heartbeatFrame = !unpackedDatas.isEmpty() && unpackedDatas.stream()
+                                .allMatch(item -> item.getIntValue("datapack_type") == DataPackType.HEARTBEAT_RESPONSE.getCode());
+                        connector.networkLog.websocketIn("bilibili-live", up.getRoomId(), "BINARY-FRAME",
+                                payload.length, Map.of("frameBase64", Base64.getEncoder().encodeToString(payload)),
+                                heartbeatFrame);
                         for (JSONObject unpackedData: unpackedDatas) {
                             int dataPackType = unpackedData.getIntValue("datapack_type");
+                            String kind = Arrays.stream(DataPackType.values())
+                                    .filter(type -> type.getCode() == dataPackType)
+                                    .map(Enum::name)
+                                    .findFirst()
+                                    .orElse("TYPE-" + dataPackType);
+                            int protocolVersion = unpackedData.getIntValue("protocol_version");
+                            connector.networkLog.websocketIn("bilibili-live", up.getRoomId(),
+                                    kind + "/protocol-" + protocolVersion, payload.length, unpackedData,
+                                    dataPackType == DataPackType.HEARTBEAT_RESPONSE.getCode());
                             JSONObject data = unpackedData.getJSONObject("data");
 
                             if (dataPackType == DataPackType.NOTICE.getCode()) {
@@ -626,6 +658,9 @@ public class BilibiliLiveRoomConnector {
                                 log.warn("收到 {} 的直播间 {} 的未知类型({})消息: {}", up.getUname(), up.getRoomId(), dataPackType, data.toJSONString());
                             }
                         }
+                    } else if (rawMessage instanceof TextMessage message) {
+                        connector.networkLog.websocketIn("bilibili-live", up.getRoomId(), "TEXT",
+                                message.getPayloadLength(), message.getPayload(), false);
                     }
                 } catch (Exception e) {
                     log.error("处理 {} 的直播间 {} 的 WebSocket 消息异常", up.getUname(), up.getRoomId(), e);
@@ -666,6 +701,9 @@ public class BilibiliLiveRoomConnector {
             if (connectTimeout) {
                 return;
             }
+
+            connector.networkLog.websocketIn("bilibili-live", up.getRoomId(), "CLOSE", 0,
+                    Map.of("code", closeStatus.getCode(), "reason", closeStatus.getReason()), false);
 
             executor.execute(() -> {
                 if (connector.status == ConnectStatus.CLOSING) {
