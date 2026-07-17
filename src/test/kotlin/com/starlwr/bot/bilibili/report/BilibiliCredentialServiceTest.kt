@@ -7,6 +7,8 @@ import com.starlwr.bot.bilibili.model.Cookies
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPOutputStream
 
 class BilibiliCredentialServiceTest {
     private val properties = BilibiliCredentialProperties()
@@ -64,5 +66,30 @@ class BilibiliCredentialServiceTest {
         assertEquals("sess", credential.sessData)
         assertEquals("42", credential.dedeUserId)
         assertEquals("refresh", credential.acTimeValue)
+    }
+
+    @Test
+    fun `correspond path uses cookie info server timestamp`() {
+        val timestamp = 1_784_302_907_043L
+        val window = service.parseRefreshWindow(JSON.parseObject(
+            """{"refresh":true,"timestamp":$timestamp}"""
+        ))
+
+        assertTrue(window.refresh)
+        assertEquals(timestamp, window.timestampMillis)
+        val path = service.correspondPath(window.timestampMillis)
+        assertEquals(256, path.length)
+        assertTrue(path.all { it in '0'..'9' || it in 'a'..'f' })
+    }
+
+    @Test
+    fun `credential HTTP gzip body is decoded as UTF-8`() {
+        val expected = "刷新路径不存在"
+        val compressed = ByteArrayOutputStream().use { output ->
+            GZIPOutputStream(output).use { it.write(expected.toByteArray(Charsets.UTF_8)) }
+            output.toByteArray()
+        }
+
+        assertEquals(expected, service.decodeHttpBody(compressed, "gzip"))
     }
 }

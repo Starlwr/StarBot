@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
+import java.io.ByteArrayInputStream
 import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -27,6 +28,8 @@ import java.time.Instant
 import java.util.Base64
 import java.util.LinkedHashMap
 import java.util.UUID
+import java.util.zip.GZIPInputStream
+import java.util.zip.InflaterInputStream
 import javax.crypto.Cipher
 import javax.crypto.spec.OAEPParameterSpec
 import javax.crypto.spec.PSource
@@ -58,6 +61,7 @@ class BilibiliCredentialProperties {
 data class QrCodeSession(val url: String, val key: String)
 enum class QrCodeState { WAIT_SCAN, WAIT_CONFIRM, EXPIRED, DONE, ERROR }
 data class QrCodePollResult(val state: QrCodeState, val credential: Cookies? = null, val message: String? = null)
+internal data class CredentialRefreshWindow(val refresh: Boolean, val timestampMillis: Long)
 
 /** Full web Credential lifecycle ported from bilibili-api-python. */
 @StarBotComponent
@@ -145,10 +149,21 @@ class BilibiliCredentialService @Autowired constructor(
     }
 
     fun checkRefresh(credential: Cookies): Boolean {
-        val refresh = requireSuccess(request("GET", COOKIE_INFO_URL, credential), "check Credential refresh")
-            .getBooleanValue("refresh")
-        log.info("Bilibili Credential 刷新窗口检查完成: serverRefresh={}", refresh)
-        return refresh
+        return checkRefreshWindow(credential).refresh
+    }
+
+    internal fun checkRefreshWindow(credential: Cookies): CredentialRefreshWindow {
+        val data = requireSuccess(request("GET", COOKIE_INFO_URL, credential), "check Credential refresh")
+        return parseRefreshWindow(data).also { window ->
+            log.info("Bilibili Credential 刷新窗口检查完成: serverRefresh={}, serverTimestamp={}",
+                window.refresh, window.timestampMillis)
+        }
+    }
+
+    internal fun parseRefreshWindow(data: JSONObject): CredentialRefreshWindow {
+        val timestamp = data.getLongValue("timestamp")
+        require(timestamp > 0) { "Bilibili cookie/info response omitted server timestamp" }
+        return CredentialRefreshWindow(data.getBooleanValue("refresh"), timestamp)
     }
 
     fun refreshIfNeeded(credential: Cookies, force: Boolean = false): Cookies = synchronized(lock) {
@@ -176,17 +191,19 @@ class BilibiliCredentialService @Autowired constructor(
             return credential
         }
         log.info("准备检查 Bilibili Credential 是否可刷新: reason={}", reason)
-        if (!force && !checkRefresh(credential)) {
-            // Bilibili rejects correspondPath with 404 outside its refresh window.
-            // A successful cookie-info response renews our short validation lease.
+        val refreshWindow = checkRefreshWindow(credential)
+        if (!refreshWindow.refresh) {
+            // A caller cannot bypass the server refresh gate: current Web only creates
+            // the correspond iframe after cookie/info returns refresh=true.
             applyLifecycle(credential, null)
             save(credential)
-            log.info("跳过实际 Credential 刷新: Bilibili 返回 refresh=false; 已重置短期租约, nextRefreshAt={}",
-                describeEpoch(credential.nextRefreshAtEpochSeconds))
+            log.info("跳过实际 Credential 刷新: Bilibili 返回 refresh=false; force={} 不绕过服务器刷新窗口; " +
+                "已重置短期租约, nextRefreshAt={}", force, describeEpoch(credential.nextRefreshAtEpochSeconds))
             return credential
         }
-        log.info("开始刷新 Bilibili Credential: reason={}, force={}", reason, force)
-        refresh(credential)
+        log.info("开始刷新 Bilibili Credential: reason={}, force={}, serverTimestamp={}",
+            reason, force, refreshWindow.timestampMillis)
+        refresh(credential, refreshWindow.timestampMillis)
     }
 
     fun maintain(credential: Cookies): Cookies = synchronized(lock) {
@@ -223,11 +240,17 @@ class BilibiliCredentialService @Autowired constructor(
     }
 
     fun refresh(old: Cookies): Cookies = synchronized(lock) {
+        val refreshWindow = checkRefreshWindow(old)
+        require(refreshWindow.refresh) { "Bilibili does not currently permit Credential refresh" }
+        refresh(old, refreshWindow.timestampMillis)
+    }
+
+    private fun refresh(old: Cookies, serverTimestampMillis: Long): Cookies {
         require(old.biliJct.isNotBlank()) { "bili_jct is required to refresh Credential" }
         require(old.acTimeValue.isNotBlank()) { "ac_time_value/refresh_token is required to refresh Credential" }
         val form = linkedMapOf(
             "csrf" to old.biliJct,
-            "refresh_csrf" to getRefreshCsrf(old),
+            "refresh_csrf" to getRefreshCsrf(old, serverTimestampMillis),
             "refresh_token" to old.acTimeValue,
             "source" to "main_web"
         )
@@ -251,7 +274,7 @@ class BilibiliCredentialService @Autowired constructor(
         log.info("Bilibili Credential 刷新成功且旧 refresh token 已确认: issuedAt={}, expiresAt={}, nextRefreshAt={}",
             describeEpoch(refreshed.issuedAtEpochSeconds), describeEpoch(refreshed.expiresAtEpochSeconds),
             describeEpoch(refreshed.nextRefreshAtEpochSeconds))
-        refreshed
+        return refreshed
     }
 
     fun generateQrCode(): QrCodeSession {
@@ -342,33 +365,33 @@ class BilibiliCredentialService @Autowired constructor(
         credential.refreshRetryAfterEpochSeconds = 0L
     }
 
-    private fun getRefreshCsrf(credential: Cookies): String {
-        var lastStatus = 0
-        repeat(3) { attempt ->
-            // Current bilibili binds this page to the established device identity.
-            // Replacing buvid3 (as older bilibili-api-python did) now yields HTTP 404.
-            val response = request("GET", "https://www.bilibili.com/correspond/1/${correspondPath()}", credential)
-            lastStatus = response.statusCode()
-            if (lastStatus == 200) {
-                return REFRESH_CSRF.find(response.body())?.groupValues?.get(1)
-                    ?: error("Credential refresh CSRF was absent from correspond response")
-            }
-            if (lastStatus != 404) error("Unable to get refresh CSRF: HTTP $lastStatus")
-            if (attempt < 2) Thread.sleep(250L shl attempt)
+    private fun getRefreshCsrf(credential: Cookies, serverTimestampMillis: Long): String {
+        // Current Web uses cookie/info.data.timestamp verbatim. A client timestamp,
+        // even if only milliseconds newer, decrypts to a path the server rejects.
+        val path = correspondPath(serverTimestampMillis)
+        val response = request("GET", "https://www.bilibili.com/correspond/1/$path", credential)
+        if (response.statusCode() != 200) {
+            error("Credential correspondPath was rejected (HTTP ${response.statusCode()}, serverTimestamp=$serverTimestampMillis)")
         }
-        error("Credential correspondPath was rejected after 3 attempts (HTTP $lastStatus)")
+        return REFRESH_CSRF.find(response.body())?.groupValues?.get(1)
+            ?: error("Credential refresh CSRF was absent from correspond response")
     }
 
-    private fun correspondPath(): String {
+    internal fun correspondPath(serverTimestampMillis: Long): String {
+        require(serverTimestampMillis > 0) { "serverTimestampMillis must be positive" }
         val key = KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(Base64.getMimeDecoder().decode(CORRESPOND_PUBLIC_KEY)))
         val cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding")
         cipher.init(Cipher.ENCRYPT_MODE, key, OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT))
-        return cipher.doFinal("refresh_${System.currentTimeMillis()}".toByteArray(StandardCharsets.UTF_8))
+        return cipher.doFinal("refresh_$serverTimestampMillis".toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
     private fun request(method: String, url: String, credential: Cookies? = null, form: Map<String, String>? = null, randomizeBuvid3: Boolean = false): HttpResponse<String> {
-        val headers = linkedMapOf("Referer" to "https://www.bilibili.com", "Accept" to "application/json, text/plain, */*")
+        val headers = linkedMapOf(
+            "Referer" to "https://www.bilibili.com",
+            "Accept" to "application/json, text/plain, */*",
+            "Accept-Encoding" to "gzip, deflate",
+        )
         headers.putAll(browserIdentity.headers(properties.userAgent))
         if (credential != null) headers["Cookie"] = cookieHeader(credential, randomizeBuvid3)
         val body = if (method == "POST") form.orEmpty().entries.joinToString("&") { "${encode(it.key)}=${encode(it.value)}" } else null
@@ -380,13 +403,29 @@ class BilibiliCredentialService @Autowired constructor(
         } else builder.GET()
         val trace = networkLog.httpRequest("bilibili-credential", method, url, headers, body)
         return try {
-            client.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)).also { response ->
+            client.send(builder.build(), decodedUtf8BodyHandler()).also { response ->
                 networkLog.httpResponse(trace, response.statusCode(), response.headers().map(), response.body())
             }
         } catch (error: Throwable) {
             networkLog.httpFailure(trace, error)
             throw error
         }
+    }
+
+    private fun decodedUtf8BodyHandler(): HttpResponse.BodyHandler<String> = HttpResponse.BodyHandler { info ->
+        val encoding = info.headers().firstValue("content-encoding").orElse("").trim().lowercase()
+        HttpResponse.BodySubscribers.mapping(HttpResponse.BodySubscribers.ofByteArray()) { bytes ->
+            decodeHttpBody(bytes, encoding)
+        }
+    }
+
+    internal fun decodeHttpBody(bytes: ByteArray, encoding: String): String {
+        val decoded = when (encoding.trim().lowercase()) {
+            "gzip" -> GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readAllBytes() }
+            "deflate" -> InflaterInputStream(ByteArrayInputStream(bytes)).use { it.readAllBytes() }
+            else -> bytes
+        }
+        return String(decoded, StandardCharsets.UTF_8)
     }
 
     private fun describeEpoch(value: Long?): String = value?.takeIf { it > 0 }

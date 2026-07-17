@@ -50,6 +50,13 @@ starbot:
       versions-catalog: known-good-versions-with-downloads.json
       download-enabled: true
       catalog-endpoint: https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json
+      # Omitted: inherit starbot.bilibili.http.proxy-uri. Empty string: force direct download.
+      # download-proxy-uri: ""
+      download-http-version: auto
+      download-parallelism: 4
+      download-chunk-bytes: 8388608
+      download-probe-bytes: 2097152
+      download-retry-max-attempts: 5
       allow-system-chrome: true
       allow-system-chromium: true
       allow-edge: false
