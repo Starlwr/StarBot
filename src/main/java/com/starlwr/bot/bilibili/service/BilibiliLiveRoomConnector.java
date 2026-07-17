@@ -11,6 +11,9 @@ import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger;
 import com.starlwr.bot.bilibili.model.ConnectAddress;
 import com.starlwr.bot.bilibili.model.ConnectInfo;
 import com.starlwr.bot.bilibili.model.Up;
+import com.starlwr.bot.bilibili.protocol.DanmakuFrame;
+import com.starlwr.bot.bilibili.protocol.DanmakuPacketCodec;
+import com.starlwr.bot.bilibili.protocol.BilibiliHeartbeatPayload;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
@@ -39,6 +42,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Bilibili 直播间连接器
@@ -66,6 +70,12 @@ public class BilibiliLiveRoomConnector {
 
     private final BilibiliNetworkLogger networkLog;
 
+    private final DanmakuPacketCodec packetCodec;
+
+    private final StandardWebSocketClient webSocketClient;
+
+    private final AtomicInteger addressCursor = new AtomicInteger();
+
     @Getter
     private final Up up;
 
@@ -88,6 +98,8 @@ public class BilibiliLiveRoomConnector {
 
     private final FixedSizeSetQueue<DanmuDTO> latestDanmus = new FixedSizeSetQueue<>(30);
 
+    private final FixedSizeSetQueue<String> latestAckMessages = new FixedSizeSetQueue<>(2000);
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -97,7 +109,7 @@ public class BilibiliLiveRoomConnector {
         private long timestamp;
     }
 
-    public BilibiliLiveRoomConnector(ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiUtil bilibili, BilibiliNetworkLogger networkLog, Up up) {
+    public BilibiliLiveRoomConnector(ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiUtil bilibili, BilibiliNetworkLogger networkLog, DanmakuPacketCodec packetCodec, StandardWebSocketClient webSocketClient, Up up) {
         this.executor = executor;
         this.taskScheduler = taskScheduler;
         this.eventPublisher = eventPublisher;
@@ -108,6 +120,8 @@ public class BilibiliLiveRoomConnector {
         this.eventParser = eventParser;
         this.bilibili = bilibili;
         this.networkLog = networkLog;
+        this.packetCodec = packetCodec;
+        this.webSocketClient = webSocketClient;
 
         this.up = up;
 
@@ -133,7 +147,11 @@ public class BilibiliLiveRoomConnector {
      */
     private String getConnectUrl() {
         connectInfo = bilibili.getLiveRoomConnectInfo(up.getRoomId());
-        ConnectAddress address = connectInfo.getAddresses().get(0);
+        List<ConnectAddress> addresses = connectInfo.getAddresses();
+        if (addresses == null || addresses.isEmpty()) {
+            throw new IllegalStateException("getDanmuInfo returned no websocket hosts for room " + up.getRoomId());
+        }
+        ConnectAddress address = addresses.get(Math.floorMod(addressCursor.getAndIncrement(), addresses.size()));
         return String.format("wss://%s:%d/sub", address.getHost(), address.getWssPort());
     }
 
@@ -164,9 +182,6 @@ public class BilibiliLiveRoomConnector {
                 handshakeTrace = networkLog.httpRequest("bilibili-live-ws-handshake", "GET", url,
                         headers.toSingleValueMap(), null);
 
-                WebSocketContainer container = ContainerProvider.getWebSocketContainer();
-                container.setDefaultMaxBinaryMessageBufferSize(2 * 1024 * 1024);
-                StandardWebSocketClient webSocketClient = new StandardWebSocketClient(container);
                 BilibiliWebSocketHandler handler = new BilibiliWebSocketHandler(this);
                 sessionFuture = webSocketClient.execute(handler, headers, URI.create(url));
 
@@ -174,12 +189,6 @@ public class BilibiliLiveRoomConnector {
                     WebSocketSession connectedSession = sessionFuture.get();
                     networkLog.httpResponse(handshakeTrace, 101, Collections.emptyMap(), "<websocket-upgrade>");
 
-                    lastHeartBeatResponseTime = Instant.now();
-                    startHeartBeat();
-
-                    lastDetectRiskTime = Instant.now();
-                    latestDanmus.clear();
-                    startDetectRisk();
                 } else {
                     throw new TimeoutException();
                 }
@@ -195,13 +204,7 @@ public class BilibiliLiveRoomConnector {
                     log.warn("与 {} 的直播间 {} 连接异常, 将在 {} 秒后重新连接", up.getUname(), up.getRoomId(), interval / 1000, e);
                 }
 
-                try {
-                    Thread.sleep(interval);
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                }
-
-                taskService.add(this);
+                taskService.schedule(this, interval);
             }
         });
     }
@@ -238,6 +241,9 @@ public class BilibiliLiveRoomConnector {
                 "roomid", up.getRoomId(),
                 "protover", 3,
                 "buvid", bilibili.getCookies().getBuvid3(),
+                "support_ack", true,
+                "queue_uuid", randomQueueUuid(),
+                "scene", "room",
                 "platform", "web",
                 "type", 2,
                 "key", connectInfo.getToken()
@@ -274,8 +280,8 @@ public class BilibiliLiveRoomConnector {
             }
 
             try {
-                send(DataHeaderType.HEARTBEAT, DataPackType.HEARTBEAT, "[object Object]".getBytes(StandardCharsets.UTF_8));
-                bilibili.liveRoomHeartbeat(up.getRoomId());
+                send(DataHeaderType.HEARTBEAT, DataPackType.HEARTBEAT,
+                        BilibiliHeartbeatPayload.bytes());
             } catch (Exception e) {
                 log.error("发送 {} 的直播间 {} 的心跳包异常", up.getUname(), up.getRoomId(), e);
             }
@@ -372,7 +378,7 @@ public class BilibiliLiveRoomConnector {
      * @param data 数据
      */
     private void send(DataHeaderType headerType, DataPackType packType, byte[] data) {
-        byte[] packedData = pack(headerType, packType, data);
+        byte[] packedData = packetCodec.encode(packType.getCode(), data, headerType.getCode(), 1);
         networkLog.websocketOut("bilibili-live", up.getRoomId(),
                 packType.name() + "/protocol-" + headerType.getCode(), packedData.length,
                 Map.of("decoded", new String(data, StandardCharsets.UTF_8),
@@ -383,6 +389,40 @@ public class BilibiliLiveRoomConnector {
         } catch (IOException e) {
             log.error("发送 {} 的直播间 {} 的 Websocket 消息异常", up.getUname(), up.getRoomId(), e);
         }
+    }
+
+    private void sendOperation(int operation, byte[] data) {
+        byte[] packedData = packetCodec.encode(operation, data, 1, 1);
+        networkLog.websocketOut("bilibili-live", up.getRoomId(), "OP-" + operation,
+                packedData.length, Map.of("decoded", new String(data, StandardCharsets.UTF_8),
+                        "frameBase64", Base64.getEncoder().encodeToString(packedData)), false);
+        try {
+            session.sendMessage(new BinaryMessage(packedData));
+        } catch (IOException e) {
+            log.error("发送 {} 的直播间 {} WebSocket op={} 消息异常", up.getUname(), up.getRoomId(), operation, e);
+        }
+    }
+
+    private String randomQueueUuid() {
+        String value = Long.toUnsignedString(ThreadLocalRandom.current().nextLong(), 36);
+        return value.length() >= 8 ? value.substring(value.length() - 8) : "0".repeat(8 - value.length()) + value;
+    }
+
+    /** Returns false when a p_msg_type=1 duplicate must not be dispatched again. */
+    private boolean acknowledgeMessage(JSONObject data) {
+        if (data == null || !data.getBooleanValue("p_is_ack")) return true;
+        String messageId = data.getString("msg_id");
+        String command = data.getString("cmd");
+        if (messageId == null || messageId.isBlank() || command == null || command.isBlank()) return true;
+        int messageType = data.getIntValue("p_msg_type", 0);
+        if (messageType == 1 && latestAckMessages.contains(messageId)) return false;
+        if (messageType == 1) latestAckMessages.add(messageId);
+        JSONObject ack = new JSONObject();
+        ack.put("msg_id", messageId);
+        ack.put("cmd", command);
+        ack.put("p_msg_type", messageType);
+        sendOperation(24, ack.toJSONString().getBytes(StandardCharsets.UTF_8));
+        return true;
     }
 
     /**
@@ -420,80 +460,17 @@ public class BilibiliLiveRoomConnector {
      */
     private List<JSONObject> unPack(byte[] data) {
         List<JSONObject> result = new ArrayList<>();
-
-        ByteBuffer header = ByteBuffer.wrap(data, 0, 12).order(ByteOrder.BIG_ENDIAN);
-        header.getInt();
-        header.getShort();
-        short protocolVersion = header.getShort();
-        int dataPackType = header.getInt();
-
-        byte[] realData;
-        if (protocolVersion == DataHeaderType.BROTLI_JSON.getCode()) {
-            byte[] compressedData = new byte[data.length - 16];
-            System.arraycopy(data, 16, compressedData, 0, compressedData.length);
-
-            try (ByteArrayInputStream compressedInputStream = new ByteArrayInputStream(compressedData);
-                 BrotliInputStream brotliInputStream = new BrotliInputStream(compressedInputStream);
-                 ByteArrayOutputStream decompressedOutputStream = new ByteArrayOutputStream()) {
-                byte[] buffer = new byte[16 * 1024];
-                int bytesRead;
-                while ((bytesRead = brotliInputStream.read(buffer)) != -1) {
-                    decompressedOutputStream.write(buffer, 0, bytesRead);
-                }
-                realData = decompressedOutputStream.toByteArray();
-            } catch (IOException e) {
-                throw new RuntimeException("解析 brotli 数据异常", e);
-            }
-        } else {
-            realData = data;
-        }
-
-        if (protocolVersion == DataHeaderType.HEARTBEAT.getCode() && dataPackType == DataPackType.HEARTBEAT_RESPONSE.getCode()) {
-            realData = new byte[data.length - 16];
-            System.arraycopy(data, 16, realData, 0, data.length - 16);
-
-            ByteBuffer heartBeatBuffer = ByteBuffer.wrap(realData);
-            int view = heartBeatBuffer.getInt();
-
-            JSONObject heartBeatData = new JSONObject();
-            heartBeatData.put("protocol_version", protocolVersion);
-            heartBeatData.put("datapack_type", dataPackType);
-            heartBeatData.put("data", new JSONObject().fluentPut("view", view));
-
-            result.add(heartBeatData);
-            return result;
-        }
-
-        int offset = 0;
-        while (offset < realData.length) {
-            ByteBuffer chunkBuffer = ByteBuffer.wrap(realData, offset, 12);
-            int chunkLength = chunkBuffer.getInt();
-            chunkBuffer.getShort();
-            short chunkProtocolVersion = chunkBuffer.getShort();
-            int chunkDataPackType = chunkBuffer.getInt();
-
-            int dataLength = chunkLength - 16;
-            ByteBuffer dataBuffer = ByteBuffer.wrap(realData, offset + 16, dataLength);
-            byte[] chunkData = new byte[dataLength];
-            dataBuffer.get(chunkData);
-
+        for (DanmakuFrame frame : packetCodec.decode(data)) {
             JSONObject receiveData = new JSONObject();
-            receiveData.put("protocol_version", chunkProtocolVersion);
-            receiveData.put("datapack_type", chunkDataPackType);
-
-            if (chunkProtocolVersion == 0 || chunkProtocolVersion == 2) {
-                receiveData.put("data", JSON.parseObject(new String(chunkData, StandardCharsets.UTF_8)));
-            } else if (chunkProtocolVersion == 1) {
-                if (chunkDataPackType == DataPackType.HEARTBEAT_RESPONSE.getCode()) {
-                    receiveData.put("data", new JSONObject().fluentPut("view", ByteBuffer.wrap(chunkData).getInt()));
-                } else if (chunkDataPackType == DataPackType.VERIFY_SUCCESS_RESPONSE.getCode()) {
-                    receiveData.put("data", JSON.parseObject(new String(chunkData, StandardCharsets.UTF_8)));
-                }
-            }
+            receiveData.put("protocol_version", frame.getVersion());
+            receiveData.put("datapack_type", frame.getOperation());
+            receiveData.put("sequence", frame.getSequence());
+            receiveData.put("outer_sequence", frame.getOuterSequence());
+            if (frame.getPopularity() != null) receiveData.put("data", new JSONObject().fluentPut("view", frame.getPopularity()));
+            else if (frame.getJson() != null) receiveData.put("data", frame.getJson());
+            else receiveData.put("data", new JSONObject());
             result.add(receiveData);
-            offset += chunkLength;
         }
-
         return result;
     }
 
@@ -590,6 +567,9 @@ public class BilibiliLiveRoomConnector {
                         connector.networkLog.websocketIn("bilibili-live", up.getRoomId(), "BINARY-FRAME",
                                 payload.length, Map.of("frameBase64", Base64.getEncoder().encodeToString(payload)),
                                 heartbeatFrame);
+                        unpackedDatas.stream().map(item -> item.getLongValue("outer_sequence"))
+                                .filter(sequence -> sequence > 1).distinct()
+                                .forEach(connector.bilibili::acknowledgeLiveRoomSequence);
                         for (JSONObject unpackedData: unpackedDatas) {
                             int dataPackType = unpackedData.getIntValue("datapack_type");
                             String kind = Arrays.stream(DataPackType.values())
@@ -604,6 +584,9 @@ public class BilibiliLiveRoomConnector {
                             JSONObject data = unpackedData.getJSONObject("data");
 
                             if (dataPackType == DataPackType.NOTICE.getCode()) {
+                                if (!connector.acknowledgeMessage(data)) {
+                                    continue;
+                                }
                                 Optional<StarBotBaseLiveEvent> optionalEvent = connector.eventParser.parse(data, up);
                                 if (optionalEvent.isPresent()) {
                                     StarBotBaseLiveEvent event = optionalEvent.get();
@@ -649,7 +632,27 @@ public class BilibiliLiveRoomConnector {
                             } else if (dataPackType == DataPackType.HEARTBEAT_RESPONSE.getCode()) {
                                 connector.lastHeartBeatResponseTime = Instant.now();
                             } else if (dataPackType == DataPackType.VERIFY_SUCCESS_RESPONSE.getCode()) {
+                                int code = data == null || data.isEmpty() ? 0 : data.getIntValue("code", 0);
+                                if (code == -101) {
+                                    connector.status = ConnectStatus.ERROR;
+                                    log.warn("{} 的直播间 {} danmu token 已失效，将重新获取 getDanmuInfo", up.getUname(), up.getRoomId());
+                                    connector.stopHeartBeat();
+                                    connector.stopDetectRisk();
+                                    session.close();
+                                    continue;
+                                }
+                                if (code != 0) {
+                                    connector.status = ConnectStatus.ERROR;
+                                    log.warn("{} 的直播间 {} WebSocket 认证失败: code={}, data={}", up.getUname(), up.getRoomId(), code, data);
+                                    session.close();
+                                    continue;
+                                }
                                 connector.status = ConnectStatus.CONNECTED;
+                                connector.lastHeartBeatResponseTime = Instant.now();
+                                connector.startHeartBeat();
+                                connector.lastDetectRiskTime = Instant.now();
+                                connector.latestDanmus.clear();
+                                connector.startDetectRisk();
                                 log.info("已成功连接到 {} 的直播间 {}", up.getUname(), up.getRoomId());
 
                                 BilibiliConnectedEvent event = new BilibiliConnectedEvent(up);
@@ -676,15 +679,12 @@ public class BilibiliLiveRoomConnector {
         @Override
         public void handleTransportError(@NonNull WebSocketSession session, @NonNull Throwable exception) {
             executor.execute(() -> {
+                connector.stopHeartBeat();
+                connector.stopDetectRisk();
                 if (connector.status != ConnectStatus.CLOSING) {
                     connector.status = ConnectStatus.ERROR;
                     log.warn("与 {} 的直播间 {} 连接异常, 将在 {} 秒后重新连接", up.getUname(), up.getRoomId(), interval / 1000, exception);
-                    try {
-                        Thread.sleep(interval);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                    connector.taskService.add(connector);
+                    connector.taskService.schedule(connector, interval);
                 } else {
                     connector.status = ConnectStatus.CLOSED;
                 }
@@ -704,6 +704,8 @@ public class BilibiliLiveRoomConnector {
 
             connector.networkLog.websocketIn("bilibili-live", up.getRoomId(), "CLOSE", 0,
                     Map.of("code", closeStatus.getCode(), "reason", closeStatus.getReason()), false);
+            connector.stopHeartBeat();
+            connector.stopDetectRisk();
 
             executor.execute(() -> {
                 if (connector.status == ConnectStatus.CLOSING) {
@@ -724,12 +726,7 @@ public class BilibiliLiveRoomConnector {
                     }
                 }
 
-                try {
-                    Thread.sleep(interval);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                connector.taskService.add(connector);
+                connector.taskService.schedule(connector, interval);
             });
         }
 

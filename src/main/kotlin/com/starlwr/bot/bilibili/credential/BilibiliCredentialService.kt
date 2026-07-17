@@ -2,11 +2,13 @@ package com.starlwr.bot.bilibili.credential
 
 import com.alibaba.fastjson2.JSON
 import com.alibaba.fastjson2.JSONObject
-import com.alibaba.fastjson2.JSONWriter
 import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger
+import com.starlwr.bot.bilibili.http.BilibiliHttpProperties
+import com.starlwr.bot.bilibili.http.configuredProxySelector
 import com.starlwr.bot.bilibili.model.Cookies
 import com.starlwr.bot.core.plugin.StarBotComponent
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import java.net.URI
@@ -16,10 +18,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.security.KeyFactory
 import java.security.spec.MGF1ParameterSpec
 import java.security.spec.X509EncodedKeySpec
@@ -34,6 +33,7 @@ import javax.crypto.spec.PSource
 
 @ConfigurationProperties("starbot.bilibili.account")
 class BilibiliCredentialProperties {
+    var loginOnStartup: Boolean = true
     var credentialFile: String = "./config/bilibili-credential.json"
     var legacyCookieFile: String = "./cookies.json"
     var validateCredential: Boolean = true
@@ -62,51 +62,43 @@ data class QrCodePollResult(val state: QrCodeState, val credential: Cookies? = n
 /** Full web Credential lifecycle ported from bilibili-api-python. */
 @StarBotComponent
 @EnableConfigurationProperties(BilibiliCredentialProperties::class)
-class BilibiliCredentialService(
+class BilibiliCredentialService @Autowired constructor(
     private val properties: BilibiliCredentialProperties,
     private val browserIdentity: BilibiliBrowserIdentity,
-    private val networkLog: BilibiliNetworkLogger
+    private val networkLog: BilibiliNetworkLogger,
+    private val fileStore: BilibiliCredentialFileStore,
+    private val httpProperties: BilibiliHttpProperties,
 ) {
+    constructor(
+        properties: BilibiliCredentialProperties,
+        browserIdentity: BilibiliBrowserIdentity,
+        networkLog: BilibiliNetworkLogger,
+    ) : this(
+        properties, browserIdentity, networkLog, BilibiliCredentialFileStore(properties),
+        BilibiliHttpProperties(),
+    )
+
     private val log = LoggerFactory.getLogger(javaClass)
     private val client = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(properties.connectTimeoutSeconds))
-        .followRedirects(HttpClient.Redirect.NORMAL).build()
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .apply { configuredProxySelector(httpProperties.proxyUri)?.let(::proxy) }
+        .build()
     private val lock = Any()
 
     fun getProperties(): BilibiliCredentialProperties = properties
-    fun credentialPath(): Path = Path.of(properties.credentialFile).toAbsolutePath().normalize()
+    fun credentialPath(): Path = fileStore.path()
 
     fun load(): Cookies? = synchronized(lock) {
-        val primary = credentialPath()
-        val legacy = Path.of(properties.legacyCookieFile)
-        val source = when {
-            Files.isRegularFile(primary) -> primary
-            Files.isRegularFile(legacy) -> legacy
-            else -> return null
-        }
-        val credential = JSON.parseObject(Files.readString(source), Cookies::class.java) ?: return null
+        val credential = fileStore.loadCookies() ?: return null
         normalize(credential)
         if (!credential.hasLoginCredential()) return null
-        if (source != primary) {
-            log.info("Migrating legacy credential file {} to {}", source.toAbsolutePath(), primary)
-            save(credential)
-        }
         credential
     }
 
     fun save(credential: Cookies) = synchronized(lock) {
         normalize(credential)
-        val target = credentialPath()
-        Files.createDirectories(target.parent)
-        val temporary = target.resolveSibling("${target.fileName}.tmp-${UUID.randomUUID()}")
-        try {
-            Files.writeString(temporary, JSON.toJSONString(credential, JSONWriter.Feature.PrettyFormat), StandardCharsets.UTF_8)
-            try {
-                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING)
-            }
-        } finally { Files.deleteIfExists(temporary) }
+        fileStore.saveCookies(credential)
     }
 
     fun checkValid(credential: Cookies): Boolean {

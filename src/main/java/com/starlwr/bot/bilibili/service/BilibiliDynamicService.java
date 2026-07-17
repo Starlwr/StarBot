@@ -16,6 +16,7 @@ import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.CollectionUtil;
 import com.starlwr.bot.core.util.FixedSizeSetQueue;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import com.starlwr.bot.bilibili.log.BilibiliDebugFileLogger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,7 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -63,6 +65,22 @@ public class BilibiliDynamicService {
 
     private final FixedSizeSetQueue<String> dynamicIds = new FixedSizeSetQueue<>(1000);
 
+    private final AtomicBoolean closing = new AtomicBoolean();
+
+    private final CountDownLatch stopSignal = new CountDownLatch(1);
+
+    @PreDestroy
+    public void close() {
+        if (!closing.compareAndSet(false, true)) {
+            return;
+        }
+        stopSignal.countDown();
+        scheduler.shutdown();
+        executor.shutdown();
+        awaitTermination(scheduler, "动态轮询", 5);
+        awaitTermination(executor, "自动关注", 5);
+    }
+
     @Autowired
     public BilibiliDynamicService(ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, AbstractDataSource dataSource, BilibiliApiUtil bilibili, BilibiliAccountService accountService, BilibiliDynamicPainterFactory factory, BilibiliDebugFileLogger debugFileLog) {
         this.eventPublisher = eventPublisher;
@@ -89,6 +107,9 @@ public class BilibiliDynamicService {
      * @param up UP 主
      */
     public void followUp(Up up) {
+        if (closing.get()) {
+            return;
+        }
         if (alreadyFollowUps.contains(up) || autoFollowQueue.contains(up)) {
             return;
         }
@@ -118,6 +139,10 @@ public class BilibiliDynamicService {
 
         scheduler.scheduleWithFixedDelay(() -> {
             Thread.currentThread().setName("dynamic-watcher");
+
+            if (closing.get()) {
+                return;
+            }
 
             try {
                 List<Dynamic> dynamics = bilibili.getDynamicUpdateList();
@@ -167,7 +192,11 @@ public class BilibiliDynamicService {
                     }
                 }
             } catch (Exception e) {
-                log.error("动态推送抓取任务异常", e);
+                if (closing.get()) {
+                    log.debug("动态推送抓取任务已随应用关闭");
+                } else {
+                    log.error("动态推送抓取任务异常", e);
+                }
             }
         }, interval, interval, TimeUnit.SECONDS);
 
@@ -190,16 +219,23 @@ public class BilibiliDynamicService {
                 log.warn("检测到自动关注 UP 主的间隔时间设置过小, 可能会造成 API 访问被暂时封禁, 推荐将其设置为 30 以上的数值");
             }
 
-            while (!Thread.currentThread().isInterrupted()) {
+            while (!closing.get() && !Thread.currentThread().isInterrupted()) {
                 try {
-                    Up up = autoFollowQueue.take();
+                    Up up = autoFollowQueue.poll(1, TimeUnit.SECONDS);
+                    if (up == null) {
+                        continue;
+                    }
                     log.info("尝试关注 UP 主: {} ({})", up.getUname(), up.getUid());
                     bilibili.followUp(up.getUid());
                     alreadyFollowUps.add(up);
                     log.info("关注 {} ({}) 成功", up.getUname(), up.getUid());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    log.error("自动关注中断", e);
+                    if (closing.get()) {
+                        log.debug("自动关注线程已随应用关闭");
+                    } else {
+                        log.warn("自动关注线程被意外中断", e);
+                    }
                     return;
                 } catch (Exception e) {
                     log.error("自动关注异常", e);
@@ -209,9 +245,15 @@ public class BilibiliDynamicService {
                     if (!autoFollowQueue.isEmpty()) {
                         log.info("即将在 {} 秒后关注下一个 UP 主, 自动关注队列中还剩余 {} 个 UP 主", properties.getDynamic().getAutoFollowInterval(), autoFollowQueue.size());
                     }
-                    Thread.sleep(properties.getDynamic().getAutoFollowInterval() * 1000L);
+                    if (stopSignal.await(properties.getDynamic().getAutoFollowInterval(), TimeUnit.SECONDS)) {
+                        return;
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    if (!closing.get()) {
+                        log.warn("自动关注等待被意外中断", e);
+                    }
+                    return;
                 }
             }
         });
@@ -240,6 +282,19 @@ public class BilibiliDynamicService {
         log.info("检测到 {} 个打开了动态推送但未关注的 UP 主: [{}], 开始自动关注", notFollowUps.size(), notFollowUps.stream().map(up -> up.getUname() + "(" + up.getUid() + ")").collect(Collectors.joining(", ")));
 
         autoFollowQueue.addAll(notFollowUps);
+    }
+
+    private void awaitTermination(ExecutorService service, String name, int seconds) {
+        try {
+            if (!service.awaitTermination(seconds, TimeUnit.SECONDS)) {
+                List<Runnable> cancelled = service.shutdownNow();
+                log.warn("{}服务未在 {} 秒内完成关闭, 已取消 {} 个待执行任务", name, seconds, cancelled.size());
+                service.awaitTermination(1, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException e) {
+            service.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**

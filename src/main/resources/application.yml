@@ -24,6 +24,7 @@ starbot:
       owners: []
       reconnect-seconds: 3
     account:
+      login-on-startup: true
       credential-file: ./config/bilibili-credential.json
       legacy-cookie-file: ./cookies.json
       validate-credential: true
@@ -40,6 +41,56 @@ starbot:
       ua-type: Generic
       # chrome-user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36
       # browser-validation-api-key: leave-empty-to-auto-detect-platform
+    browser:
+      # Browser support is optional in production. ga-test enables it explicitly.
+      enabled: false
+      browser-home: ./Browser
+      profile-directory: ./config/BrowserProfile
+      current-manifest: current.json
+      versions-catalog: known-good-versions-with-downloads.json
+      download-enabled: true
+      catalog-endpoint: https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json
+      allow-system-chrome: true
+      allow-system-chromium: true
+      allow-edge: false
+      allow-address-family-split: true
+      start-minimized: true
+      headless: false
+    http:
+      connect-timeout-seconds: 10
+      request-timeout-seconds: 30
+      maximum-response-bytes: 33554432
+      maximum-redirects: 5
+      retry-max-attempts: 3
+      retry-base-millis: 500
+      # Unified proxy for Bilibili HTTP, Credential and browser traffic. When omitted, all three connect directly.
+      # proxy-uri: http://127.0.0.1:18080
+    risk:
+      http412-enabled: true
+      pow-limit: 5000000
+      submit-reserve-seconds: 30
+      maximum-challenges: 2
+      gaia-enabled: true
+      gaia-backoff-seconds: [30, 120, 600]
+    integrity:
+      secure-collect:
+        enabled: false
+        bootstrap-url: https://www.bilibili.com/robots.txt
+        script-url: https://s1.hdslb.com/bfs/seed/jinkela/short/minntaki-wasm-sdk/bili-sc-sdk.umd.js
+        expected-version: 0.1.15
+        operation-timeout-seconds: 60
+    telemetry:
+      web-log-enabled: false
+      gol-postweb-enabled: false
+      legacy000916-enabled: false
+      watch-tracker-enabled: false
+      legacy-rdata-heartbeat-enabled: false
+      legacy000916-interval-seconds: 15
+      legacy-rdata-interval-seconds: 30
+      web-log-default-interval-seconds: 50
+      web-log-minimum-interval-seconds: 10
+      web-log-maximum-interval-seconds: 300
+      gol-flush-seconds: 60
     network:
       # Full exchanges are emitted at DEBUG when enabled.
       http-log-enabled: false
@@ -49,7 +100,7 @@ starbot:
       include-sensitive-data: false
       # 0 disables truncation.
       log-max-body-length: 16384
-      # Available: all, credential, dynamic, live-api, live-ws, heartbeat, image, onebot, api, other
+      # Available: all, credential, dynamic, live-api, live-ws, heartbeat, telemetry, risk, integrity, image, onebot, api, other
       console-categories:
         - all
       console-deduplicate: true

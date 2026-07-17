@@ -43,6 +43,10 @@ public class BilibiliAccountService {
     @Order(-10000)
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReadyEvent() {
+        if (!credentialService.getProperties().getLoginOnStartup()) {
+            log.info("Bilibili startup login is disabled by configuration");
+            return;
+        }
         login();
     }
 

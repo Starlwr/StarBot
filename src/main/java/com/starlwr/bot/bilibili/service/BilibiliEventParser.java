@@ -181,6 +181,41 @@ public class BilibiliEventParser {
         }
     }
 
+    private Instant parseGuardTimestamp(JSONObject data, JSONObject metaData) {
+        Long timestamp = data.getLong("send_time");
+        if (isPositive(timestamp)) {
+            return normalizeEpochTimestamp(timestamp);
+        }
+
+        String[] fallbackFields = {"start_time", "end_time", "timestamp"};
+        for (String field : fallbackFields) {
+            timestamp = metaData.getLong(field);
+            if (isPositive(timestamp)) {
+                log.debug("USER_TOAST_MSG 缺少 send_time，使用 data.{} 作为事件时间", field);
+                return normalizeEpochTimestamp(timestamp);
+            }
+        }
+
+        timestamp = data.getLong("timestamp");
+        if (isPositive(timestamp)) {
+            log.debug("USER_TOAST_MSG 缺少 send_time，使用顶层 timestamp 作为事件时间");
+            return normalizeEpochTimestamp(timestamp);
+        }
+
+        log.warn("USER_TOAST_MSG 缺少可用的服务器时间，使用本机接收时间: {}", data.toJSONString());
+        return Instant.now();
+    }
+
+    private boolean isPositive(Long value) {
+        return value != null && value > 0;
+    }
+
+    private Instant normalizeEpochTimestamp(long value) {
+        return value >= 100_000_000_000L
+                ? Instant.ofEpochMilli(value)
+                : Instant.ofEpochSecond(value);
+    }
+
     /**
      * 解析原始直播间消息数据（DANMU_MSG）
      * @param data 原始直播间消息数据
@@ -448,7 +483,7 @@ public class BilibiliEventParser {
 
         String unit = metaData.getString("unit");
 
-        Instant timestamp = Instant.ofEpochMilli(data.getLong("send_time"));
+        Instant timestamp = parseGuardTimestamp(data, metaData);
 
         switch (guardLevel) {
             case 1 -> {

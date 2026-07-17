@@ -21,7 +21,8 @@ public class BilibiliNetworkLogger {
     private static final Logger WS_LOG = LoggerFactory.getLogger("com.starlwr.bot.bilibili.network.websocket");
     private static final Logger LOG = LoggerFactory.getLogger(BilibiliNetworkLogger.class);
     private static final Set<String> AVAILABLE_CATEGORIES = Set.of(
-            "credential", "dynamic", "live-api", "live-ws", "heartbeat", "image", "onebot", "api", "other");
+            "credential", "dynamic", "live-api", "live-ws", "heartbeat", "telemetry", "risk",
+            "integrity", "image", "onebot", "api", "other");
     private static final Pattern SENSITIVE_KEY = Pattern.compile(
             "(?i)^(authorization|cookie|set-cookie|sessdata|bili_jct|csrf|refresh_csrf|refresh_token|ac_time_value|access_token|token|key|qrcode_key)$");
     private static final Pattern JSON_SECRET = Pattern.compile(
@@ -81,11 +82,27 @@ public class BilibiliNetworkLogger {
     }
 
     public void httpFailure(HttpTrace trace, Throwable error) {
-        if (properties.getNetwork().isHttpLogEnabled()) {
+        if (properties.getNetwork().isHttpLogEnabled() && isInterruptionSignal(error)) {
+            HTTP_LOG.debug("HTTP CANCEL id={} category={} channel={} method={} url={} durationMs={} reason={}",
+                    trace.id(), trace.category(), trace.channel(), trace.method(), sanitizeText(trace.url()),
+                    trace.elapsedMillis(), error.toString());
+        } else if (properties.getNetwork().isHttpLogEnabled()) {
             HTTP_LOG.warn("HTTP ERR id={} category={} channel={} method={} url={} durationMs={} error={}",
                     trace.id(), trace.category(), trace.channel(), trace.method(), sanitizeText(trace.url()),
                     trace.elapsedMillis(), error.toString());
         }
+    }
+
+    private boolean isInterruptionSignal(Throwable error) {
+        Throwable current = error;
+        java.util.Set<Throwable> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        while (current != null && visited.add(current)) {
+            if (current instanceof InterruptedException || current instanceof java.util.concurrent.CancellationException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     public void websocketOut(String channel, Long roomId, String kind, int bytes, Object body, boolean heartbeat) {
@@ -150,6 +167,11 @@ public class BilibiliNetworkLogger {
         String normalizedUrl = url == null ? "" : url.toLowerCase(Locale.ROOT);
         if (normalizedChannel.contains("onebot")) return "onebot";
         if (normalizedChannel.contains("live-ws")) return "live-ws";
+        if (normalizedChannel.contains("telemetry") || normalizedUrl.contains("data.bilibili.com/log/")
+                || normalizedUrl.contains("data.bilivideo.com/log/") || normalizedUrl.contains("/gol/postweb")) return "telemetry";
+        if (normalizedChannel.contains("secure-collect") || normalizedUrl.contains("data.bilibili.com/v/")) return "integrity";
+        if (normalizedChannel.contains("risk") || normalizedChannel.contains("412")
+                || normalizedUrl.contains("security.bilibili.com/th/captcha/")) return "risk";
         if (normalizedChannel.contains("credential") || normalizedUrl.contains("passport.bilibili.com")
                 || normalizedUrl.contains("/correspond/")) return "credential";
         if (normalizedChannel.contains("heartbeat") || normalizedUrl.contains("live-trace.bilibili.com")) return "heartbeat";
