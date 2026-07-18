@@ -92,4 +92,23 @@ class BilibiliCredentialServiceTest {
 
         assertEquals(expected, service.decodeHttpBody(compressed, "gzip"))
     }
+
+    @Test
+    fun `server Set-Cookie repairs the active Credential atomically`() {
+        val credential = Cookies().apply {
+            sessData = "new-session"
+            biliJct = "stale-csrf"
+            dedeUserId = "42"
+        }
+
+        val changed = service.applySetCookieValues(credential, listOf(
+            "bili_jct=current-csrf; Path=/; Domain=bilibili.com; Secure",
+            "DedeUserID=42; Path=/; Domain=bilibili.com",
+            "sid=new-sid; Path=/; Domain=bilibili.com",
+        ))
+
+        assertEquals(setOf("bili_jct", "sid"), changed)
+        assertEquals("current-csrf", credential.biliJct)
+        assertEquals("new-sid", credential.extraCookies["sid"])
+    }
 }

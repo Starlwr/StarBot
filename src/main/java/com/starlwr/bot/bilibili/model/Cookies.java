@@ -51,6 +51,10 @@ public class Cookies {
     private Long expiresAtEpochSeconds;
     private Long nextRefreshAtEpochSeconds;
     private Long lastValidatedAtEpochSeconds;
+    private Long validationLeaseExpiresAtEpochSeconds;
+    private Boolean serverRefreshRequired;
+    private Long serverRefreshCheckedAtEpochSeconds;
+    private Long serverRefreshTimestampMillis;
     private Integer refreshFailureCount;
     private Long refreshRetryAfterEpochSeconds;
 
@@ -71,6 +75,10 @@ public class Cookies {
         this.expiresAtEpochSeconds = 0L;
         this.nextRefreshAtEpochSeconds = 0L;
         this.lastValidatedAtEpochSeconds = 0L;
+        this.validationLeaseExpiresAtEpochSeconds = 0L;
+        this.serverRefreshRequired = null;
+        this.serverRefreshCheckedAtEpochSeconds = 0L;
+        this.serverRefreshTimestampMillis = 0L;
         this.refreshFailureCount = 0;
         this.refreshRetryAfterEpochSeconds = 0L;
         this.extraCookies = new LinkedHashMap<>();
@@ -90,6 +98,10 @@ public class Cookies {
         this.expiresAtEpochSeconds = 0L;
         this.nextRefreshAtEpochSeconds = 0L;
         this.lastValidatedAtEpochSeconds = 0L;
+        this.validationLeaseExpiresAtEpochSeconds = 0L;
+        this.serverRefreshRequired = null;
+        this.serverRefreshCheckedAtEpochSeconds = 0L;
+        this.serverRefreshTimestampMillis = 0L;
         this.refreshFailureCount = 0;
         this.refreshRetryAfterEpochSeconds = 0L;
         this.extraCookies = new LinkedHashMap<>();
@@ -123,6 +135,14 @@ public class Cookies {
     public void setNextRefreshAtEpochSeconds(Long value) { nextRefreshAtEpochSeconds = value; }
     public Long getLastValidatedAtEpochSeconds() { return lastValidatedAtEpochSeconds; }
     public void setLastValidatedAtEpochSeconds(Long value) { lastValidatedAtEpochSeconds = value; }
+    public Long getValidationLeaseExpiresAtEpochSeconds() { return validationLeaseExpiresAtEpochSeconds; }
+    public void setValidationLeaseExpiresAtEpochSeconds(Long value) { validationLeaseExpiresAtEpochSeconds = value; }
+    public Boolean getServerRefreshRequired() { return serverRefreshRequired; }
+    public void setServerRefreshRequired(Boolean value) { serverRefreshRequired = value; }
+    public Long getServerRefreshCheckedAtEpochSeconds() { return serverRefreshCheckedAtEpochSeconds; }
+    public void setServerRefreshCheckedAtEpochSeconds(Long value) { serverRefreshCheckedAtEpochSeconds = value; }
+    public Long getServerRefreshTimestampMillis() { return serverRefreshTimestampMillis; }
+    public void setServerRefreshTimestampMillis(Long value) { serverRefreshTimestampMillis = value; }
     public Integer getRefreshFailureCount() { return refreshFailureCount; }
     public void setRefreshFailureCount(Integer value) { refreshFailureCount = value; }
     public Long getRefreshRetryAfterEpochSeconds() { return refreshRetryAfterEpochSeconds; }

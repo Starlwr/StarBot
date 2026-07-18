@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON
 import com.alibaba.fastjson2.JSONObject
 import com.alibaba.fastjson2.JSONWriter
 import com.starlwr.bot.bilibili.model.Cookies
+import com.starlwr.bot.bilibili.browser.BilibiliBrowserProperties
 import com.starlwr.bot.core.plugin.StarBotComponent
 import org.slf4j.LoggerFactory
 import java.nio.charset.StandardCharsets
@@ -35,7 +36,7 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         val text = Files.readString(source, StandardCharsets.UTF_8)
         val root = JSON.parseObject(text) ?: return null
         val sourceSchema = root.getIntValue("schemaVersion", root.getIntValue("schema_version", 0))
-        val envelope = if (sourceSchema >= CredentialEnvelope.CURRENT_SCHEMA) {
+        val envelope = if (sourceSchema >= 2) {
             JSON.parseObject(text, CredentialEnvelope::class.java)
         } else {
             migrateFlat(text, root)
@@ -126,6 +127,17 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         envelope.schemaVersion = CredentialEnvelope.CURRENT_SCHEMA
         envelope.cookies.removeIf { it.name.isBlank() || it.name.lowercase(Locale.ROOT) in CredentialEnvelope.SESSION_ONLY_COOKIE_NAMES }
         envelope.cookies = envelope.cookies.distinctBy { it.key() }.toMutableList()
+        val resolutionCookie = envelope.cookies.firstOrNull { it.name.equals("browser_resolution", true) }
+        if (resolutionCookie == null) {
+            envelope.cookies += StoredCookie(
+                name = "browser_resolution",
+                value = BilibiliBrowserProperties.BROWSER_RESOLUTION,
+                source = "starbot-client-profile",
+            )
+        } else {
+            resolutionCookie.value = BilibiliBrowserProperties.BROWSER_RESOLUTION
+            resolutionCookie.source = "starbot-client-profile"
+        }
         mergeKnownCookies(envelope, envelope.account)
         envelope.sanitizeForPersistence()
     }
@@ -139,8 +151,23 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         cookies.acTimeValue = cookies.acTimeValue.orEmpty()
         cookies.bNut = cookies.bNut.orEmpty()
         cookies.biliTicket = cookies.biliTicket.orEmpty()
+        cookies.issuedAtEpochSeconds = cookies.issuedAtEpochSeconds ?: 0L
+        cookies.expiresAtEpochSeconds = cookies.expiresAtEpochSeconds ?: 0L
+        cookies.nextRefreshAtEpochSeconds = cookies.nextRefreshAtEpochSeconds ?: 0L
+        cookies.lastValidatedAtEpochSeconds = cookies.lastValidatedAtEpochSeconds ?: 0L
+        cookies.validationLeaseExpiresAtEpochSeconds = cookies.validationLeaseExpiresAtEpochSeconds?.takeIf { it > 0 }
+            ?: cookies.lastValidatedAtEpochSeconds.takeIf { it > 0 }
+                ?.plus(properties.validationLeaseSeconds.coerceIn(60, 300)) ?: 0L
+        cookies.serverRefreshCheckedAtEpochSeconds = cookies.serverRefreshCheckedAtEpochSeconds ?: 0L
+        cookies.serverRefreshTimestampMillis = cookies.serverRefreshTimestampMillis ?: 0L
+        cookies.refreshFailureCount = cookies.refreshFailureCount ?: 0
+        cookies.refreshRetryAfterEpochSeconds = cookies.refreshRetryAfterEpochSeconds ?: 0L
         cookies.extraCookies = LinkedHashMap(cookies.extraCookies.orEmpty())
-        cookies.extraCookies.keys.removeIf { it.lowercase(Locale.ROOT) in CredentialEnvelope.SESSION_ONLY_COOKIE_NAMES }
+        cookies.extraCookies.keys.removeIf {
+            val name = it.lowercase(Locale.ROOT)
+            name in CredentialEnvelope.SESSION_ONLY_COOKIE_NAMES || name in MODELED_COOKIE_NAMES
+        }
+        cookies.extraCookies["browser_resolution"] = BilibiliBrowserProperties.BROWSER_RESOLUTION
     }
 
     private fun mergeKnownCookies(envelope: CredentialEnvelope, account: Cookies) {
@@ -153,6 +180,7 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
             "ac_time_value" to account.acTimeValue,
             "b_nut" to account.bNut,
             "bili_ticket" to account.biliTicket,
+            "bili_ticket_expires" to account.biliTicketExpires?.takeIf { it > 0 }?.toString(),
         )
         val indexed = envelope.cookies.associateByTo(linkedMapOf()) { it.key() }
         values.filterValues { !it.isNullOrBlank() }.forEach { (name, value) ->
@@ -184,6 +212,7 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
             value("ac_time_value")?.let { acTimeValue = it }
             value("b_nut")?.let { bNut = it }
             value("bili_ticket")?.let { biliTicket = it }
+            value("bili_ticket_expires")?.toLongOrNull()?.let { biliTicketExpires = it }
         }
     }
 
@@ -220,7 +249,18 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         it.biliTicket = biliTicket; it.biliTicketExpires = biliTicketExpires
         it.issuedAtEpochSeconds = issuedAtEpochSeconds; it.expiresAtEpochSeconds = expiresAtEpochSeconds
         it.nextRefreshAtEpochSeconds = nextRefreshAtEpochSeconds; it.lastValidatedAtEpochSeconds = lastValidatedAtEpochSeconds
+        it.validationLeaseExpiresAtEpochSeconds = validationLeaseExpiresAtEpochSeconds
+        it.serverRefreshRequired = serverRefreshRequired
+        it.serverRefreshCheckedAtEpochSeconds = serverRefreshCheckedAtEpochSeconds
+        it.serverRefreshTimestampMillis = serverRefreshTimestampMillis
         it.refreshFailureCount = refreshFailureCount; it.refreshRetryAfterEpochSeconds = refreshRetryAfterEpochSeconds
         it.extraCookies = LinkedHashMap(extraCookies.orEmpty())
+    }
+
+    private companion object {
+        val MODELED_COOKIE_NAMES = setOf(
+            "sessdata", "bili_jct", "buvid3", "buvid4", "dedeuserid", "ac_time_value",
+            "b_nut", "bili_ticket", "bili_ticket_expires",
+        )
     }
 }

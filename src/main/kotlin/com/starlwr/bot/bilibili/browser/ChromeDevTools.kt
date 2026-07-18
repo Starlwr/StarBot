@@ -141,6 +141,7 @@ class BilibiliBrowserRuntime(
     @Volatile private var closed = false
     @Volatile private var process: Process? = null
     @Volatile private var browser: CdpConnection? = null
+    @Volatile private var hydratedIdentityRevision: Long = -1
     @Volatile private var info: BrowserRuntimeInfo? = null
 
     fun start(userAgent: String): BrowserRuntimeInfo? = synchronized(lock) {
@@ -241,13 +242,26 @@ class BilibiliBrowserRuntime(
 
     fun synchronizeCookiesFromBrowser(source: String = "browser"): Boolean {
         val browserConnection = browser ?: return false
+        val currentRevision = credentialStore.snapshot()?.identityRevision ?: -1
+        if (currentRevision != hydratedIdentityRevision) {
+            val previousRevision = hydratedIdentityRevision
+            hydrateCookies(browserConnection)
+            log.debug(
+                "Rehydrated browser cookies before import: source={}, previousRevision={}, currentRevision={}",
+                source, previousRevision, currentRevision,
+            )
+        }
         val cookies = browserConnection.call("Storage.getCookies").getJSONArray("cookies") ?: return false
         val stored = cookies.filterIsInstance<JSONObject>().mapNotNull { item ->
             val name = item.getString("name") ?: return@mapNotNull null
             val value = item.getString("value") ?: return@mapNotNull null
             if (!item.getString("domain").orEmpty().contains("bilibili.com")) return@mapNotNull null
             StoredCookie(
-                name = name, value = value, domain = item.getString("domain").orEmpty(),
+                name = name,
+                value = if (name.equals("browser_resolution", true)) {
+                    BilibiliBrowserProperties.BROWSER_RESOLUTION
+                } else value,
+                domain = item.getString("domain").orEmpty(),
                 path = item.getString("path") ?: "/", hostOnly = !item.getString("domain").orEmpty().startsWith('.'),
                 secure = item.getBooleanValue("secure"), httpOnly = item.getBooleanValue("httpOnly"),
                 sameSite = item.getString("sameSite"),
@@ -261,6 +275,7 @@ class BilibiliBrowserRuntime(
             envelope.browser.cookieHash = credentialStore.cookieHash("browser")
             envelope.browser.lastSynchronizedAtEpochMillis = System.currentTimeMillis()
         }
+        hydratedIdentityRevision = credentialStore.snapshot()?.identityRevision ?: hydratedIdentityRevision
         return changed
     }
 
@@ -323,6 +338,7 @@ class BilibiliBrowserRuntime(
         // Keep browser-generated/device cookies from the persistent profile and
         // overwrite only names present in the persisted StarBot credential.
         if (cookies.isNotEmpty()) connection.call("Storage.setCookies", mapOf("cookies" to cookies))
+        hydratedIdentityRevision = snapshot.identityRevision
     }
 
     private fun evaluateString(connection: CdpConnection, expression: String): String {

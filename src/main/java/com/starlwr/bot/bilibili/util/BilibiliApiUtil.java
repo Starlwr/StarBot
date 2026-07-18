@@ -89,7 +89,7 @@ public class BilibiliApiUtil {
 
     @Getter
     @Setter
-    private Cookies cookies = new Cookies();
+    private volatile Cookies cookies = new Cookies();
 
     private final Pattern sessDataPattern = Pattern.compile("SESSDATA=(.*?)&");
 
@@ -137,6 +137,9 @@ public class BilibiliApiUtil {
         headers.putAll(browserIdentity.headers(properties.getNetwork().getUserAgent()));
         if (StringUtil.isNotBlank(cookies.getSessData()) && StringUtil.isNotBlank(cookies.getBiliJct())) {
             Map<String, String> values = new LinkedHashMap<>();
+            if (cookies.getExtraCookies() != null) {
+                values.putAll(cookies.getExtraCookies());
+            }
             values.put("SESSDATA", cookies.getSessData());
             values.put("bili_jct", cookies.getBiliJct());
             values.put("buvid3", cookies.getBuvid3());
@@ -146,9 +149,6 @@ public class BilibiliApiUtil {
             if (sign != null) {
                 values.put("bili_ticket", sign.getTicket());
                 values.put("bili_ticket_expires", String.valueOf(sign.getTicketExpires()));
-            }
-            if (cookies.getExtraCookies() != null) {
-                values.putAll(cookies.getExtraCookies());
             }
             headers.put("Cookie", values.entrySet().stream()
                     .filter(entry -> StringUtil.isNotBlank(entry.getValue()))
@@ -201,6 +201,7 @@ public class BilibiliApiUtil {
             if (!response.successful()) {
                 throw new NetworkException(response.getStatus());
             }
+            synchronizeCookiesFromStore();
             result = response.json();
 
             if (!result.containsKey("code")) {
@@ -277,6 +278,13 @@ public class BilibiliApiUtil {
                 .filter(entry -> entry.getKey().equalsIgnoreCase(name))
                 .flatMap(entry -> entry.getValue().stream())
                 .findFirst().orElse(null);
+    }
+
+    private void synchronizeCookiesFromStore() {
+        Cookies persisted = credentialFileStore.loadCookies();
+        if (persisted != null && StringUtil.isNotBlank(persisted.getSessData())) {
+            cookies = persisted;
+        }
     }
 
     /**

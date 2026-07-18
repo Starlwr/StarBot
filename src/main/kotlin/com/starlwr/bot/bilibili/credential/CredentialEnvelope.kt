@@ -24,7 +24,7 @@ data class CredentialEnvelope(
     var updatedAtEpochMillis: Long = 0,
 ) {
     companion object {
-        const val CURRENT_SCHEMA = 2
+        const val CURRENT_SCHEMA = 3
         val SESSION_ONLY_COOKIE_NAMES = setOf("b_lsid")
         val BROWSER_STORAGE_ALLOWLIST = setOf(
             "liveWatchTracker", "liveWatchHbCounter"
