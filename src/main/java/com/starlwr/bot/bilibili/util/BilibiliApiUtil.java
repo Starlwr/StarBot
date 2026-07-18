@@ -409,6 +409,23 @@ public class BilibiliApiUtil {
         return sign;
     }
 
+    /** Keep the JVM-owned Web ticket valid using the same 30 minute safety window as current Web clients. */
+    public synchronized WebSign ensureBilibiliWebSign() {
+        long now = System.currentTimeMillis() / 1000;
+        if (sign != null && sign.getTicketExpires() > now + 1800) {
+            log.debug("跳过 Bilibili Web ticket 更新: 当前 ticket 仍在安全窗口内, expires={}, remainingSeconds={}",
+                    sign.getTicketExpires(), sign.getTicketExpires() - now);
+            return sign;
+        }
+        log.info("准备更新 Bilibili Web ticket: reason={}",
+                sign == null ? "JVM 尚无 ticket/WBI 状态" : "ticket 距到期不足 30 分钟");
+        return generateBilibiliWebSign();
+    }
+
+    public long getWebSignUpdatedAtMillis() {
+        return webSignUpdatedAtMillis.get();
+    }
+
     /**
      * 获取 Cookies 中 buvid3 字段
      * @return buvid3 字段

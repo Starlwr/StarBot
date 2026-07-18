@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.credential.BilibiliCredentialService;
+import com.starlwr.bot.bilibili.browser.BilibiliBrowserRuntime;
 import com.starlwr.bot.bilibili.credential.QrCodePollResult;
 import com.starlwr.bot.bilibili.credential.QrCodeSession;
 import com.starlwr.bot.bilibili.credential.QrCodeState;
@@ -26,6 +27,7 @@ public class BilibiliAccountService {
     private final WebServerApplicationContext webContext;
     private final BilibiliApiUtil bilibili;
     private final BilibiliCredentialService credentialService;
+    private final BilibiliBrowserRuntime browserRuntime;
 
     @Getter
     private Up accountInfo;
@@ -34,10 +36,12 @@ public class BilibiliAccountService {
 
     @Autowired
     public BilibiliAccountService(WebServerApplicationContext webContext, BilibiliApiUtil bilibili,
-                                  BilibiliCredentialService credentialService) {
+                                  BilibiliCredentialService credentialService,
+                                  BilibiliBrowserRuntime browserRuntime) {
         this.webContext = webContext;
         this.bilibili = bilibili;
         this.credentialService = credentialService;
+        this.browserRuntime = browserRuntime;
     }
 
     @Order(-10000)
@@ -69,6 +73,7 @@ public class BilibiliAccountService {
                 log.warn("旧版凭据缺少刷新字段，将继续使用；下次二维码登录后即可自动刷新: {}", e.getMessage());
             }
             bilibili.setCookies(credential);
+            browserRuntime.refreshCanonicalIdentity();
             finishLogin();
         } catch (Exception e) {
             log.warn("使用现有凭据登录失败，将进入二维码登录流程", e);
@@ -91,6 +96,7 @@ public class BilibiliAccountService {
                     if (result.getState() == QrCodeState.WAIT_SCAN || result.getState() == QrCodeState.WAIT_CONFIRM) continue;
                     if (result.getState() == QrCodeState.DONE && result.getCredential() != null) {
                         bilibili.setCookies(result.getCredential());
+                        browserRuntime.refreshCanonicalIdentity();
                         finishLogin();
                         loginUrl = "";
                         return;
@@ -129,6 +135,7 @@ public class BilibiliAccountService {
             Cookies refreshed = credentialService.maintain(current);
             if (refreshed != current) {
                 bilibili.setCookies(refreshed);
+                browserRuntime.refreshCanonicalIdentity();
                 updateBilibiliWebSign();
             }
         } catch (Exception e) {
@@ -139,11 +146,25 @@ public class BilibiliAccountService {
         }
     }
 
-    @Scheduled(cron = "0 0 0 * * ?")
     public void updateBilibiliWebSign() {
         log.info("开始更新 Bilibili Web API 签名");
         WebSign sign = bilibili.generateBilibiliWebSign();
+        browserRuntime.refreshCanonicalIdentity();
         log.info("Bilibili Web API 签名更新成功, ticket expires: {}, imgKey: {}, subKey: {}",
                 sign.getTicketExpires(), sign.getImgKey(), sign.getSubKey());
+    }
+
+    @Scheduled(fixedDelay = 600_000, initialDelay = 600_000)
+    public void maintainBilibiliWebSign() {
+        try {
+            long before = bilibili.getWebSignUpdatedAtMillis();
+            WebSign sign = bilibili.ensureBilibiliWebSign();
+            if (bilibili.getWebSignUpdatedAtMillis() != before) browserRuntime.refreshCanonicalIdentity();
+            log.debug("Bilibili Web API 签名维护完成, ticket expires: {}, imgKey: {}, subKey: {}",
+                    sign.getTicketExpires(), sign.getImgKey(), sign.getSubKey());
+        } catch (Exception e) {
+            log.warn("Bilibili Web ticket 维护失败；继续保留当前尚可用状态: {}", e.toString());
+            log.debug("Bilibili Web ticket maintenance detail", e);
+        }
     }
 }

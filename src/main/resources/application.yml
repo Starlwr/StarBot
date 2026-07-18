@@ -63,6 +63,11 @@ starbot:
       allow-address-family-split: true
       start-minimized: true
       headless: false
+      # jvm-authoritative (recommended): JVM alone owns login/refresh; browser drift is audit-only.
+      # validated-bidirectional: same-UID browser Cookie + localStorage refresh generations may be atomically promoted.
+      credential-sync-mode: jvm-authoritative
+      # Browser absence never blocks JVM startup. WARN is masked; DEBUG contains complete drift values for replay.
+      credential-audit-interval-seconds: 90
     http:
       connect-timeout-seconds: 10
       request-timeout-seconds: 30

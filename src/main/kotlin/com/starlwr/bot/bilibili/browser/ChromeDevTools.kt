@@ -46,6 +46,16 @@ data class BrowserPage(val targetId: String, val connection: CdpConnection) : Au
     override fun close() = connection.close()
 }
 
+data class BrowserCredentialSnapshot(
+    val cookies: Map<String, StoredCookie>,
+    val cookieVariants: Map<String, List<StoredCookie>>,
+    val refreshTokenStorage: String,
+    val capturedAtEpochMillis: Long = System.currentTimeMillis(),
+) {
+    fun cookie(name: String): StoredCookie? = cookies[name.lowercase(Locale.ROOT)]
+    fun variants(name: String): List<StoredCookie> = cookieVariants[name.lowercase(Locale.ROOT)].orEmpty()
+}
+
 class CdpConnection(private val socket: WebSocket) : AutoCloseable {
     private val sequence = AtomicLong()
     private val pending = ConcurrentHashMap<Long, CompletableFuture<JSONObject>>()
@@ -143,6 +153,8 @@ class BilibiliBrowserRuntime(
     @Volatile private var browser: CdpConnection? = null
     @Volatile private var hydratedIdentityRevision: Long = -1
     @Volatile private var info: BrowserRuntimeInfo? = null
+    @Volatile private var credentialPage: BrowserPage? = null
+    private val credentialPageLock = Any()
 
     fun start(userAgent: String): BrowserRuntimeInfo? = synchronized(lock) {
         if (closed) return null
@@ -162,6 +174,7 @@ class BilibiliBrowserRuntime(
             "--window-size=1920,1080",
             "--no-first-run",
             "--no-default-browser-check",
+            "--disable-session-crashed-bubble",
             "--disable-background-networking",
         )
         if (properties.startMinimized && !properties.headless) command += "--start-minimized"
@@ -169,6 +182,9 @@ class BilibiliBrowserRuntime(
         httpProperties.proxyUri?.trim()?.takeIf { it.isNotEmpty() }
             ?.let { command += "--proxy-server=$it" }
             ?: run { command += "--no-proxy-server" }
+        // A controlled capability host must not restore arbitrary Web tabs before
+        // StarBot has hydrated/sanitized its Credential state.
+        command += "about:blank"
         val launched = try {
             ProcessBuilder(command)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
@@ -208,6 +224,7 @@ class BilibiliBrowserRuntime(
                     observedAtEpochMillis = System.currentTimeMillis()
                 )
             }
+            synchronizeCredentialStorage()
             log.info("Chrome 浏览器能力宿主已启动: source={}, product={}, profile={}, resolution={}",
                 executable.source, runtimeInfo.product, profile, BilibiliBrowserProperties.BROWSER_RESOLUTION)
             runtimeInfo
@@ -219,6 +236,37 @@ class BilibiliBrowserRuntime(
     }
 
     fun runtimeInfo(): BrowserRuntimeInfo? = info
+
+    fun refreshCanonicalIdentity(): Boolean = synchronized(lock) {
+        val connection = browser ?: return false
+        runCatching {
+            hydrateCookies(connection)
+            synchronizeCredentialStorage()
+        }.onFailure { error ->
+            log.warn("向可选浏览器下发 JVM Credential 失败；JVM 主流程继续运行: {}", error.toString())
+            log.debug("Browser Credential hydration detail", error)
+        }.isSuccess
+    }
+
+    fun observeCredentialSnapshot(): BrowserCredentialSnapshot? {
+        val connection = browser ?: return null
+        val variants = connection.call("Storage.getCookies").getJSONArray("cookies")
+            ?.filterIsInstance<JSONObject>().orEmpty()
+            .filter { it.getString("domain").orEmpty().contains("bilibili.com") }
+            .mapNotNull(::browserCookie)
+            .groupBy { it.name.lowercase(Locale.ROOT) }
+        val values = variants.mapValues { (_, cookies) ->
+                cookies.sortedWith(compareBy<StoredCookie>(
+                    { if (it.domain == ".bilibili.com") 0 else 1 },
+                    { if (it.path == "/") 0 else 1 },
+                )).first()
+            }
+        val refreshToken = runCatching {
+            val page = credentialInspectionPage()
+            evaluateString(page.connection, "localStorage.getItem('ac_time_value') || ''")
+        }.onFailure { invalidateCredentialPage() }.getOrDefault("")
+        return BrowserCredentialSnapshot(values, variants, refreshToken)
+    }
 
     fun createPage(url: String = "about:blank"): BrowserPage {
         val browserConnection = browser ?: error("Browser runtime is not started")
@@ -252,25 +300,10 @@ class BilibiliBrowserRuntime(
             )
         }
         val cookies = browserConnection.call("Storage.getCookies").getJSONArray("cookies") ?: return false
-        val stored = cookies.filterIsInstance<JSONObject>().mapNotNull { item ->
-            val name = item.getString("name") ?: return@mapNotNull null
-            val value = item.getString("value") ?: return@mapNotNull null
-            if (!item.getString("domain").orEmpty().contains("bilibili.com")) return@mapNotNull null
-            StoredCookie(
-                name = name,
-                value = if (name.equals("browser_resolution", true)) {
-                    BilibiliBrowserProperties.BROWSER_RESOLUTION
-                } else value,
-                domain = item.getString("domain").orEmpty(),
-                path = item.getString("path") ?: "/", hostOnly = !item.getString("domain").orEmpty().startsWith('.'),
-                secure = item.getBooleanValue("secure"), httpOnly = item.getBooleanValue("httpOnly"),
-                sameSite = item.getString("sameSite"),
-                expiresAtEpochSeconds = item.getDouble("expires")?.toLong()?.takeIf { it > 0 },
-                transportScope = if (name.equals("X-BILI-SEC-TOKEN", true)) "browser" else "shared",
-                source = source,
-            )
-        }
-        val changed = credentialStore.mergeCookies(stored, critical = true)
+        val stored = cookies.filterIsInstance<JSONObject>().mapNotNull(::browserCookie)
+            .filterNot { it.name.lowercase(Locale.ROOT) in BROWSER_AUTHORITATIVE_BLOCKLIST }
+            .onEach { it.transportScope = "browser"; it.source = source }
+        val changed = credentialStore.mergeCookies(stored, critical = true, projectAccount = false)
         if (changed) credentialStore.update(critical = true) { envelope ->
             envelope.browser.cookieHash = credentialStore.cookieHash("browser")
             envelope.browser.lastSynchronizedAtEpochMillis = System.currentTimeMillis()
@@ -289,7 +322,7 @@ class BilibiliBrowserRuntime(
             cookie.sameSite?.takeIf { it in setOf("Strict", "Lax", "None") }?.let { put("sameSite", it) }
         }
         connection.call("Storage.setCookies", mapOf("cookies" to listOf(value)))
-        credentialStore.mergeCookies(listOf(cookie), critical = true)
+        credentialStore.mergeCookies(listOf(cookie), critical = true, projectAccount = false)
     }
 
     fun hydrateWebStorage(page: BrowserPage): String {
@@ -326,7 +359,11 @@ class BilibiliBrowserRuntime(
 
     private fun hydrateCookies(connection: CdpConnection) {
         val snapshot = credentialStore.snapshot() ?: credentialStore.load() ?: return
-        val cookies = snapshot.cookies.filterNot { it.isExpired() || it.name.equals("b_lsid", true) }.map { cookie ->
+        val cookies = snapshot.cookies.filter {
+            !it.isExpired() && !it.name.equals("b_lsid", true) && !it.name.equals("ac_time_value", true) &&
+                (it.transportScope == "shared" || it.name.equals("bili_ticket", true) ||
+                    it.name.equals("bili_ticket_expires", true))
+        }.map { cookie ->
             linkedMapOf<String, Any>(
                 "name" to cookie.name, "value" to cookie.value, "domain" to cookie.domain,
                 "path" to cookie.path, "secure" to cookie.secure, "httpOnly" to cookie.httpOnly,
@@ -335,10 +372,87 @@ class BilibiliBrowserRuntime(
                 cookie.sameSite?.takeIf { it in setOf("Strict", "Lax", "None") }?.let { put("sameSite", it) }
             }
         }
+        val replacedNames = cookies.map { it["name"].toString().lowercase(Locale.ROOT) }
+            .filter { it in JVM_AUTHORITY_COOKIE_NAMES }.toSet()
+        if (replacedNames.isNotEmpty()) {
+            connection.call("Storage.getCookies").getJSONArray("cookies")
+                ?.filterIsInstance<JSONObject>().orEmpty()
+                .filter {
+                    it.getString("domain").orEmpty().contains("bilibili.com") &&
+                        it.getString("name").orEmpty().lowercase(Locale.ROOT) in replacedNames
+                }
+                .forEach { existing ->
+                    runCatching {
+                        connection.call("Storage.deleteCookies", mapOf(
+                            "name" to existing.getString("name").orEmpty(),
+                            "domain" to existing.getString("domain").orEmpty(),
+                            "path" to (existing.getString("path") ?: "/"),
+                        ), 5)
+                    }
+                }
+        }
         // Keep browser-generated/device cookies from the persistent profile and
         // overwrite only names present in the persisted StarBot credential.
         if (cookies.isNotEmpty()) connection.call("Storage.setCookies", mapOf("cookies" to cookies))
         hydratedIdentityRevision = snapshot.identityRevision
+    }
+
+    private fun browserCookie(item: JSONObject): StoredCookie? {
+        val name = item.getString("name") ?: return null
+        val value = item.getString("value") ?: return null
+        val domain = item.getString("domain").orEmpty()
+        if (!domain.contains("bilibili.com")) return null
+        return StoredCookie(
+            name = name,
+            value = if (name.equals("browser_resolution", true)) BilibiliBrowserProperties.BROWSER_RESOLUTION else value,
+            domain = domain,
+            path = item.getString("path") ?: "/",
+            hostOnly = !domain.startsWith('.'), secure = item.getBooleanValue("secure"),
+            httpOnly = item.getBooleanValue("httpOnly"), sameSite = item.getString("sameSite"),
+            expiresAtEpochSeconds = item.getDouble("expires")?.toLong()?.takeIf { it > 0 },
+            transportScope = "browser", source = "browser-observation",
+        )
+    }
+
+    private fun credentialInspectionPage(): BrowserPage = synchronized(credentialPageLock) {
+        credentialPage?.let { return it }
+        val page = createPage("https://www.bilibili.com/robots.txt")
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+        while (System.nanoTime() < deadline) {
+            val origin = runCatching { evaluateString(page.connection, "location.origin") }.getOrDefault("")
+            if (origin == "https://www.bilibili.com") {
+                credentialPage = page
+                return page
+            }
+            Thread.sleep(50)
+        }
+        closePage(page)
+        error("Timed out preparing Bilibili credential inspection origin")
+    }
+
+    private fun invalidateCredentialPage() = synchronized(credentialPageLock) {
+        credentialPage?.let { runCatching { closePage(it) } }
+        credentialPage = null
+    }
+
+    private fun synchronizeCredentialStorage() {
+        val connection = browser ?: return
+        runCatching {
+            connection.call("Storage.deleteCookies", mapOf("name" to "ac_time_value", "domain" to ".bilibili.com"), 5)
+        }
+        runCatching {
+            connection.call("Storage.deleteCookies", mapOf("name" to "ac_time_value", "domain" to "www.bilibili.com"), 5)
+        }
+        val page = credentialInspectionPage()
+        val mode = properties.credentialSyncMode.trim().lowercase(Locale.ROOT)
+        val token = credentialStore.snapshot()?.account?.acTimeValue.orEmpty()
+        val expression = if (mode == "validated-bidirectional" && token.isNotBlank()) {
+            val encoded = JSON.toJSONString(token)
+            "localStorage.setItem('ac_time_value', $encoded); 'stored'"
+        } else {
+            "localStorage.removeItem('ac_time_value'); 'removed'"
+        }
+        evaluateString(page.connection, expression)
     }
 
     private fun evaluateString(connection: CdpConnection, expression: String): String {
@@ -405,6 +519,10 @@ class BilibiliBrowserRuntime(
         manager.close()
         synchronized(lock) {
             runCatching { synchronizeCookiesFromBrowser("browser-shutdown") }
+            synchronized(credentialPageLock) {
+                credentialPage?.let { runCatching { closePage(it) } }
+                credentialPage = null
+            }
             browser?.close(); browser = null
             process?.let(::stopProcessTree)
             process = null; info = null
@@ -413,6 +531,11 @@ class BilibiliBrowserRuntime(
 
     companion object {
         private val CHROME_MAJOR = Regex("Chrome/(\\d+)", RegexOption.IGNORE_CASE)
+        private val BROWSER_AUTHORITATIVE_BLOCKLIST = setOf(
+            "sessdata", "bili_jct", "dedeuserid", "dedeuserid__ckmd5", "ac_time_value",
+            "buvid3", "buvid4", "buvid_fp", "b_nut", "bili_ticket", "bili_ticket_expires", "sid",
+        )
+        private val JVM_AUTHORITY_COOKIE_NAMES = BROWSER_AUTHORITATIVE_BLOCKLIST - setOf("sid", "ac_time_value")
 
         internal fun browserVersionMatches(product: String, expected: String?): Boolean {
             if (expected.isNullOrBlank()) return true

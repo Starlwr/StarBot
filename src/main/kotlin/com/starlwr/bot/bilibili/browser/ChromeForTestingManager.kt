@@ -56,6 +56,8 @@ class BilibiliBrowserProperties {
     var allowAddressFamilySplit: Boolean = false
     var startMinimized: Boolean = true
     var headless: Boolean = false
+    var credentialSyncMode: String = "jvm-authoritative"
+    var credentialAuditIntervalSeconds: Long = 90
     var downloadConnectTimeoutSeconds: Long = 15
     var downloadTimeoutSeconds: Long = 300
     var downloadProxyUri: String? = null

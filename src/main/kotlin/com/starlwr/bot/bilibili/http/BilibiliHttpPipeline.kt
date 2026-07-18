@@ -269,7 +269,7 @@ class BilibiliHttpPipeline(
         val separator = first.indexOf('=')
         if (separator <= 0) return null
         val name = first.substring(0, separator).trim()
-        if (name.equals("b_lsid", true)) return null
+        if (name.equals("b_lsid", true) || name.equals("ac_time_value", true)) return null
         val value = first.substring(separator + 1)
         var domain = requestUri.host ?: return null
         var hostOnly = true
@@ -282,7 +282,10 @@ class BilibiliHttpPipeline(
             val key = attribute.substringBefore('=').trim().lowercase(Locale.ROOT)
             val item = attribute.substringAfter('=', "").trim()
             when (key) {
-                "domain" -> if (item.isNotBlank()) { domain = item; hostOnly = false }
+                "domain" -> if (item.isNotBlank()) {
+                    domain = ".${item.trimStart('.')}"
+                    hostOnly = false
+                }
                 "path" -> if (item.isNotBlank()) path = item
                 "secure" -> secure = true
                 "httponly" -> httpOnly = true
@@ -293,8 +296,14 @@ class BilibiliHttpPipeline(
                 }.getOrNull()
             }
         }
+        val scope = when {
+            name.equals("X-BILI-SEC-TOKEN", true) -> transport
+            name.equals("sid", true) -> transport
+            name.equals("bili_ticket", true) || name.equals("bili_ticket_expires", true) -> transport
+            else -> "shared"
+        }
         return StoredCookie(name, value, domain, path, hostOnly, secure, httpOnly, sameSite, expires,
-            if (name.equals("X-BILI-SEC-TOKEN", true)) transport else "shared", "set-cookie")
+            scope, "set-cookie-$transport")
     }
 
     private fun decode(bytes: ByteArray, encoding: String?): ByteArray {

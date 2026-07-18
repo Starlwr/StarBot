@@ -25,9 +25,13 @@ import java.security.spec.MGF1ParameterSpec
 import java.security.spec.X509EncodedKeySpec
 import java.time.Duration
 import java.time.Instant
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Base64
+import java.util.Collections
 import java.util.LinkedHashMap
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.zip.GZIPInputStream
 import java.util.zip.InflaterInputStream
 import javax.crypto.Cipher
@@ -67,6 +71,7 @@ internal data class CredentialValidationResult(
     val navValid: Boolean,
     val cookieInfoValid: Boolean,
     val refreshWindow: CredentialRefreshWindow?,
+    val observedUid: String? = null,
 )
 
 /** Full web Credential lifecycle ported from bilibili-api-python. */
@@ -100,7 +105,8 @@ class BilibiliCredentialService @Autowired constructor(
     fun credentialPath(): Path = fileStore.path()
 
     fun load(): Cookies? = synchronized(lock) {
-        val credential = fileStore.loadCookies() ?: return null
+        fileStore.load()
+        val credential = resumePendingRefresh() ?: fileStore.loadCookies() ?: return null
         normalize(credential)
         if (!credential.hasLoginCredential()) return null
         credential
@@ -119,20 +125,29 @@ class BilibiliCredentialService @Autowired constructor(
         return validateCredential(credential).valid
     }
 
-    private fun validateCredential(credential: Cookies): CredentialValidationResult {
+    private fun validateCredential(
+        credential: Cookies,
+        persistResponseCookies: Boolean = true,
+    ): CredentialValidationResult {
         val mode = properties.validationMode.trim().lowercase()
         require(mode in setOf("nav", "cookie-info", "cookie_info", "both")) {
             "validation-mode must be nav, cookie-info, or both"
         }
+        var observedUid: String? = null
         val navValid = if (mode in setOf("nav", "both")) {
-            val json = parseJson(request("GET", NAV_URL, credential))
-            json.getIntValue("code", -1) == 0 && json.getJSONObject("data")?.getBooleanValue("isLogin") == true
+            val json = parseJson(request("GET", NAV_URL, credential, persistResponseCookies = persistResponseCookies))
+            val data = json.getJSONObject("data")
+            observedUid = data?.get("mid")?.toString()
+            json.getIntValue("code", -1) == 0 && data?.getBooleanValue("isLogin") == true
         } else true
         var refreshWindow: CredentialRefreshWindow? = null
         val cookieInfoValid = if (mode in setOf("cookie-info", "cookie_info", "both")) {
             runCatching {
                 refreshWindow = parseRefreshWindow(
-                    requireSuccess(request("GET", COOKIE_INFO_URL, credential), "validate Credential")
+                    requireSuccess(
+                        request("GET", COOKIE_INFO_URL, credential, persistResponseCookies = persistResponseCookies),
+                        "validate Credential"
+                    )
                 )
             }.isSuccess
         } else true
@@ -143,7 +158,42 @@ class BilibiliCredentialService @Autowired constructor(
             mode, navValid, cookieInfoValid, valid, refreshWindow?.refresh ?: "unknown",
             refreshWindow?.timestampMillis ?: "unknown"
         )
-        return CredentialValidationResult(valid, navValid, cookieInfoValid, refreshWindow)
+        return CredentialValidationResult(valid, navValid, cookieInfoValid, refreshWindow, observedUid)
+    }
+
+    fun validateBrowserCandidate(candidate: Cookies, expectedUid: String): Boolean = synchronized(lock) {
+        if (candidate.dedeUserId != expectedUid) return false
+
+        // Browser promotion is a stronger trust boundary than routine maintenance.
+        // Always execute both probes even when the operator has configured the
+        // normal Credential validator to use only one endpoint.
+        val nav = parseJson(request("GET", NAV_URL, candidate, persistResponseCookies = false))
+        val navData = nav.getJSONObject("data")
+        val observedUid = navData?.get("mid")?.toString()
+        val navValid = nav.getIntValue("code", -1) == 0 &&
+            navData?.getBooleanValue("isLogin") == true && observedUid == expectedUid
+        val cookieInfoValid = runCatching {
+            requireSuccess(
+                request("GET", COOKIE_INFO_URL, candidate, persistResponseCookies = false),
+                "validate browser Credential candidate",
+            )
+        }.isSuccess
+        log.info(
+            "浏览器 Credential 候选强校验完成: navValid={}, cookieInfoValid={}, expectedUid={}, observedUid={}",
+            navValid, cookieInfoValid, expectedUid, observedUid,
+        )
+        navValid && cookieInfoValid
+    }
+
+    fun promoteBrowserCandidate(candidate: Cookies, expectedUid: String, expiresAtEpochSeconds: Long?): Boolean = synchronized(lock) {
+        if (candidate.dedeUserId != expectedUid || candidate.acTimeValue.isBlank()) return false
+        if (!validateBrowserCandidate(candidate, expectedUid)) return false
+        applyLifecycle(candidate, expiresAtEpochSeconds)
+        clearServerRefreshState(candidate)
+        save(candidate)
+        log.warn("已原子晋升通过校验的浏览器 Credential 候选: uid={}, expiresAt={}",
+            expectedUid, describeEpoch(candidate.expiresAtEpochSeconds))
+        true
     }
 
     fun validateAndUpdateLease(credential: Cookies): Boolean = synchronized(lock) {
@@ -262,6 +312,7 @@ class BilibiliCredentialService @Autowired constructor(
     }
 
     fun maintain(credential: Cookies): Cookies = synchronized(lock) {
+        resumePendingRefresh(credential)?.let { return it }
         val now = System.currentTimeMillis() / 1000
         var refreshWindow = storedRefreshWindow(credential, now)
         val probeDue = (credential.validationLeaseExpiresAtEpochSeconds ?: 0L) <= now
@@ -330,9 +381,12 @@ class BilibiliCredentialService @Autowired constructor(
             "refresh_token" to old.acTimeValue,
             "source" to "main_web"
         )
-        val response = request("POST", COOKIE_REFRESH_URL, old, form)
+        val response = request("POST", COOKIE_REFRESH_URL, old, form, persistResponseCookies = false)
         val data = requireSuccess(response, "refresh Credential")
         val responseCookies = parseSetCookies(response.headers().allValues("set-cookie"))
+        val storedCookies = parseStoredCookies(
+            response.headers().allValues("set-cookie"), URI.create(COOKIE_REFRESH_URL), "jvm"
+        ).toMutableList()
         val refreshed = copyCredential(old).apply {
             sessData = responseCookies["SESSDATA"] ?: error("Credential refresh response omitted SESSDATA")
             biliJct = responseCookies["bili_jct"] ?: error("Credential refresh response omitted bili_jct")
@@ -344,14 +398,104 @@ class BilibiliCredentialService @Autowired constructor(
             extraCookies.putAll(responseCookies.filterKeys { it !in KNOWN_COOKIES })
         }
         applyLifecycle(refreshed, parseExpiry(response.headers().allValues("set-cookie")))
-        val confirm = linkedMapOf("csrf" to refreshed.biliJct, "refresh_token" to old.acTimeValue)
-        requireSuccess(request("POST", CONFIRM_REFRESH_URL, refreshed, confirm), "confirm Credential refresh")
         clearServerRefreshState(refreshed)
-        save(refreshed)
+        val pending = PendingCredentialRefresh(
+            transactionId = UUID.randomUUID().toString(),
+            oldRefreshToken = old.acTimeValue,
+            candidate = copyCredential(refreshed),
+            responseCookies = storedCookies,
+            startedAtEpochMillis = System.currentTimeMillis(),
+        )
+        fileStore.stagePendingRefresh(pending)
+        finalizePendingRefresh(pending)
         log.info("Bilibili Credential 刷新成功且旧 refresh token 已确认: issuedAt={}, expiresAt={}, nextRefreshAt={}, serverRefresh=unknown（等待下一轮探针）",
             describeEpoch(refreshed.issuedAtEpochSeconds), describeEpoch(refreshed.expiresAtEpochSeconds),
             describeEpoch(refreshed.nextRefreshAtEpochSeconds))
         return refreshed
+    }
+
+    private fun resumePendingRefresh(currentCredential: Cookies? = null): Cookies? {
+        val pending = fileStore.pendingRefresh() ?: return null
+        return runCatching {
+            log.warn("检测到未完成的 Credential 刷新事务，开始恢复: transactionId={}, phase={}",
+                pending.transactionId, pending.phase)
+            finalizePendingRefresh(pending)
+            pending.candidate
+        }.getOrElse { error ->
+            fileStore.updatePendingRefresh {
+                it.lastAttemptAtEpochMillis = System.currentTimeMillis()
+                it.lastError = error.toString()
+            }
+            log.warn("Credential 刷新事务恢复尚未完成，将保留新候选并稍后重试: transactionId={}, error={}",
+                pending.transactionId, error.toString())
+            currentCredential?.takeIf { sameCredentialGeneration(it, pending.candidate) } ?: pending.candidate
+        }
+    }
+
+    private fun sameCredentialGeneration(first: Cookies, second: Cookies): Boolean =
+        first.sessData == second.sessData && first.biliJct == second.biliJct &&
+            first.dedeUserId == second.dedeUserId && first.acTimeValue == second.acTimeValue
+
+    private fun finalizePendingRefresh(pending: PendingCredentialRefresh) {
+        val candidate = pending.candidate
+        val collected = Collections.synchronizedList(pending.responseCookies.toMutableList())
+        if (pending.phase != "CONFIRMED") {
+            val ssoFuture = CompletableFuture.runAsync { performSso(copyCredential(candidate), collected) }
+            val confirm = linkedMapOf("csrf" to candidate.biliJct, "refresh_token" to pending.oldRefreshToken)
+            val response = try {
+                request("POST", CONFIRM_REFRESH_URL, candidate, confirm, persistResponseCookies = false)
+            } finally {
+                ssoFuture.join()
+            }
+            requireSuccess(response, "confirm Credential refresh")
+            collected += parseStoredCookies(response.headers().allValues("set-cookie"), URI.create(CONFIRM_REFRESH_URL), "jvm")
+            applySetCookieValues(candidate, response.headers().allValues("set-cookie"))
+            pending.phase = "CONFIRMED"
+            pending.lastAttemptAtEpochMillis = System.currentTimeMillis()
+            pending.responseCookies = collected.toMutableList()
+            fileStore.updatePendingRefresh {
+                it.phase = pending.phase
+                it.lastAttemptAtEpochMillis = pending.lastAttemptAtEpochMillis
+                it.responseCookies = pending.responseCookies
+                it.candidate = copyCredential(candidate)
+                it.lastError = ""
+            }
+        }
+        fileStore.completePendingRefresh(candidate, collected)
+    }
+
+    private fun performSso(candidate: Cookies, collected: MutableList<StoredCookie>) {
+        runCatching {
+            val url = "$SSO_LIST_URL?biliCSRF=${encode(candidate.biliJct)}"
+            val data = requireSuccess(
+                request("GET", url, candidate, persistResponseCookies = false),
+                "get Credential SSO list"
+            )
+            val urls = data.getJSONArray("sso")?.toJavaList(String::class.java).orEmpty()
+                .map { if (it.startsWith("//")) "https:$it" else it }
+                .map { if (it.startsWith("http://")) "https://${it.removePrefix("http://")}" else it }
+                .filter { it.startsWith("https://") }
+                .filter { URI.create(it).host?.let { host -> host == "bilibili.com" || host.endsWith(".bilibili.com") } == true }
+                .distinct()
+                .take(MAX_SSO_TARGETS)
+            val futures = urls.map { target ->
+                CompletableFuture.runAsync {
+                    val response = request("POST", target, candidate, emptyMap(), persistResponseCookies = false)
+                    if (response.statusCode() in 200..399) {
+                        val headers = response.headers().allValues("set-cookie")
+                        collected += parseStoredCookies(headers, URI.create(target), "jvm")
+                    } else {
+                        log.warn("Bilibili Credential SSO 域同步返回异常: host={}, status={}", URI.create(target).host, response.statusCode())
+                    }
+                }
+            }
+            CompletableFuture.allOf(*futures.toTypedArray()).join()
+            log.info("Bilibili Credential SSO 域同步完成: targets={}", urls.size)
+        }.onFailure { error ->
+            // Current Web treats SSO fan-out as best effort and confirms the old token independently.
+            log.warn("Bilibili Credential SSO 域同步未完整完成，继续确认旧 refresh token: {}", error.toString())
+            log.debug("Credential SSO synchronization detail", error)
+        }
     }
 
     fun generateQrCode(): QrCodeSession {
@@ -413,6 +557,48 @@ class BilibiliCredentialService @Autowired constructor(
         val index = pair.indexOf('=')
         if (index <= 0) null else pair.substring(0, index).trim() to pair.substring(index + 1).trim()
     }.toMap(LinkedHashMap())
+
+    internal fun parseStoredCookies(headers: List<String>, requestUri: URI, transport: String): List<StoredCookie> =
+        headers.mapNotNull { header ->
+            val parts = header.split(';').map { it.trim() }
+            val first = parts.firstOrNull() ?: return@mapNotNull null
+            val index = first.indexOf('=')
+            if (index <= 0) return@mapNotNull null
+            val name = first.substring(0, index).trim()
+            if (name.equals("b_lsid", true) || name.equals("ac_time_value", true)) return@mapNotNull null
+            var domain = requestUri.host ?: return@mapNotNull null
+            var hostOnly = true
+            var path = "/"
+            var secure = false
+            var httpOnly = false
+            var sameSite: String? = null
+            var expires: Long? = null
+            parts.drop(1).forEach { attribute ->
+                val key = attribute.substringBefore('=').trim().lowercase()
+                val value = attribute.substringAfter('=', "").trim()
+                when (key) {
+                    "domain" -> if (value.isNotBlank()) {
+                        domain = ".${value.trimStart('.')}"
+                        hostOnly = false
+                    }
+                    "path" -> if (value.isNotBlank()) path = value
+                    "secure" -> secure = true
+                    "httponly" -> httpOnly = true
+                    "samesite" -> sameSite = value.replaceFirstChar { it.uppercase() }
+                    "max-age" -> value.toLongOrNull()?.let { expires = Instant.now().epochSecond + it }
+                    "expires" -> if (expires == null) expires = runCatching {
+                        ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toEpochSecond()
+                    }.getOrNull()
+                }
+            }
+            val scope = when {
+                name.equals("sid", true) -> transport
+                name.equals("bili_ticket", true) || name.equals("bili_ticket_expires", true) -> transport
+                else -> "shared"
+            }
+            StoredCookie(name, first.substring(index + 1), domain, path, hostOnly, secure, httpOnly,
+                sameSite, expires, scope, "credential-refresh")
+        }
 
     internal fun parseExpiry(headers: List<String>): Long? {
         val now = System.currentTimeMillis() / 1000
@@ -498,7 +684,14 @@ class BilibiliCredentialService @Autowired constructor(
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
-    private fun request(method: String, url: String, credential: Cookies? = null, form: Map<String, String>? = null, randomizeBuvid3: Boolean = false): HttpResponse<String> {
+    private fun request(
+        method: String,
+        url: String,
+        credential: Cookies? = null,
+        form: Map<String, String>? = null,
+        randomizeBuvid3: Boolean = false,
+        persistResponseCookies: Boolean = true,
+    ): HttpResponse<String> {
         val headers = linkedMapOf(
             "Referer" to "https://www.bilibili.com",
             "Accept" to "application/json, text/plain, */*",
@@ -517,7 +710,7 @@ class BilibiliCredentialService @Autowired constructor(
         return try {
             client.send(builder.build(), decodedUtf8BodyHandler()).also { response ->
                 networkLog.httpResponse(trace, response.statusCode(), response.headers().map(), response.body())
-                if (credential != null && url != COOKIE_REFRESH_URL) {
+                if (credential != null && url != COOKIE_REFRESH_URL && persistResponseCookies) {
                     mergeResponseCookies(credential, response.headers().allValues("set-cookie"))
                 }
             }
@@ -649,6 +842,8 @@ class BilibiliCredentialService @Autowired constructor(
         private const val COOKIE_INFO_URL="https://passport.bilibili.com/x/passport-login/web/cookie/info"
         private const val COOKIE_REFRESH_URL="https://passport.bilibili.com/x/passport-login/web/cookie/refresh"
         private const val CONFIRM_REFRESH_URL="https://passport.bilibili.com/x/passport-login/web/confirm/refresh"
+        private const val SSO_LIST_URL="https://passport.bilibili.com/x/passport-login/web/sso/list"
+        private const val MAX_SSO_TARGETS=32
         private const val SPI_URL="https://api.bilibili.com/x/frontend/finger/spi"
         private val REFRESH_CSRF=Regex("""<div\s+id=["']1-name["']>(.+?)</div>""", RegexOption.DOT_MATCHES_ALL)
         private val KNOWN_COOKIES=setOf("SESSDATA","bili_jct","buvid3","buvid4","DedeUserID","ac_time_value","b_nut","bili_ticket","bili_ticket_expires")

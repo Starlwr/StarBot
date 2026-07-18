@@ -44,7 +44,7 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         normalize(envelope)
         current = envelope
         if (source != primary || sourceSchema < CredentialEnvelope.CURRENT_SCHEMA) {
-            backupV1(source)
+            backupBeforeMigration(source, sourceSchema)
             saveEnvelope(envelope, incrementRevision = false)
         }
         envelope.copyDeep()
@@ -76,12 +76,19 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         envelope.cookies.filter { it.matches(uri, transport) }.map { it.copy() }
     }
 
-    fun mergeCookies(values: Collection<StoredCookie>, critical: Boolean = true): Boolean = synchronized(lock) {
+    fun mergeCookies(
+        values: Collection<StoredCookie>,
+        critical: Boolean = true,
+        projectAccount: Boolean = true,
+    ): Boolean = synchronized(lock) {
         if (values.isEmpty()) return false
         val envelope = current ?: load() ?: CredentialEnvelope()
         val indexed = envelope.cookies.associateByTo(linkedMapOf()) { it.key() }
         var changed = false
-        values.filterNot { it.name.lowercase(Locale.ROOT) in CredentialEnvelope.SESSION_ONLY_COOKIE_NAMES }.forEach { incoming ->
+        values.filterNot {
+            val name = it.name.lowercase(Locale.ROOT)
+            name in CredentialEnvelope.SESSION_ONLY_COOKIE_NAMES || name == "ac_time_value"
+        }.forEach { incoming ->
             val old = indexed[incoming.key()]
             if (old != incoming) {
                 changed = true
@@ -90,12 +97,43 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         }
         if (!changed) return false
         envelope.cookies = indexed.values.toMutableList()
-        projectKnownCookies(envelope)
+        if (projectAccount) projectKnownCookies(envelope)
         envelope.identityRevision++
         normalize(envelope)
         current = envelope
         if (critical) saveEnvelope(envelope, incrementRevision = false)
         true
+    }
+
+    fun pendingRefresh(): PendingCredentialRefresh? = synchronized(lock) {
+        val envelope = current ?: load() ?: return null
+        envelope.pendingRefresh?.let {
+            JSON.parseObject(JSON.toJSONString(it), PendingCredentialRefresh::class.java)
+        }
+    }
+
+    fun stagePendingRefresh(pending: PendingCredentialRefresh) = update(critical = true) { envelope ->
+        envelope.pendingRefresh = pending
+    }
+
+    fun updatePendingRefresh(mutation: (PendingCredentialRefresh) -> Unit) = update(critical = true) { envelope ->
+        envelope.pendingRefresh?.let(mutation)
+    }
+
+    fun completePendingRefresh(candidate: Cookies, responseCookies: Collection<StoredCookie>) = synchronized(lock) {
+        val envelope = current ?: load() ?: CredentialEnvelope()
+        envelope.account = candidate.copyCredential()
+        mergeKnownCookies(envelope, envelope.account)
+        val indexed = envelope.cookies.associateByTo(linkedMapOf()) { it.key() }
+        responseCookies.filterNot { it.name.equals("ac_time_value", true) }.forEach { cookie ->
+            if (cookie.isExpired()) indexed.remove(cookie.key()) else indexed[cookie.key()] = cookie
+        }
+        envelope.cookies = indexed.values.toMutableList()
+        envelope.pendingRefresh = null
+        envelope.identityRevision++
+        normalize(envelope)
+        current = envelope
+        saveEnvelope(envelope, incrementRevision = false)
     }
 
     fun cookieHash(transport: String = "shared"): String = synchronized(lock) {
@@ -125,8 +163,34 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
     private fun normalize(envelope: CredentialEnvelope) {
         normalizeCookies(envelope.account)
         envelope.schemaVersion = CredentialEnvelope.CURRENT_SCHEMA
-        envelope.cookies.removeIf { it.name.isBlank() || it.name.lowercase(Locale.ROOT) in CredentialEnvelope.SESSION_ONLY_COOKIE_NAMES }
+        envelope.cookies.removeIf {
+            val name = it.name.lowercase(Locale.ROOT)
+            it.name.isBlank() || name in CredentialEnvelope.SESSION_ONLY_COOKIE_NAMES || name == "ac_time_value"
+        }
+        envelope.cookies.forEach { cookie ->
+            cookie.domain = if (cookie.hostOnly) {
+                cookie.domain.trimStart('.')
+            } else {
+                ".${cookie.domain.trimStart('.')}"
+            }
+            if (cookie.path.isBlank()) cookie.path = "/"
+            when {
+                cookie.name.equals("bili_ticket", true) || cookie.name.equals("bili_ticket_expires", true) ->
+                    cookie.transportScope = "jvm"
+                cookie.name.equals("sid", true) && cookie.transportScope == "shared" ->
+                    cookie.transportScope = "jvm"
+            }
+        }
         envelope.cookies = envelope.cookies.distinctBy { it.key() }.toMutableList()
+        envelope.account.extraCookies.orEmpty()["sid"]?.takeIf { it.isNotBlank() }?.let { sid ->
+            val existing = envelope.cookies.firstOrNull { it.name.equals("sid", true) && it.transportScope == "jvm" }
+            if (existing == null) {
+                envelope.cookies += StoredCookie(name = "sid", value = sid, transportScope = "jvm", source = "credential-refresh")
+            } else if (existing.value != sid) {
+                existing.value = sid
+                existing.source = "credential-refresh"
+            }
+        }
         val resolutionCookie = envelope.cookies.firstOrNull { it.name.equals("browser_resolution", true) }
         if (resolutionCookie == null) {
             envelope.cookies += StoredCookie(
@@ -177,42 +241,52 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
             "buvid3" to account.buvid3,
             "buvid4" to account.buvid4,
             "DedeUserID" to account.dedeUserId,
-            "ac_time_value" to account.acTimeValue,
             "b_nut" to account.bNut,
             "bili_ticket" to account.biliTicket,
             "bili_ticket_expires" to account.biliTicketExpires?.takeIf { it > 0 }?.toString(),
         )
         val indexed = envelope.cookies.associateByTo(linkedMapOf()) { it.key() }
         values.filterValues { !it.isNullOrBlank() }.forEach { (name, value) ->
-            val cookie = StoredCookie(
+            val scope = if (name in setOf("bili_ticket", "bili_ticket_expires")) "jvm" else "shared"
+            val template = StoredCookie(
                 name = name,
                 value = value.orEmpty(),
-                httpOnly = name in setOf("SESSDATA", "ac_time_value"),
+                httpOnly = name == "SESSDATA",
                 expiresAtEpochSeconds = when (name) {
                     "SESSDATA" -> account.expiresAtEpochSeconds?.takeIf { it > 0 }
-                    "bili_ticket" -> account.biliTicketExpires?.takeIf { it > 0 }
+                    "bili_ticket", "bili_ticket_expires" -> account.biliTicketExpires?.takeIf { it > 0 }
                     else -> null
-                }
+                },
+                transportScope = scope,
             )
-            indexed[cookie.key()] = cookie
+            val existing = indexed[template.key()]
+            if (existing == null) {
+                indexed[template.key()] = template
+            } else {
+                // Preserve attributes learned from the server (SameSite, host-only,
+                // exact domain/path and source) while projecting the current value.
+                existing.value = template.value
+                existing.httpOnly = existing.httpOnly || template.httpOnly
+                template.expiresAtEpochSeconds?.let { existing.expiresAtEpochSeconds = it }
+            }
         }
         envelope.cookies = indexed.values.toMutableList()
     }
 
     private fun projectKnownCookies(envelope: CredentialEnvelope) {
-        val shared = envelope.cookies.filter { it.transportScope == "shared" && !it.isExpired() }
-            .associateBy { it.name.lowercase(Locale.ROOT) }
-        fun value(name: String) = shared[name.lowercase(Locale.ROOT)]?.value
+        val active = envelope.cookies.filterNot { it.isExpired() }
+        fun value(name: String, vararg scopes: String): String? = active.firstOrNull {
+            it.name.equals(name, true) && it.transportScope in scopes
+        }?.value
         envelope.account.apply {
-            value("SESSDATA")?.let { sessData = it }
-            value("bili_jct")?.let { biliJct = it }
-            value("buvid3")?.let { buvid3 = it }
-            value("buvid4")?.let { buvid4 = it }
-            value("DedeUserID")?.let { dedeUserId = it }
-            value("ac_time_value")?.let { acTimeValue = it }
-            value("b_nut")?.let { bNut = it }
-            value("bili_ticket")?.let { biliTicket = it }
-            value("bili_ticket_expires")?.toLongOrNull()?.let { biliTicketExpires = it }
+            value("SESSDATA", "shared")?.let { sessData = it }
+            value("bili_jct", "shared")?.let { biliJct = it }
+            value("buvid3", "shared")?.let { buvid3 = it }
+            value("buvid4", "shared")?.let { buvid4 = it }
+            value("DedeUserID", "shared")?.let { dedeUserId = it }
+            value("b_nut", "shared")?.let { bNut = it }
+            value("bili_ticket", "jvm", "shared")?.let { biliTicket = it }
+            value("bili_ticket_expires", "jvm", "shared")?.toLongOrNull()?.let { biliTicketExpires = it }
         }
     }
 
@@ -234,9 +308,10 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         }
     }
 
-    private fun backupV1(source: Path) {
+    private fun backupBeforeMigration(source: Path, sourceSchema: Int) {
         if (!Files.isRegularFile(source)) return
-        val backup = path().resolveSibling("${path().fileName}.v1.bak")
+        val suffix = if (sourceSchema < 2) "v1" else "schema$sourceSchema"
+        val backup = path().resolveSibling("${path().fileName}.$suffix.bak")
         if (!Files.exists(backup)) Files.copy(source, backup, StandardCopyOption.COPY_ATTRIBUTES)
     }
 

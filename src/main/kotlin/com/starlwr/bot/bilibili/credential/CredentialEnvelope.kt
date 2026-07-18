@@ -21,10 +21,11 @@ data class CredentialEnvelope(
     var webStorage: MutableMap<String, MutableMap<String, String>> = linkedMapOf(),
     var browser: BrowserPersistenceState = BrowserPersistenceState(),
     var identityProbe: IdentityProbePersistence = IdentityProbePersistence(),
+    var pendingRefresh: PendingCredentialRefresh? = null,
     var updatedAtEpochMillis: Long = 0,
 ) {
     companion object {
-        const val CURRENT_SCHEMA = 3
+        const val CURRENT_SCHEMA = 4
         val SESSION_ONLY_COOKIE_NAMES = setOf("b_lsid")
         val BROWSER_STORAGE_ALLOWLIST = setOf(
             "liveWatchTracker", "liveWatchHbCounter"
@@ -99,6 +100,21 @@ data class BrowserPersistenceState(
     var platform: String = "",
     var cookieHash: String = "",
     var lastSynchronizedAtEpochMillis: Long = 0,
+    var lastCredentialAuditAtEpochMillis: Long = 0,
+    var lastCredentialAuditStatus: String = "UNKNOWN",
+    var lastCredentialAuditFingerprint: String = "",
+)
+
+/** Crash-recoverable Web Credential refresh transaction. */
+data class PendingCredentialRefresh(
+    var transactionId: String = "",
+    var phase: String = "COOKIE_REFRESHED",
+    var oldRefreshToken: String = "",
+    var candidate: Cookies = Cookies(),
+    var responseCookies: MutableList<StoredCookie> = mutableListOf(),
+    var startedAtEpochMillis: Long = 0,
+    var lastAttemptAtEpochMillis: Long = 0,
+    var lastError: String = "",
 )
 
 data class IdentityProbePersistence(

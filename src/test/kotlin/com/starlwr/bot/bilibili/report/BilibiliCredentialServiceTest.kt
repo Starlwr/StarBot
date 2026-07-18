@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
+import java.net.URI
 import java.util.zip.GZIPOutputStream
 
 class BilibiliCredentialServiceTest {
@@ -110,5 +111,19 @@ class BilibiliCredentialServiceTest {
         assertEquals(setOf("bili_jct", "sid"), changed)
         assertEquals("current-csrf", credential.biliJct)
         assertEquals("new-sid", credential.extraCookies["sid"])
+    }
+
+    @Test
+    fun `refresh Set-Cookie retains attributes and scopes sid to JVM`() {
+        val cookies = service.parseStoredCookies(listOf(
+            "SESSDATA=new-session; Path=/; Domain=bilibili.com; Expires=Wed, 13 Jan 2027 16:43:06 GMT; HttpOnly; Secure; SameSite=None",
+            "sid=new-sid; Path=/; Domain=bilibili.com; Expires=Wed, 13 Jan 2027 16:43:06 GMT; Secure; SameSite=None",
+            "ac_time_value=must-not-be-a-cookie; Path=/; Domain=bilibili.com",
+        ), URI.create("https://passport.bilibili.com/x/passport-login/web/cookie/refresh"), "jvm")
+
+        assertEquals(2, cookies.size)
+        assertTrue(cookies.single { it.name == "SESSDATA" }.httpOnly)
+        assertEquals("jvm", cookies.single { it.name == "sid" }.transportScope)
+        assertTrue(cookies.none { it.name == "ac_time_value" })
     }
 }
