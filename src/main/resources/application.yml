@@ -31,6 +31,7 @@ starbot:
       refresh-credential: true
       validation-mode: both
       validation-lease-seconds: 180
+      refresh-window-lease-seconds: 180
       refresh-at-lifecycle-ratio: 0.25
       external-credential-initial-refresh: true
       maintenance-interval-millis: 30000

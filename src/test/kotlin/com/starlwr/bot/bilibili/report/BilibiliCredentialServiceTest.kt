@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.net.URI
+import java.time.Instant
 import java.util.zip.GZIPOutputStream
 
 class BilibiliCredentialServiceTest {
@@ -125,5 +126,54 @@ class BilibiliCredentialServiceTest {
         assertTrue(cookies.single { it.name == "SESSDATA" }.httpOnly)
         assertEquals("jvm", cookies.single { it.name == "sid" }.transportScope)
         assertTrue(cookies.none { it.name == "ac_time_value" })
+    }
+
+    @Test
+    fun `credential expiry prefers SESSDATA Set-Cookie then redirect fallback`() {
+        val now = Instant.now().epochSecond
+        val headerExpiry = now + 180 * 24 * 60 * 60
+        val redirectExpiry = now + 170 * 24 * 60 * 60
+        val stored = listOf(StoredCookie(
+            name = "SESSDATA", value = "session", expiresAtEpochSeconds = headerExpiry,
+        ))
+
+        assertEquals(
+            headerExpiry,
+            service.selectCredentialExpiry(stored, mapOf("Expires" to redirectExpiry.toString()), now),
+        )
+        assertEquals(
+            redirectExpiry,
+            service.selectCredentialExpiry(
+                listOf(StoredCookie(name = "SESSDATA", value = "session")),
+                mapOf("Expires" to redirectExpiry.toString()),
+                now,
+            ),
+        )
+    }
+
+    @Test
+    fun `validation lease never becomes credential or browser Cookie expiry`() {
+        val now = Instant.now().epochSecond
+        val credential = Cookies()
+
+        service.applyLifecycle(credential, now + 180)
+
+        assertEquals(0L, credential.expiresAtEpochSeconds)
+        assertEquals(0L, credential.nextRefreshAtEpochSeconds)
+        assertTrue(credential.validationLeaseExpiresAtEpochSeconds > now)
+    }
+
+    @Test
+    fun `legacy short expiry is repaired only from plausible persisted expiry`() {
+        val now = Instant.now().epochSecond
+        val credential = Cookies().apply {
+            issuedAtEpochSeconds = now - 600
+            expiresAtEpochSeconds = issuedAtEpochSeconds + 180
+            extraCookies["Expires"] = (now + 180 * 24 * 60 * 60).toString()
+        }
+
+        assertTrue(service.repairLegacyCredentialExpiry(credential, now))
+        assertEquals(now + 180 * 24 * 60 * 60, credential.expiresAtEpochSeconds)
+        assertTrue(credential.nextRefreshAtEpochSeconds in (now - 600)..credential.expiresAtEpochSeconds)
     }
 }

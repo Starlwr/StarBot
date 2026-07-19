@@ -14,6 +14,7 @@ import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import java.net.ServerSocket
 import java.net.URI
+import java.net.URLDecoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
@@ -55,6 +56,35 @@ data class BrowserCredentialSnapshot(
     fun cookie(name: String): StoredCookie? = cookies[name.lowercase(Locale.ROOT)]
     fun variants(name: String): List<StoredCookie> = cookieVariants[name.lowercase(Locale.ROOT)].orEmpty()
 }
+
+internal fun cdpCookieParam(cookie: StoredCookie): Map<String, Any> = linkedMapOf<String, Any>(
+    "name" to cookie.name,
+    "value" to cookie.value,
+    "path" to cookie.path.ifBlank { "/" },
+    "secure" to cookie.secure,
+    "httpOnly" to cookie.httpOnly,
+).apply {
+    if (cookie.hostOnly) {
+        val scheme = if (cookie.secure) "https" else "http"
+        put("url", "$scheme://${cookie.domain.trimStart('.')}${cookie.path.ifBlank { "/" }}")
+    } else {
+        put("domain", ".${cookie.domain.trimStart('.')}")
+    }
+    cookie.expiresAtEpochSeconds?.takeIf { it > 0 }?.let { put("expires", it) }
+    cookie.sameSite?.takeIf { it in setOf("Strict", "Lax", "None") }?.let { put("sameSite", it) }
+}
+
+internal fun cookieValueEquivalent(expected: String, actual: String): Boolean =
+    expected == actual || runCatching {
+        URLDecoder.decode(expected.replace("+", "%2B"), StandardCharsets.UTF_8) ==
+            URLDecoder.decode(actual.replace("+", "%2B"), StandardCharsets.UTF_8)
+    }.getOrDefault(false)
+
+internal fun cookieIdentityMatches(expected: StoredCookie, actual: StoredCookie): Boolean =
+    expected.name.equals(actual.name, true) &&
+        expected.domain.trimStart('.').equals(actual.domain.trimStart('.'), true) &&
+        expected.hostOnly == actual.hostOnly &&
+        expected.path.ifBlank { "/" } == actual.path.ifBlank { "/" }
 
 class CdpConnection(private val socket: WebSocket) : AutoCloseable {
     private val sequence = AtomicLong()
@@ -314,14 +344,8 @@ class BilibiliBrowserRuntime(
 
     fun setCookie(cookie: StoredCookie) {
         val connection = browser ?: error("Browser runtime is not started")
-        val value = linkedMapOf<String, Any>(
-            "name" to cookie.name, "value" to cookie.value, "domain" to cookie.domain,
-            "path" to cookie.path, "secure" to cookie.secure, "httpOnly" to cookie.httpOnly,
-        ).apply {
-            cookie.expiresAtEpochSeconds?.takeIf { it > 0 }?.let { put("expires", it) }
-            cookie.sameSite?.takeIf { it in setOf("Strict", "Lax", "None") }?.let { put("sameSite", it) }
-        }
-        connection.call("Storage.setCookies", mapOf("cookies" to listOf(value)))
+        connection.call("Storage.setCookies", mapOf("cookies" to listOf(cdpCookieParam(cookie))))
+        verifyHydratedCookies(connection, listOf(cookie))
         credentialStore.mergeCookies(listOf(cookie), critical = true, projectAccount = false)
     }
 
@@ -359,42 +383,73 @@ class BilibiliBrowserRuntime(
 
     private fun hydrateCookies(connection: CdpConnection) {
         val snapshot = credentialStore.snapshot() ?: credentialStore.load() ?: return
-        val cookies = snapshot.cookies.filter {
+        val desired = snapshot.cookies.filter {
             !it.isExpired() && !it.name.equals("b_lsid", true) && !it.name.equals("ac_time_value", true) &&
                 (it.transportScope == "shared" || it.name.equals("bili_ticket", true) ||
                     it.name.equals("bili_ticket_expires", true))
-        }.map { cookie ->
-            linkedMapOf<String, Any>(
-                "name" to cookie.name, "value" to cookie.value, "domain" to cookie.domain,
-                "path" to cookie.path, "secure" to cookie.secure, "httpOnly" to cookie.httpOnly,
-            ).apply {
-                cookie.expiresAtEpochSeconds?.takeIf { it > 0 }?.let { put("expires", it) }
-                cookie.sameSite?.takeIf { it in setOf("Strict", "Lax", "None") }?.let { put("sameSite", it) }
-            }
         }
-        val replacedNames = cookies.map { it["name"].toString().lowercase(Locale.ROOT) }
+        // Set first and verify. Deleting old variants before this point can turn a
+        // transient CDP failure into a browser-side logout.
+        if (desired.isNotEmpty()) {
+            connection.call("Storage.setCookies", mapOf("cookies" to desired.map(::cdpCookieParam)))
+            verifyHydratedCookies(connection, desired)
+        }
+        val replacedNames = desired.map { it.name.lowercase(Locale.ROOT) }
             .filter { it in JVM_AUTHORITY_COOKIE_NAMES }.toSet()
         if (replacedNames.isNotEmpty()) {
             connection.call("Storage.getCookies").getJSONArray("cookies")
                 ?.filterIsInstance<JSONObject>().orEmpty()
-                .filter {
-                    it.getString("domain").orEmpty().contains("bilibili.com") &&
-                        it.getString("name").orEmpty().lowercase(Locale.ROOT) in replacedNames
+                .mapNotNull(::browserCookie)
+                .filter { existing ->
+                    existing.name.lowercase(Locale.ROOT) in replacedNames &&
+                        desired.none { cookieIdentityMatches(it, existing) }
                 }
                 .forEach { existing ->
                     runCatching {
                         connection.call("Storage.deleteCookies", mapOf(
-                            "name" to existing.getString("name").orEmpty(),
-                            "domain" to existing.getString("domain").orEmpty(),
-                            "path" to (existing.getString("path") ?: "/"),
+                            "name" to existing.name,
+                            "domain" to existing.domain,
+                            "path" to existing.path,
                         ), 5)
                     }
                 }
         }
-        // Keep browser-generated/device cookies from the persistent profile and
-        // overwrite only names present in the persisted StarBot credential.
-        if (cookies.isNotEmpty()) connection.call("Storage.setCookies", mapOf("cookies" to cookies))
+        if (desired.isNotEmpty()) verifyHydratedCookies(connection, desired)
         hydratedIdentityRevision = snapshot.identityRevision
+    }
+
+    private fun verifyHydratedCookies(connection: CdpConnection, desired: Collection<StoredCookie>) {
+        val observed = connection.call("Storage.getCookies").getJSONArray("cookies")
+            ?.filterIsInstance<JSONObject>().orEmpty()
+            .mapNotNull(::browserCookie)
+        desired.forEach { expected ->
+            val variants = observed.filter { it.name.equals(expected.name, true) }
+            val exact = variants.firstOrNull { cookieIdentityMatches(expected, it) }
+            if (exact == null || !cookieValueEquivalent(expected.value, exact.value)) {
+                val reason = when {
+                    exact == null && variants.isEmpty() -> "missing"
+                    exact == null -> "domain/path/hostOnly mismatch"
+                    else -> "value mismatch"
+                }
+                log.warn(
+                    "Chrome Cookie 注入验证失败: name={}, reason={}, expectedDomain={}, expectedPath={}, " +
+                        "expectedHostOnly={}, observedVariants={}",
+                    expected.name, reason, expected.domain, expected.path, expected.hostOnly,
+                    variants.map { "${it.domain}${it.path}:hostOnly=${it.hostOnly}:expires=${it.expiresAtEpochSeconds}" },
+                )
+                if (expected.name.equals("buvid4", true)) {
+                    log.info(
+                        "buvid4 未对齐原因: reason={}, percentDecodedEquivalent={}, expectedLength={}, observedLengths={}",
+                        reason,
+                        exact?.let { cookieValueEquivalent(expected.value, it.value) } ?: false,
+                        expected.value.length,
+                        variants.map { it.value.length },
+                    )
+                }
+                log.debug("Chrome Cookie mismatch detail: expected={}, observed={}", expected, variants)
+                error("Chrome Cookie hydration verification failed for ${expected.name}: $reason")
+            }
+        }
     }
 
     private fun browserCookie(item: JSONObject): StoredCookie? {

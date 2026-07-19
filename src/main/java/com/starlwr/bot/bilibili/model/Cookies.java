@@ -54,6 +54,7 @@ public class Cookies {
     private Long validationLeaseExpiresAtEpochSeconds;
     private Boolean serverRefreshRequired;
     private Long serverRefreshCheckedAtEpochSeconds;
+    private Long serverRefreshWindowExpiresAtEpochSeconds;
     private Long serverRefreshTimestampMillis;
     private Integer refreshFailureCount;
     private Long refreshRetryAfterEpochSeconds;
@@ -78,6 +79,7 @@ public class Cookies {
         this.validationLeaseExpiresAtEpochSeconds = 0L;
         this.serverRefreshRequired = null;
         this.serverRefreshCheckedAtEpochSeconds = 0L;
+        this.serverRefreshWindowExpiresAtEpochSeconds = 0L;
         this.serverRefreshTimestampMillis = 0L;
         this.refreshFailureCount = 0;
         this.refreshRetryAfterEpochSeconds = 0L;
@@ -101,6 +103,7 @@ public class Cookies {
         this.validationLeaseExpiresAtEpochSeconds = 0L;
         this.serverRefreshRequired = null;
         this.serverRefreshCheckedAtEpochSeconds = 0L;
+        this.serverRefreshWindowExpiresAtEpochSeconds = 0L;
         this.serverRefreshTimestampMillis = 0L;
         this.refreshFailureCount = 0;
         this.refreshRetryAfterEpochSeconds = 0L;
@@ -141,6 +144,8 @@ public class Cookies {
     public void setServerRefreshRequired(Boolean value) { serverRefreshRequired = value; }
     public Long getServerRefreshCheckedAtEpochSeconds() { return serverRefreshCheckedAtEpochSeconds; }
     public void setServerRefreshCheckedAtEpochSeconds(Long value) { serverRefreshCheckedAtEpochSeconds = value; }
+    public Long getServerRefreshWindowExpiresAtEpochSeconds() { return serverRefreshWindowExpiresAtEpochSeconds; }
+    public void setServerRefreshWindowExpiresAtEpochSeconds(Long value) { serverRefreshWindowExpiresAtEpochSeconds = value; }
     public Long getServerRefreshTimestampMillis() { return serverRefreshTimestampMillis; }
     public void setServerRefreshTimestampMillis(Long value) { serverRefreshTimestampMillis = value; }
     public Integer getRefreshFailureCount() { return refreshFailureCount; }

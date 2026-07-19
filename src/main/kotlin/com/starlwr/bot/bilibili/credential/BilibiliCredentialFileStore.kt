@@ -59,6 +59,33 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         mergeKnownCookies(envelope, cookies)
     }
 
+    fun saveCookiesWithMetadata(cookies: Cookies, responseCookies: Collection<StoredCookie>) = synchronized(lock) {
+        commitCookies(cookies, responseCookies, clearPendingRefresh = false)
+    }
+
+    fun saveValidatedExpiryRepair(cookies: Cookies): Boolean = synchronized(lock) {
+        val envelope = current ?: load() ?: return false
+        val expiry = cookies.expiresAtEpochSeconds?.takeIf { it > 0 } ?: return false
+        val matching = envelope.cookies.filter {
+            it.name.equals("SESSDATA", true) && it.transportScope == "shared" && it.value == cookies.sessData
+        }
+        if (matching.isNotEmpty() && matching.all { it.expiresAtEpochSeconds == expiry }) return false
+        envelope.account = cookies.copyCredential()
+        mergeKnownCookies(envelope, envelope.account)
+        val repaired = envelope.cookies.filter {
+            it.name.equals("SESSDATA", true) && it.transportScope == "shared" && it.value == cookies.sessData
+        }
+        repaired.forEach {
+            it.expiresAtEpochSeconds = expiry
+            it.source = "validated-legacy-expiry-repair"
+        }
+        envelope.identityRevision++
+        normalize(envelope)
+        current = envelope
+        saveEnvelope(envelope, incrementRevision = false)
+        true
+    }
+
     fun update(critical: Boolean = true, mutation: (CredentialEnvelope) -> Unit): CredentialEnvelope = synchronized(lock) {
         val envelope = current ?: load() ?: CredentialEnvelope()
         mutation(envelope)
@@ -121,15 +148,26 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
     }
 
     fun completePendingRefresh(candidate: Cookies, responseCookies: Collection<StoredCookie>) = synchronized(lock) {
+        commitCookies(candidate, responseCookies, clearPendingRefresh = true)
+    }
+
+    private fun commitCookies(
+        candidate: Cookies,
+        responseCookies: Collection<StoredCookie>,
+        clearPendingRefresh: Boolean,
+    ) {
         val envelope = current ?: load() ?: CredentialEnvelope()
         envelope.account = candidate.copyCredential()
-        mergeKnownCookies(envelope, envelope.account)
         val indexed = envelope.cookies.associateByTo(linkedMapOf()) { it.key() }
         responseCookies.filterNot { it.name.equals("ac_time_value", true) }.forEach { cookie ->
             if (cookie.isExpired()) indexed.remove(cookie.key()) else indexed[cookie.key()] = cookie
         }
         envelope.cookies = indexed.values.toMutableList()
-        envelope.pendingRefresh = null
+        // Response metadata is authoritative for scope and attributes. Project
+        // modeled values only after it is present so HostOnly is not widened and
+        // Domain cookies are not accidentally narrowed.
+        mergeKnownCookies(envelope, envelope.account)
+        if (clearPendingRefresh) envelope.pendingRefresh = null
         envelope.identityRevision++
         normalize(envelope)
         current = envelope
@@ -223,6 +261,10 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
             ?: cookies.lastValidatedAtEpochSeconds.takeIf { it > 0 }
                 ?.plus(properties.validationLeaseSeconds.coerceIn(60, 300)) ?: 0L
         cookies.serverRefreshCheckedAtEpochSeconds = cookies.serverRefreshCheckedAtEpochSeconds ?: 0L
+        cookies.serverRefreshWindowExpiresAtEpochSeconds =
+            cookies.serverRefreshWindowExpiresAtEpochSeconds?.takeIf { it > 0 }
+                ?: cookies.serverRefreshCheckedAtEpochSeconds.takeIf { it > 0 }
+                    ?.plus(properties.refreshWindowLeaseSeconds.coerceIn(60, 3600)) ?: 0L
         cookies.serverRefreshTimestampMillis = cookies.serverRefreshTimestampMillis ?: 0L
         cookies.refreshFailureCount = cookies.refreshFailureCount ?: 0
         cookies.refreshRetryAfterEpochSeconds = cookies.refreshRetryAfterEpochSeconds ?: 0L
@@ -259,15 +301,26 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
                 },
                 transportScope = scope,
             )
-            val existing = indexed[template.key()]
+            val existing = indexed[template.key()] ?: indexed.values
+                .filter {
+                    it.name.equals(template.name, true) &&
+                        it.transportScope == template.transportScope &&
+                        it.value == template.value
+                }
+                .maxByOrNull(::cookieMetadataRank)
             if (existing == null) {
                 indexed[template.key()] = template
             } else {
                 // Preserve attributes learned from the server (SameSite, host-only,
                 // exact domain/path and source) while projecting the current value.
+                val credentialGenerationChanged = existing.value != template.value
                 existing.value = template.value
                 existing.httpOnly = existing.httpOnly || template.httpOnly
-                template.expiresAtEpochSeconds?.let { existing.expiresAtEpochSeconds = it }
+                if (credentialGenerationChanged) {
+                    existing.expiresAtEpochSeconds = template.expiresAtEpochSeconds
+                } else if (existing.expiresAtEpochSeconds == null) {
+                    template.expiresAtEpochSeconds?.let { existing.expiresAtEpochSeconds = it }
+                }
             }
         }
         envelope.cookies = indexed.values.toMutableList()
@@ -327,12 +380,21 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         it.validationLeaseExpiresAtEpochSeconds = validationLeaseExpiresAtEpochSeconds
         it.serverRefreshRequired = serverRefreshRequired
         it.serverRefreshCheckedAtEpochSeconds = serverRefreshCheckedAtEpochSeconds
+        it.serverRefreshWindowExpiresAtEpochSeconds = serverRefreshWindowExpiresAtEpochSeconds
         it.serverRefreshTimestampMillis = serverRefreshTimestampMillis
         it.refreshFailureCount = refreshFailureCount; it.refreshRetryAfterEpochSeconds = refreshRetryAfterEpochSeconds
         it.extraCookies = LinkedHashMap(extraCookies.orEmpty())
     }
 
     private companion object {
+        fun cookieMetadataRank(cookie: StoredCookie): Int = when (cookie.source.lowercase(Locale.ROOT)) {
+            "qr-login", "credential-refresh", "server-set-cookie" -> 400
+            "validated-legacy-expiry-repair" -> 300
+            "browser-audit", "browser-observation", "browser" -> 200
+            "legacy-extra" -> 100
+            else -> 0
+        }
+
         val MODELED_COOKIE_NAMES = setOf(
             "sessdata", "bili_jct", "buvid3", "buvid4", "dedeuserid", "ac_time_value",
             "b_nut", "bili_ticket", "bili_ticket_expires",

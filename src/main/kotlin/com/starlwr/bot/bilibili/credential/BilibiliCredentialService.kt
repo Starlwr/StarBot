@@ -47,6 +47,7 @@ class BilibiliCredentialProperties {
     var refreshCredential: Boolean = true
     var validationMode: String = "both"
     var validationLeaseSeconds: Long = 180
+    var refreshWindowLeaseSeconds: Long = 180
     var refreshAtLifecycleRatio: Double = 0.25
     var externalCredentialInitialRefresh: Boolean = true
     var maintenanceIntervalMillis: Long = 30_000
@@ -203,6 +204,7 @@ class BilibiliCredentialService @Autowired constructor(
         }
         val result = validateCredential(credential)
         if (result.valid) {
+            val repairedLegacyExpiry = repairLegacyCredentialExpiry(credential)
             val pendingInitialRefresh = credential.nextRefreshAtEpochSeconds <= 0 &&
                 properties.externalCredentialInitialRefresh && credential.acTimeValue.isNotBlank()
             val refreshWindow = result.refreshWindow ?: if (
@@ -210,7 +212,7 @@ class BilibiliCredentialService @Autowired constructor(
             ) checkRefreshWindow(credential) else null
             refreshWindow?.let { recordRefreshWindow(credential, it) }
             renewValidationLease(credential)
-            save(credential)
+            if (!repairedLegacyExpiry || !fileStore.saveValidatedExpiryRepair(credential)) save(credential)
             log.info(
                 "Credential 校验租约已重置: validationLeaseExpiresAt={}, credentialExpiresAt={}, " +
                     "nextRefreshAt={}, pendingInitialRefresh={}, serverRefresh={}",
@@ -227,7 +229,6 @@ class BilibiliCredentialService @Autowired constructor(
     fun checkRefresh(credential: Cookies): Boolean = synchronized(lock) {
         val window = checkRefreshWindow(credential)
         recordRefreshWindow(credential, window)
-        renewValidationLease(credential)
         save(credential)
         window.refresh
     }
@@ -286,22 +287,17 @@ class BilibiliCredentialService @Autowired constructor(
         log.info("准备刷新 Bilibili Credential: reason={}, cachedServerRefresh={}", reason, describeServerRefresh(credential))
         val refreshWindow = probedWindow ?: checkRefreshWindow(credential).also {
             recordRefreshWindow(credential, it)
-            renewValidationLease(credential)
             save(credential)
         }
         if (!refreshWindow.refresh) {
             // A caller cannot bypass the server refresh gate: current Web only creates
             // the correspond iframe after cookie/info returns refresh=true.
-            if (lifecycleDue || initialRefresh || force) {
-                credential.nextRefreshAtEpochSeconds = now + validationLeaseSeconds()
-            }
             recordRefreshWindow(credential, refreshWindow)
-            renewValidationLease(credential)
             save(credential)
             log.info(
                 "跳过实际 Credential 刷新: serverRefresh=false; 本地生命周期信号保留但不绕过服务器刷新窗口; " +
-                    "validationLeaseExpiresAt={}, nextRefreshAt={}",
-                describeEpoch(credential.validationLeaseExpiresAtEpochSeconds),
+                    "serverRefreshWindowExpiresAt={}, nextRefreshAt={}",
+                describeEpoch(credential.serverRefreshWindowExpiresAtEpochSeconds),
                 describeEpoch(credential.nextRefreshAtEpochSeconds)
             )
             return credential
@@ -315,31 +311,40 @@ class BilibiliCredentialService @Autowired constructor(
         resumePendingRefresh(credential)?.let { return it }
         val now = System.currentTimeMillis() / 1000
         var refreshWindow = storedRefreshWindow(credential, now)
-        val probeDue = (credential.validationLeaseExpiresAtEpochSeconds ?: 0L) <= now
-        if (probeDue && properties.validateCredential) {
+        val validationDue = (credential.validationLeaseExpiresAtEpochSeconds ?: 0L) <= now
+        if (validationDue && properties.validateCredential) {
             log.info(
-                "开始 Credential 有效性校验和服务器刷新探针: 短期租约已到期, now={}, validationLeaseExpiresAt={}",
+                "开始 Credential 有效性校验: 校验租约已到期, now={}, validationLeaseExpiresAt={}",
                 describeEpoch(now), describeEpoch(credential.validationLeaseExpiresAtEpochSeconds)
             )
             check(validateAndUpdateLease(credential)) { "Bilibili Credential is no longer valid" }
             refreshWindow = storedRefreshWindow(credential, now)
-        } else if (probeDue && properties.refreshCredential && credential.acTimeValue.isNotBlank()) {
+        } else if (validationDue) {
+            log.info("跳过本轮 Credential 有效性校验: starbot.bilibili.account.validate-credential=false")
+        } else {
             log.info(
-                "Credential 有效性校验已禁用，但服务器刷新探针租约已到期: now={}, validationLeaseExpiresAt={}",
+                "跳过本轮 Credential 有效性校验: 校验租约仍有效, now={}, validationLeaseExpiresAt={}",
                 describeEpoch(now), describeEpoch(credential.validationLeaseExpiresAtEpochSeconds)
+            )
+        }
+
+        if (refreshWindow == null && properties.refreshCredential && credential.acTimeValue.isNotBlank()) {
+            log.info(
+                "开始 Credential 服务器刷新窗口探针: now={}, serverRefreshWindowExpiresAt={}",
+                describeEpoch(now), describeEpoch(credential.serverRefreshWindowExpiresAtEpochSeconds)
             )
             refreshWindow = checkRefreshWindow(credential)
             recordRefreshWindow(credential, refreshWindow)
-            renewValidationLease(credential, now)
             save(credential)
-        } else if (probeDue) {
-            log.info("跳过本轮 Credential 校验和服务器探针: validate-credential=false, refresh-credential=false")
+        } else if (!properties.refreshCredential || credential.acTimeValue.isBlank()) {
+            log.info("跳过本轮 Credential 服务器刷新窗口探针: refresh-credential=false 或缺少 refresh_token")
         } else {
             log.info(
-                "跳过本轮 Credential 服务器探针: 短期租约仍有效, now={}, validationLeaseExpiresAt={}, " +
-                    "serverRefresh={}, serverRefreshCheckedAt={}",
-                describeEpoch(now), describeEpoch(credential.validationLeaseExpiresAtEpochSeconds),
-                describeServerRefresh(credential), describeEpoch(credential.serverRefreshCheckedAtEpochSeconds)
+                "跳过本轮 Credential 服务器刷新窗口探针: 窗口租约仍有效, now={}, " +
+                    "serverRefresh={}, serverRefreshCheckedAt={}, serverRefreshWindowExpiresAt={}",
+                describeEpoch(now), describeServerRefresh(credential),
+                describeEpoch(credential.serverRefreshCheckedAtEpochSeconds),
+                describeEpoch(credential.serverRefreshWindowExpiresAtEpochSeconds)
             )
         }
         if ((credential.refreshRetryAfterEpochSeconds ?: 0L) > now) {
@@ -366,7 +371,6 @@ class BilibiliCredentialService @Autowired constructor(
     fun refresh(old: Cookies): Cookies = synchronized(lock) {
         val refreshWindow = checkRefreshWindow(old)
         recordRefreshWindow(old, refreshWindow)
-        renewValidationLease(old)
         save(old)
         require(refreshWindow.refresh) { "Bilibili does not currently permit Credential refresh" }
         refresh(old, refreshWindow.timestampMillis)
@@ -387,6 +391,17 @@ class BilibiliCredentialService @Autowired constructor(
         val storedCookies = parseStoredCookies(
             response.headers().allValues("set-cookie"), URI.create(COOKIE_REFRESH_URL), "jvm"
         ).toMutableList()
+        val rawSessDataExpiry = storedCookies.firstOrNull { it.name.equals("SESSDATA", true) }
+            ?.expiresAtEpochSeconds
+        val trustedSessDataExpiry = rawSessDataExpiry?.takeIf(::isPlausibleCredentialExpiry)
+        if (rawSessDataExpiry != null && trustedSessDataExpiry == null) {
+            log.warn(
+                "Credential 刷新响应中的 SESSDATA 到期时间未通过可信边界校验，将作为会话 Cookie 保存: expiresAt={}",
+                describeEpoch(rawSessDataExpiry),
+            )
+        }
+        storedCookies.filter { it.name.equals("SESSDATA", true) }
+            .forEach { it.expiresAtEpochSeconds = trustedSessDataExpiry }
         val refreshed = copyCredential(old).apply {
             sessData = responseCookies["SESSDATA"] ?: error("Credential refresh response omitted SESSDATA")
             biliJct = responseCookies["bili_jct"] ?: error("Credential refresh response omitted bili_jct")
@@ -397,7 +412,7 @@ class BilibiliCredentialService @Autowired constructor(
             responseCookies["b_nut"]?.let { bNut = it }
             extraCookies.putAll(responseCookies.filterKeys { it !in KNOWN_COOKIES })
         }
-        applyLifecycle(refreshed, parseExpiry(response.headers().allValues("set-cookie")))
+        applyLifecycle(refreshed, trustedSessDataExpiry)
         clearServerRefreshState(refreshed)
         val pending = PendingCredentialRefresh(
             transactionId = UUID.randomUUID().toString(),
@@ -513,28 +528,54 @@ class BilibiliCredentialService @Autowired constructor(
             86101 -> QrCodePollResult(QrCodeState.WAIT_SCAN)
             86090 -> QrCodePollResult(QrCodeState.WAIT_CONFIRM)
             86038 -> QrCodePollResult(QrCodeState.EXPIRED)
-            0 -> completeQrLogin(data)
+            0 -> completeQrLogin(data, response.headers().allValues("set-cookie"))
             else -> QrCodePollResult(QrCodeState.ERROR, message = data.getString("message") ?: "QR status $code")
         }
     }
 
-    private fun completeQrLogin(data: JSONObject): QrCodePollResult {
+    private fun completeQrLogin(data: JSONObject, setCookieHeaders: List<String>): QrCodePollResult {
         val query = parseQuery(data.getString("url") ?: "")
+        val responseCookies = parseSetCookies(setCookieHeaders)
+        val storedCookies = parseStoredCookies(
+            setCookieHeaders,
+            URI.create(QR_POLL_URL),
+            "shared",
+            "qr-login",
+        ).toMutableList()
         val buvid = fetchBuvid()
         val credential = Cookies().apply {
-            sessData = query["SESSDATA"].orEmpty()
-            biliJct = query["bili_jct"].orEmpty()
-            dedeUserId = query["DedeUserID"].orEmpty()
+            sessData = responseCookies["SESSDATA"] ?: query["SESSDATA"].orEmpty()
+            biliJct = responseCookies["bili_jct"] ?: query["bili_jct"].orEmpty()
+            dedeUserId = responseCookies["DedeUserID"] ?: query["DedeUserID"].orEmpty()
             acTimeValue = data.getString("refresh_token").orEmpty()
-            buvid3 = query["buvid3"] ?: buvid.first
-            buvid4 = query["buvid4"] ?: buvid.second
-            bNut = query["b_nut"].orEmpty()
+            buvid3 = responseCookies["buvid3"] ?: query["buvid3"] ?: buvid.first
+            buvid4 = responseCookies["buvid4"] ?: query["buvid4"] ?: buvid.second
+            bNut = responseCookies["b_nut"] ?: query["b_nut"].orEmpty()
             extraCookies.putAll(query.filterKeys { it !in KNOWN_COOKIES })
+            extraCookies.putAll(responseCookies.filterKeys { it !in KNOWN_COOKIES })
         }
         if (!credential.hasRefreshableCredential())
             return QrCodePollResult(QrCodeState.ERROR, message = "QR login returned an incomplete Credential")
-        applyLifecycle(credential, null)
-        save(credential)
+        val setCookieExpiry = storedCookies.firstOrNull { it.name.equals("SESSDATA", true) }
+            ?.expiresAtEpochSeconds
+        val redirectExpiry = query["Expires"]?.toLongOrNull()
+        val expiry = selectCredentialExpiry(storedCookies, query)
+        storedCookies.filter { it.name.equals("SESSDATA", true) && it.value == credential.sessData }
+            .forEach { it.expiresAtEpochSeconds = expiry }
+        applyLifecycle(credential, expiry)
+        fileStore.saveCookiesWithMetadata(credential, storedCookies)
+        log.info(
+            "二维码 Credential 已原子保存: credentialExpiresAt={}, validationLeaseExpiresAt={}, " +
+                "setCookieCount={}, sessDataExpirySource={}",
+            describeEpoch(credential.expiresAtEpochSeconds),
+            describeEpoch(credential.validationLeaseExpiresAtEpochSeconds),
+            storedCookies.size,
+            when {
+                setCookieExpiry == expiry && expiry != null -> "set-cookie"
+                redirectExpiry == expiry && expiry != null -> "redirect-url"
+                else -> "session-cookie"
+            },
+        )
         return QrCodePollResult(QrCodeState.DONE, credential)
     }
 
@@ -558,7 +599,12 @@ class BilibiliCredentialService @Autowired constructor(
         if (index <= 0) null else pair.substring(0, index).trim() to pair.substring(index + 1).trim()
     }.toMap(LinkedHashMap())
 
-    internal fun parseStoredCookies(headers: List<String>, requestUri: URI, transport: String): List<StoredCookie> =
+    internal fun parseStoredCookies(
+        headers: List<String>,
+        requestUri: URI,
+        transport: String,
+        source: String = "credential-refresh",
+    ): List<StoredCookie> =
         headers.mapNotNull { header ->
             val parts = header.split(';').map { it.trim() }
             val first = parts.firstOrNull() ?: return@mapNotNull null
@@ -597,32 +643,53 @@ class BilibiliCredentialService @Autowired constructor(
                 else -> "shared"
             }
             StoredCookie(name, first.substring(index + 1), domain, path, hostOnly, secure, httpOnly,
-                sameSite, expires, scope, "credential-refresh")
+                sameSite, expires, scope, source)
         }
 
     internal fun parseExpiry(headers: List<String>): Long? {
-        val now = System.currentTimeMillis() / 1000
-        headers.forEach { header ->
-            header.split(';').drop(1).forEach { attribute ->
-                val name = attribute.substringBefore('=').trim()
-                val value = attribute.substringAfter('=', "").trim()
-                if (name.equals("max-age", true)) value.toLongOrNull()?.let { return now + it }
-                if (name.equals("expires", true)) runCatching {
-                    java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toEpochSecond()
-                }.getOrNull()?.let { return it }
-            }
-        }
-        return null
+        return parseStoredCookies(headers, URI.create(COOKIE_REFRESH_URL), "shared")
+            .firstOrNull { it.name.equals("SESSDATA", true) }
+            ?.expiresAtEpochSeconds
     }
 
-    private fun applyLifecycle(credential: Cookies, serverExpiry: Long?) {
+    internal fun selectCredentialExpiry(
+        storedCookies: Collection<StoredCookie>,
+        redirectQuery: Map<String, String>,
+        now: Long = Instant.now().epochSecond,
+    ): Long? {
+        val setCookieExpiry = storedCookies.firstOrNull { it.name.equals("SESSDATA", true) }
+            ?.expiresAtEpochSeconds
+        val redirectExpiry = redirectQuery["Expires"]?.toLongOrNull()
+        val selected = sequenceOf(setCookieExpiry, redirectExpiry)
+            .filterNotNull()
+            .firstOrNull { isPlausibleCredentialExpiry(it, now) }
+        if (setCookieExpiry != null && redirectExpiry != null && setCookieExpiry != redirectExpiry) {
+            log.warn(
+                "二维码 Credential 到期信息不一致: setCookieExpiresAt={}, redirectExpiresAt={}, selected={}",
+                describeEpoch(setCookieExpiry), describeEpoch(redirectExpiry), describeEpoch(selected),
+            )
+        }
+        if (selected == null && (setCookieExpiry != null || redirectExpiry != null)) {
+            log.warn(
+                "二维码 Credential 到期信息未通过可信边界校验，将作为会话 Cookie 保存: setCookieExpiresAt={}, redirectExpiresAt={}",
+                describeEpoch(setCookieExpiry), describeEpoch(redirectExpiry),
+            )
+        }
+        return selected
+    }
+
+    internal fun isPlausibleCredentialExpiry(expiry: Long, now: Long = Instant.now().epochSecond): Boolean =
+        expiry >= now + MIN_CREDENTIAL_LIFETIME_SECONDS && expiry <= now + MAX_CREDENTIAL_LIFETIME_SECONDS
+
+    internal fun applyLifecycle(credential: Cookies, serverExpiry: Long?) {
         val now = System.currentTimeMillis() / 1000
-        val lease = validationLeaseSeconds()
-        val expiry = serverExpiry?.takeIf { it > now } ?: (now + lease)
+        val expiry = serverExpiry?.takeIf { isPlausibleCredentialExpiry(it, now) }
         val ratio = properties.refreshAtLifecycleRatio.coerceIn(0.01, 0.95)
         credential.issuedAtEpochSeconds = now
-        credential.expiresAtEpochSeconds = expiry
-        credential.nextRefreshAtEpochSeconds = now + ((expiry - now) * ratio).toLong().coerceAtLeast(1)
+        credential.expiresAtEpochSeconds = expiry ?: 0L
+        credential.nextRefreshAtEpochSeconds = expiry?.let {
+            now + ((it - now) * ratio).toLong().coerceAtLeast(1)
+        } ?: 0L
         renewValidationLease(credential, now)
         credential.refreshFailureCount = 0
         credential.refreshRetryAfterEpochSeconds = 0L
@@ -642,12 +709,15 @@ class BilibiliCredentialService @Autowired constructor(
     ) {
         credential.serverRefreshRequired = window.refresh
         credential.serverRefreshCheckedAtEpochSeconds = checkedAt
+        credential.serverRefreshWindowExpiresAtEpochSeconds =
+            checkedAt + properties.refreshWindowLeaseSeconds.coerceIn(60, 3600)
         credential.serverRefreshTimestampMillis = window.timestampMillis
     }
 
     private fun clearServerRefreshState(credential: Cookies) {
         credential.serverRefreshRequired = null
         credential.serverRefreshCheckedAtEpochSeconds = 0L
+        credential.serverRefreshWindowExpiresAtEpochSeconds = 0L
         credential.serverRefreshTimestampMillis = 0L
     }
 
@@ -656,11 +726,38 @@ class BilibiliCredentialService @Autowired constructor(
         now: Long = System.currentTimeMillis() / 1000,
     ): CredentialRefreshWindow? {
         val checkedAt = credential.serverRefreshCheckedAtEpochSeconds ?: 0L
-        val leaseExpiresAt = credential.validationLeaseExpiresAtEpochSeconds ?: 0L
+        val leaseExpiresAt = credential.serverRefreshWindowExpiresAtEpochSeconds ?: 0L
         val timestamp = credential.serverRefreshTimestampMillis ?: 0L
         val refresh = credential.serverRefreshRequired ?: return null
         if (checkedAt <= 0 || leaseExpiresAt <= now || timestamp <= 0) return null
         return CredentialRefreshWindow(refresh, timestamp)
+    }
+
+    internal fun repairLegacyCredentialExpiry(
+        credential: Cookies,
+        now: Long = Instant.now().epochSecond,
+    ): Boolean {
+        val currentExpiry = credential.expiresAtEpochSeconds ?: 0L
+        val issuedAt = credential.issuedAtEpochSeconds ?: 0L
+        val looksLikeValidationLease = issuedAt > 0 &&
+            currentExpiry in 1..(issuedAt + validationLeaseSeconds() + LEGACY_EXPIRY_TOLERANCE_SECONDS)
+        if (currentExpiry > now && !looksLikeValidationLease) return false
+
+        val recoveredExpiry = credential.extraCookies.orEmpty()["Expires"]?.toLongOrNull()
+            ?.takeIf { isPlausibleCredentialExpiry(it, now) }
+            ?: return false
+        credential.expiresAtEpochSeconds = recoveredExpiry
+        val lifecycleStart = issuedAt.takeIf { it in 1 until recoveredExpiry } ?: now
+        val ratio = properties.refreshAtLifecycleRatio.coerceIn(0.01, 0.95)
+        credential.nextRefreshAtEpochSeconds = lifecycleStart +
+            ((recoveredExpiry - lifecycleStart) * ratio).toLong().coerceAtLeast(1)
+        log.warn(
+            "已在 JVM 有效性校验通过后修复旧版 Credential 到期时间: oldExpiresAt={}, " +
+                "recoveredExpiresAt={}, nextRefreshAt={}, source=extraCookies.Expires",
+            describeEpoch(currentExpiry), describeEpoch(recoveredExpiry),
+            describeEpoch(credential.nextRefreshAtEpochSeconds),
+        )
+        return true
     }
 
     private fun getRefreshCsrf(credential: Cookies, serverTimestampMillis: Long): String {
@@ -813,6 +910,9 @@ class BilibiliCredentialService @Autowired constructor(
         c.validationLeaseExpiresAtEpochSeconds = c.validationLeaseExpiresAtEpochSeconds?.takeIf { it > 0 }
             ?: c.lastValidatedAtEpochSeconds.takeIf { it > 0 }?.plus(validationLeaseSeconds()) ?: 0L
         c.serverRefreshCheckedAtEpochSeconds = c.serverRefreshCheckedAtEpochSeconds ?: 0L
+        c.serverRefreshWindowExpiresAtEpochSeconds = c.serverRefreshWindowExpiresAtEpochSeconds?.takeIf { it > 0 }
+            ?: c.serverRefreshCheckedAtEpochSeconds.takeIf { it > 0 }
+                ?.plus(properties.refreshWindowLeaseSeconds.coerceIn(60, 3600)) ?: 0L
         c.serverRefreshTimestampMillis = c.serverRefreshTimestampMillis ?: 0L
         c.refreshFailureCount = c.refreshFailureCount ?: 0; c.refreshRetryAfterEpochSeconds = c.refreshRetryAfterEpochSeconds ?: 0L
         c.extraCookies = c.extraCookies ?: LinkedHashMap()
@@ -827,6 +927,7 @@ class BilibiliCredentialService @Autowired constructor(
         it.validationLeaseExpiresAtEpochSeconds=s.validationLeaseExpiresAtEpochSeconds
         it.serverRefreshRequired=s.serverRefreshRequired
         it.serverRefreshCheckedAtEpochSeconds=s.serverRefreshCheckedAtEpochSeconds
+        it.serverRefreshWindowExpiresAtEpochSeconds=s.serverRefreshWindowExpiresAtEpochSeconds
         it.serverRefreshTimestampMillis=s.serverRefreshTimestampMillis
         it.refreshFailureCount=s.refreshFailureCount; it.refreshRetryAfterEpochSeconds=s.refreshRetryAfterEpochSeconds
     }
@@ -844,6 +945,9 @@ class BilibiliCredentialService @Autowired constructor(
         private const val CONFIRM_REFRESH_URL="https://passport.bilibili.com/x/passport-login/web/confirm/refresh"
         private const val SSO_LIST_URL="https://passport.bilibili.com/x/passport-login/web/sso/list"
         private const val MAX_SSO_TARGETS=32
+        private const val MIN_CREDENTIAL_LIFETIME_SECONDS=600L
+        private const val MAX_CREDENTIAL_LIFETIME_SECONDS=400L * 24 * 60 * 60
+        private const val LEGACY_EXPIRY_TOLERANCE_SECONDS=5L
         private const val SPI_URL="https://api.bilibili.com/x/frontend/finger/spi"
         private val REFRESH_CSRF=Regex("""<div\s+id=["']1-name["']>(.+?)</div>""", RegexOption.DOT_MATCHES_ALL)
         private val KNOWN_COOKIES=setOf("SESSDATA","bili_jct","buvid3","buvid4","DedeUserID","ac_time_value","b_nut","bili_ticket","bili_ticket_expires")

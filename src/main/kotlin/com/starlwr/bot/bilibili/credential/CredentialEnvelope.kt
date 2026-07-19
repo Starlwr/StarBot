@@ -25,7 +25,7 @@ data class CredentialEnvelope(
     var updatedAtEpochMillis: Long = 0,
 ) {
     companion object {
-        const val CURRENT_SCHEMA = 4
+        const val CURRENT_SCHEMA = 5
         val SESSION_ONLY_COOKIE_NAMES = setOf("b_lsid")
         val BROWSER_STORAGE_ALLOWLIST = setOf(
             "liveWatchTracker", "liveWatchHbCounter"
@@ -64,8 +64,12 @@ data class StoredCookie(
     fun isExpired(nowEpochSeconds: Long = Instant.now().epochSecond): Boolean =
         expiresAtEpochSeconds?.let { it <= nowEpochSeconds } ?: false
 
-    fun matches(uri: URI, transport: String): Boolean {
-        if (isExpired() || value.isBlank()) return false
+    fun matches(
+        uri: URI,
+        transport: String,
+        nowEpochSeconds: Long = Instant.now().epochSecond,
+    ): Boolean {
+        if (isExpired(nowEpochSeconds) || value.isBlank()) return false
         if (transportScope != "shared" && transportScope != transport) return false
         if (secure && !uri.scheme.equals("https", true) && !uri.scheme.equals("wss", true)) return false
         val host = uri.host?.lowercase(Locale.ROOT) ?: return false
