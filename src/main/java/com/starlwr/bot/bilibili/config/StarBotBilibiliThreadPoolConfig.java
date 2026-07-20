@@ -1,12 +1,17 @@
 package com.starlwr.bot.bilibili.config;
 
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.bilibili.telemetry.LiveTelemetryProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
@@ -14,12 +19,16 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 @Slf4j
 @StarBotComponent
+@EnableConfigurationProperties(LiveTelemetryProperties.class)
 public class StarBotBilibiliThreadPoolConfig {
     private final StarBotBilibiliProperties properties;
+    private final LiveTelemetryProperties telemetryProperties;
 
     @Autowired
-    public StarBotBilibiliThreadPoolConfig(StarBotBilibiliProperties properties) {
+    public StarBotBilibiliThreadPoolConfig(StarBotBilibiliProperties properties,
+                                           LiveTelemetryProperties telemetryProperties) {
         this.properties = properties;
+        this.telemetryProperties = telemetryProperties;
     }
 
     @Bean
@@ -49,6 +58,32 @@ public class StarBotBilibiliThreadPoolConfig {
         return executor;
     }
 
+    @Bean
+    public ThreadPoolTaskExecutor bilibiliTelemetryThreadPool() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(Math.max(1, telemetryProperties.getExecutorCorePoolSize()));
+        executor.setMaxPoolSize(Math.max(executor.getCorePoolSize(), telemetryProperties.getExecutorMaxPoolSize()));
+        executor.setQueueCapacity(Math.max(1, telemetryProperties.getExecutorQueueCapacity()));
+        executor.setKeepAliveSeconds(Math.max(1, telemetryProperties.getExecutorKeepAliveSeconds()));
+        executor.setThreadNamePrefix("bilibili-telemetry-");
+        executor.setWaitForTasksToCompleteOnShutdown(false);
+        executor.setRejectedExecutionHandler(new BoundedWaitPolicy(
+                Math.max(0, telemetryProperties.getExecutorSubmitTimeoutMillis())));
+        executor.initialize();
+        return executor;
+    }
+
+    @Bean
+    public ThreadPoolTaskScheduler bilibiliTelemetryScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(Math.max(1, telemetryProperties.getExecutorSchedulerPoolSize()));
+        scheduler.setThreadNamePrefix("bilibili-telemetry-scheduler-");
+        scheduler.setRemoveOnCancelPolicy(true);
+        scheduler.setWaitForTasksToCompleteOnShutdown(false);
+        scheduler.initialize();
+        return scheduler;
+    }
+
     private static class BilibiliWithLogCallerRunsPolicy implements RejectedExecutionHandler {
         @Override
         public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
@@ -57,6 +92,30 @@ public class StarBotBilibiliThreadPoolConfig {
             }
             log.warn("Bilibili 线程池资源已耗尽, 请考虑增加线程池大小!");
             r.run();
+        }
+    }
+
+    private static class BoundedWaitPolicy implements RejectedExecutionHandler {
+        private final long timeoutMillis;
+
+        private BoundedWaitPolicy(long timeoutMillis) {
+            this.timeoutMillis = timeoutMillis;
+        }
+
+        @Override
+        public void rejectedExecution(Runnable task, ThreadPoolExecutor executor) {
+            if (executor.isShutdown()) {
+                throw new RejectedExecutionException("Bilibili telemetry executor is shutting down");
+            }
+            try {
+                if (executor.getQueue().offer(task, timeoutMillis, TimeUnit.MILLISECONDS)) {
+                    return;
+                }
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new RejectedExecutionException("Interrupted while waiting for Bilibili telemetry capacity", error);
+            }
+            throw new RejectedExecutionException("Bilibili telemetry queue remained full for " + timeoutMillis + " ms");
         }
     }
 }

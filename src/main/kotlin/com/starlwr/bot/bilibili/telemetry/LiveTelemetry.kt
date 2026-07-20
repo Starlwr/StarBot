@@ -6,6 +6,7 @@ import com.starlwr.bot.bilibili.credential.BilibiliCredentialFileStore
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent
 import com.starlwr.bot.bilibili.http.BilibiliHttpPipeline
+import com.starlwr.bot.bilibili.service.BilibiliFailureIncidentReporter
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil
 import com.starlwr.bot.core.plugin.StarBotComponent
 import jakarta.annotation.PreDestroy
@@ -13,9 +14,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.event.EventListener
-import org.springframework.beans.factory.annotation.Qualifier
-import org.springframework.scheduling.TaskScheduler
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
@@ -24,7 +22,6 @@ import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.Executor
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Mac
@@ -43,6 +40,15 @@ class LiveTelemetryProperties {
     var webLogMinimumIntervalSeconds: Long = 10
     var webLogMaximumIntervalSeconds: Long = 300
     var golFlushSeconds: Long = 60
+    var executorSchedulerPoolSize: Int = 2
+    var executorCorePoolSize: Int = 4
+    var executorMaxPoolSize: Int = 16
+    var executorQueueCapacity: Int = 1024
+    var executorKeepAliveSeconds: Int = 60
+    var executorSubmitTimeoutMillis: Long = 100
+    var webLogStartMaxAttempts: Int = 3
+    var webLogRebootstrapSeconds: Long = 300
+    var webLogRebootstrapJitterSeconds: Long = 60
 }
 
 data class WebLogReportData(
@@ -92,8 +98,9 @@ class WebLogSession(
     private val credentials: BilibiliCredentialFileStore,
     private val playUrlProvider: PlayUrlProvider,
     private val signer: CsnSigner,
-    private val scheduler: TaskScheduler,
-    private val executor: Executor,
+    private val dispatcher: TelemetryTaskDispatcher,
+    private val incidentReporter: BilibiliFailureIncidentReporter? = null,
+    private val onTerminalFailure: (WebLogFailure) -> Unit = {},
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(javaClass)
     private val random = SecureRandom()
@@ -103,31 +110,48 @@ class WebLogSession(
     private var interval = properties.webLogDefaultIntervalSeconds
     private var failures = 0
     private var timer: ScheduledFuture<*>? = null
-    @Volatile private var stopped = false
+    private val stopped = AtomicBoolean()
 
     fun start() {
-        if (stopped) return
-        runCatching {
-            val response = send("https://data.bilivideo.com/log/web/te9Kl", includeCsn = false)
-            applyResponse(response)
-            qid++
-            val confirmation = send("https://data.bilivideo.com/log/web/te9Kl", includeCsn = true)
-            applyResponse(confirmation)
-            qid++
-            failures = 0
-            schedule()
-        }.onFailure(::failed)
+        if (stopped.get()) return
+        val maximumAttempts = properties.webLogStartMaxAttempts.coerceAtLeast(1)
+        repeat(maximumAttempts) { index ->
+            if (stopped.get()) return
+            val result = runCatching {
+                applyResponse(send("https://data.bilivideo.com/log/web/te9Kl", includeCsn = false))
+                qid++
+                applyResponse(send("https://data.bilivideo.com/log/web/te9Kl", includeCsn = true))
+                qid++
+            }
+            if (result.isSuccess) {
+                failures = 0
+                log.info("WebLog 直播遥测进入成功: room={}, qid={}, intervalSeconds={}", context.roomId, qid, interval)
+                scheduleHeartbeat()
+                return
+            }
+            val failure = classifyFailure(result.exceptionOrNull()!!)
+            logFailure("进入", index + 1, maximumAttempts, failure)
+            if (index + 1 == maximumAttempts) terminate(failure)
+        }
     }
 
     private fun heartbeat() {
-        if (stopped) return
-        runCatching {
-            val response = send("https://data.bilivideo.com/log/web/s82Tq", includeCsn = true)
-            applyResponse(response)
+        if (stopped.get()) return
+        val result = runCatching {
+            applyResponse(send("https://data.bilivideo.com/log/web/s82Tq", includeCsn = true))
             qid++
             failures = 0
-        }.onFailure(::failed)
-        if (!stopped) schedule()
+        }
+        if (result.isFailure) {
+            val failure = classifyFailure(result.exceptionOrNull()!!)
+            failures++
+            logFailure("心跳", failures, 3, failure)
+            if (failures >= 3) {
+                terminate(failure)
+                return
+            }
+        }
+        scheduleHeartbeat()
     }
 
     private fun send(url: String, includeCsn: Boolean): JSONObject {
@@ -154,52 +178,102 @@ class WebLogSession(
         val endpoint = if (url.endsWith("te9Kl") && csrf.isNotBlank()) "$url?csrf=${encode(csrf)}" else url
         val response = http.postJson(endpoint, mapOf("Referer" to "https://live.bilibili.com/${context.roomId}"),
             body, "bilibili-telemetry-weblog")
-        require(response.successful()) { "WebLog HTTP ${response.status}" }
-        return response.json()
+        if (!response.successful()) throw WebLogRequestException(
+            if (response.status == 504) WebLogFailureKind.HTTP_GATEWAY_TIMEOUT else WebLogFailureKind.HTTP_STATUS,
+            "WebLog HTTP ${response.status}", response.status)
+        return runCatching { response.json() }.getOrElse {
+            throw WebLogRequestException(WebLogFailureKind.MALFORMED_RESPONSE,
+                "WebLog response is not valid JSON", response.status, cause = it)
+        }
     }
 
     private fun applyResponse(root: JSONObject) {
-        require(root.getIntValue("code", -1) == 0) { "WebLog code=${root.getIntValue("code", -1)}" }
-        var data = root.getJSONObject("data") ?: error("WebLog omitted data")
+        val code = root.getIntValue("code", -1)
+        if (code != 0) throw WebLogRequestException(WebLogFailureKind.BUSINESS_CODE, "WebLog code=$code", businessCode = code)
+        var data = root.getJSONObject("data")
+            ?: throw WebLogRequestException(WebLogFailureKind.MALFORMED_RESPONSE, "WebLog omitted data")
         data.getJSONObject("data")?.let { data = it }
         data.getString("sid")?.takeIf { it.isNotBlank() }?.let { sid = it }
         data.getString("stky")?.takeIf { it.isNotBlank() }?.let { stky = it }
-        require(sid.isNotBlank() && stky.isNotBlank()) { "WebLog omitted sid/stky" }
+        if (sid.isBlank() || stky.isBlank()) {
+            throw WebLogRequestException(WebLogFailureKind.MALFORMED_RESPONSE, "WebLog omitted sid/stky")
+        }
         data.getLong("hbil")?.let {
             interval = it.coerceIn(properties.webLogMinimumIntervalSeconds, properties.webLogMaximumIntervalSeconds)
         }
     }
 
-    private fun failed(error: Throwable) {
-        failures++
-        log.warn("WebLog 直播心跳失败: room={}, failures={}/3, reason={}", context.roomId, failures, error.toString())
-        log.debug("WebLog failure detail", error)
-        if (failures >= 3) close()
+    private fun classifyFailure(error: Throwable): WebLogFailure {
+        val request = error as? WebLogRequestException
+        return WebLogFailure(request?.kind ?: WebLogFailureKind.NETWORK,
+            request?.status, request?.businessCode, error)
     }
 
-    private fun schedule() {
-        if (stopped) return
-        timer?.cancel(false)
-        timer = runCatching {
-            scheduler.schedule({
-                if (!stopped) executor.execute { if (!stopped) heartbeat() }
-            }, Instant.now().plusSeconds(interval))
-        }.getOrElse { error ->
-            if (!stopped) failed(error)
-            null
+    private fun logFailure(stage: String, attempt: Int, maximum: Int, failure: WebLogFailure) {
+        val decision = if (failure.kind == WebLogFailureKind.HTTP_GATEWAY_TIMEOUT) {
+            incidentReporter?.record(BilibiliFailureIncidentReporter.Observation(
+                BilibiliFailureIncidentReporter.Category.TELEMETRY_HTTP_504,
+                context.roomId, "data.bilivideo.com", 0, -1, -1, failure.error))
+        } else null
+        if (decision?.suppressWarning() != true) {
+            log.warn("WebLog 直播{}失败: room={}, kind={}, failures={}/{}, httpStatus={}, businessCode={}, reason={}",
+                stage, context.roomId, failure.kind, attempt, maximum, failure.httpStatus,
+                failure.businessCode, failure.error.message)
+        }
+        if (decision == null || decision.includeStack()) {
+            log.debug("WebLog failure detail: room={}, stage={}, kind={}", context.roomId, stage, failure.kind, failure.error)
+        } else {
+            log.debug("WebLog failure: room={}, stage={}, kind={}, httpStatus={}, businessCode={}, reason={}",
+                context.roomId, stage, failure.kind, failure.httpStatus, failure.businessCode, failure.error.toString())
         }
     }
 
-    override fun close() { stopped = true; timer?.cancel(false); timer = null }
+    private fun scheduleHeartbeat() {
+        if (stopped.get()) return
+        timer?.cancel(false)
+        timer = dispatcher.schedule(Duration.ofSeconds(interval), "WebLog 直播心跳", context.roomId,
+            onRejected = { if (!stopped.get()) scheduleHeartbeat() }) {
+            if (!stopped.get()) heartbeat()
+        }
+    }
+
+    private fun terminate(failure: WebLogFailure) {
+        if (!stopped.compareAndSet(false, true)) return
+        timer?.cancel(false)
+        timer = null
+        onTerminalFailure(failure)
+    }
+
+    override fun close() {
+        if (!stopped.compareAndSet(false, true)) return
+        timer?.cancel(false)
+        timer = null
+    }
     private fun encode(value: String) = URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
 }
+
+enum class WebLogFailureKind { HTTP_GATEWAY_TIMEOUT, HTTP_STATUS, BUSINESS_CODE, MALFORMED_RESPONSE, NETWORK }
+
+data class WebLogFailure(
+    val kind: WebLogFailureKind,
+    val httpStatus: Int? = null,
+    val businessCode: Int? = null,
+    val error: Throwable,
+)
+
+private class WebLogRequestException(
+    val kind: WebLogFailureKind,
+    message: String,
+    val status: Int? = null,
+    val businessCode: Int? = null,
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)
 
 class GolPostwebTracker(
     private val context: LiveClientContext,
     private val properties: LiveTelemetryProperties,
     private val http: BilibiliHttpPipeline,
-    private val scheduler: TaskScheduler,
-    private val executor: Executor,
+    private val dispatcher: TelemetryTaskDispatcher,
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(javaClass)
     private val uvid = UUID.randomUUID().toString()
@@ -211,14 +285,8 @@ class GolPostwebTracker(
         if (closed.get()) return@synchronized
         queue += record(category, code, value, params)
         if (queue.size >= 10) flushLocked() else if (timer == null) {
-            timer = runCatching {
-                scheduler.schedule({
-                    if (!closed.get()) executor.execute { if (!closed.get()) flush() }
-                }, Instant.now().plusSeconds(properties.golFlushSeconds))
-            }.getOrElse { error ->
-                if (!closed.get()) log.warn("gol/postweb 调度失败: room={}, reason={}", context.roomId, error.toString())
-                null
-            }
+            timer = dispatcher.schedule(Duration.ofSeconds(properties.golFlushSeconds),
+                "gol/postweb flush", context.roomId) { if (!closed.get()) flush() }
         }
     }
 
@@ -243,16 +311,14 @@ class GolPostwebTracker(
         val delays = longArrayOf(10, 20, 40)
         if (closed.get() || index >= delays.size) return
         runCatching {
-            scheduler.schedule({
-                if (!closed.get()) executor.execute {
-                    if (closed.get()) return@execute
-                    runCatching {
-                        val response = http.postRaw("https://data.bilibili.com/gol/postweb", emptyMap(), body,
-                            "text/plain;charset=UTF-8", "bilibili-telemetry-gol-retry")
-                        if (response.status == 429) scheduleRetry(body, index + 1)
-                    }
+            dispatcher.schedule(Duration.ofSeconds(delays[index]), "gol/postweb retry", context.roomId) {
+                if (closed.get()) return@schedule
+                runCatching {
+                    val response = http.postRaw("https://data.bilibili.com/gol/postweb", emptyMap(), body,
+                        "text/plain;charset=UTF-8", "bilibili-telemetry-gol-retry")
+                    if (response.status == 429) scheduleRetry(body, index + 1)
                 }
-            }, Instant.now().plusSeconds(delays[index]))
+            }
         }.onFailure { if (!closed.get()) log.warn("gol/postweb 重试调度失败: room={}, reason={}", context.roomId, it.toString()) }
     }
 
@@ -262,7 +328,20 @@ class GolPostwebTracker(
             timer?.cancel(false)
             timer = null
             queue += record(2, 2, params = mapOf("reason" to "stop", "mediaPull" to false))
-            flushLocked(allowRetry = false)
+            val records = queue.toList()
+            queue.clear()
+            if (records.isNotEmpty()) {
+                val body = records.joinToString("\u0003").toByteArray(StandardCharsets.UTF_8)
+                dispatcher.submit("gol/postweb close flush", context.roomId) {
+                    runCatching {
+                        http.postRaw("https://data.bilibili.com/gol/postweb",
+                            mapOf("Referer" to "https://live.bilibili.com/${context.roomId}"), body,
+                            "text/plain;charset=UTF-8", "bilibili-telemetry-gol-close")
+                    }.onFailure {
+                        log.debug("gol/postweb 关闭 flush 未完成: room={}, records={}", context.roomId, records.size, it)
+                    }
+                }
+            }
         }
     }
 
@@ -275,17 +354,37 @@ class GolPostwebTracker(
 
 private class ActiveTelemetrySession(
     val context: LiveClientContext,
-    val webLog: WebLogSession?,
     val gol: GolPostwebTracker?,
     val tasks: MutableList<ScheduledFuture<*>> = CopyOnWriteArrayList(),
 ) : AutoCloseable {
     private val closed = AtomicBoolean()
+    @Volatile var webLog: WebLogSession? = null
+    @Volatile var webLogRestartTask: ScheduledFuture<*>? = null
     fun isClosed() = closed.get()
+
+    @Synchronized fun installWebLog(value: WebLogSession) {
+        if (closed.get()) {
+            value.close()
+            return
+        }
+        webLog?.close()
+        webLog = value
+    }
+
+    @Synchronized fun clearWebLog(value: WebLogSession): Boolean {
+        if (webLog !== value) return false
+        webLog = null
+        return true
+    }
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         tasks.forEach { it.cancel(false) }
         tasks.clear()
+        webLogRestartTask?.cancel(false)
+        webLogRestartTask = null
         webLog?.close()
+        webLog = null
         gol?.close()
     }
 }
@@ -298,9 +397,9 @@ class LiveTelemetryCoordinator(
     private val credentials: BilibiliCredentialFileStore,
     private val playUrlProvider: PlayUrlProvider,
     private val signer: CsnSigner,
-    private val scheduler: TaskScheduler,
     private val api: BilibiliApiUtil,
-    @param:Qualifier("bilibiliThreadPool") private val telemetryExecutor: ThreadPoolTaskExecutor,
+    private val dispatcher: TelemetryTaskDispatcher,
+    private val incidentReporter: BilibiliFailureIncidentReporter,
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(javaClass)
     private val sessions = ConcurrentHashMap<Long, ActiveTelemetrySession>()
@@ -311,18 +410,19 @@ class LiveTelemetryCoordinator(
         if (closed.get()) return
         val roomId = event.source.roomId ?: return
         if (sessions.containsKey(roomId)) return
-        submit("启动直播遥测") {
+        submit("启动直播遥测", roomId, onRejected = {
+            dispatcher.schedule(Duration.ofSeconds(properties.webLogDefaultIntervalSeconds),
+                "重试启动直播遥测", roomId) { onLive(event) }
+        }) {
             runCatching {
                 val lease = playUrlProvider.get(roomId)
                 val context = LiveClientContext(roomId, lease.roomId, event.source.uid, lease.areaId, lease.parentAreaId,
                     event.timestamp, credentials.snapshot()?.identityRevision ?: 0, lease)
-                val gol = if (properties.golPostwebEnabled) GolPostwebTracker(context, properties, http, scheduler, telemetryExecutor) else null
-                val webLog = if (properties.webLogEnabled) WebLogSession(context, properties, http, credentials,
-                    playUrlProvider, signer, scheduler, telemetryExecutor) else null
-                val session = ActiveTelemetrySession(context, webLog, gol)
+                val gol = if (properties.golPostwebEnabled) GolPostwebTracker(context, properties, http, dispatcher) else null
+                val session = ActiveTelemetrySession(context, gol)
                 if (closed.get() || sessions.putIfAbsent(roomId, session) != null) { session.close(); return@runCatching }
                 gol?.event(2, 1, params = mapOf("event" to "client_init", "mediaPull" to false))
-                webLog?.start()
+                if (properties.webLogEnabled) startWebLog(session)
                 if (properties.legacy000916Enabled) scheduleLegacy000916(session)
                 if (properties.legacyRdataHeartbeatEnabled) scheduleLegacyRdata(session)
                 log.info("直播遥测会话已启动: room={}, webLog={}, gol={}, legacy000916={}, x25={}, rdata={}",
@@ -338,13 +438,43 @@ class LiveTelemetryCoordinator(
         event.source.roomId?.let { sessions.remove(it)?.close() }
     }
 
+    private fun startWebLog(session: ActiveTelemetrySession) {
+        if (closed.get() || session.isClosed()) return
+        lateinit var webLog: WebLogSession
+        webLog = WebLogSession(session.context, properties, http, credentials, playUrlProvider, signer,
+            dispatcher, incidentReporter) {
+            failure -> scheduleWebLogRebootstrap(session, webLog, failure)
+        }
+        session.installWebLog(webLog)
+        webLog.start()
+    }
+
+    private fun scheduleWebLogRebootstrap(
+        session: ActiveTelemetrySession,
+        failedSession: WebLogSession,
+        failure: WebLogFailure,
+    ) {
+        if (!session.clearWebLog(failedSession) || closed.get() || session.isClosed()) return
+        val jitterMaximum = properties.webLogRebootstrapJitterSeconds.coerceAtLeast(0)
+        val jitter = if (jitterMaximum == 0L) 0L else Math.floorMod(session.context.roomId, jitterMaximum + 1)
+        val delay = properties.webLogRebootstrapSeconds.coerceAtLeast(1) + jitter
+        log.warn("WebLog 当前会话已停止，将使用全新会话延迟重建: room={}, kind={}, delaySeconds={}",
+            session.context.roomId, failure.kind, delay)
+        session.webLogRestartTask?.cancel(false)
+        session.webLogRestartTask = dispatcher.schedule(Duration.ofSeconds(delay),
+            "WebLog 会话重建", session.context.roomId) {
+            session.webLogRestartTask = null
+            startWebLog(session)
+        }
+    }
+
     private fun scheduleLegacy000916(session: ActiveTelemetrySession) {
         if (closed.get() || session.isClosed()) return
         val guid = UUID.randomUUID().toString()
         var delta = 0L
-        val task = scheduler.scheduleAtFixedRate({
-            submit("000916 直播遥测") {
-                if (session.isClosed()) return@submit
+        val task = dispatcher.scheduleAtFixedRate(Duration.ofSeconds(properties.legacy000916IntervalSeconds),
+            "000916 直播遥测", session.context.roomId) {
+                if (session.isClosed()) return@scheduleAtFixedRate
                 val now = System.currentTimeMillis()
                 val lease = playUrlProvider.get(session.context.roomId)
                 val payload = linkedMapOf<String, Any>(
@@ -362,26 +492,21 @@ class LiveTelemetryCoordinator(
                         mapOf("logId" to "000916", "param" to payload), "bilibili-telemetry-legacy-000916")
                 }
             }
-        }, Duration.ofSeconds(properties.legacy000916IntervalSeconds))
         session.tasks += task
     }
 
     private fun scheduleLegacyRdata(session: ActiveTelemetrySession) {
         if (closed.get() || session.isClosed()) return
-        val task = scheduler.scheduleAtFixedRate({ submit("rdata 直播心跳") {
+        val task = dispatcher.scheduleAtFixedRate(Duration.ofSeconds(properties.legacyRdataIntervalSeconds),
+            "rdata 直播心跳", session.context.roomId) {
             if (!session.isClosed()) api.liveRoomHeartbeat(session.context.roomId)
-        } },
-            Duration.ofSeconds(properties.legacyRdataIntervalSeconds))
+        }
         session.tasks += task
     }
 
-    private fun submit(operation: String, action: () -> Unit) {
+    private fun submit(operation: String, roomId: Long? = null, onRejected: () -> Unit = {}, action: () -> Unit) {
         if (closed.get()) return
-        runCatching {
-            telemetryExecutor.execute { if (!closed.get()) action() }
-        }.onFailure { error ->
-            if (!closed.get()) log.warn("{}提交失败: {}", operation, error.toString())
-        }
+        dispatcher.submit(operation, roomId, onRejected) { if (!closed.get()) action() }
     }
 
     @PreDestroy

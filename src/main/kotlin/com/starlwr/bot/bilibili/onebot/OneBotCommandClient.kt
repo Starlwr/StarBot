@@ -27,7 +27,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 class OneBotCommandProperties {
     var enabled: Boolean = true
     var websocketUrl: String = "ws://127.0.0.1:3000/"
-    var httpUrl: String = "http://127.0.0.1:3000"
     var accessToken: String = ""
     var botQq: Long = 0
     var senderPlatform: String = "qq-onebot"

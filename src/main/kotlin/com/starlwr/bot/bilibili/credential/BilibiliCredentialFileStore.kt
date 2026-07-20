@@ -266,8 +266,18 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
                 ?: cookies.serverRefreshCheckedAtEpochSeconds.takeIf { it > 0 }
                     ?.plus(properties.refreshWindowLeaseSeconds.coerceIn(60, 3600)) ?: 0L
         cookies.serverRefreshTimestampMillis = cookies.serverRefreshTimestampMillis ?: 0L
+        cookies.validationFailureCount = cookies.validationFailureCount ?: 0
+        cookies.validationRetryAfterEpochSeconds = cookies.validationRetryAfterEpochSeconds ?: 0L
+        cookies.validationLastFailureAtEpochSeconds = cookies.validationLastFailureAtEpochSeconds ?: 0L
+        cookies.validationLastFailureReason = cookies.validationLastFailureReason.orEmpty()
+        cookies.refreshWindowFailureCount = cookies.refreshWindowFailureCount ?: 0
+        cookies.refreshWindowRetryAfterEpochSeconds = cookies.refreshWindowRetryAfterEpochSeconds ?: 0L
+        cookies.refreshWindowLastFailureAtEpochSeconds = cookies.refreshWindowLastFailureAtEpochSeconds ?: 0L
+        cookies.refreshWindowLastFailureReason = cookies.refreshWindowLastFailureReason.orEmpty()
         cookies.refreshFailureCount = cookies.refreshFailureCount ?: 0
         cookies.refreshRetryAfterEpochSeconds = cookies.refreshRetryAfterEpochSeconds ?: 0L
+        cookies.refreshLastFailureAtEpochSeconds = cookies.refreshLastFailureAtEpochSeconds ?: 0L
+        cookies.refreshLastFailureReason = cookies.refreshLastFailureReason.orEmpty()
         cookies.extraCookies = LinkedHashMap(cookies.extraCookies.orEmpty())
         cookies.extraCookies.keys.removeIf {
             val name = it.lowercase(Locale.ROOT)
@@ -382,7 +392,18 @@ class BilibiliCredentialFileStore(private val properties: BilibiliCredentialProp
         it.serverRefreshCheckedAtEpochSeconds = serverRefreshCheckedAtEpochSeconds
         it.serverRefreshWindowExpiresAtEpochSeconds = serverRefreshWindowExpiresAtEpochSeconds
         it.serverRefreshTimestampMillis = serverRefreshTimestampMillis
-        it.refreshFailureCount = refreshFailureCount; it.refreshRetryAfterEpochSeconds = refreshRetryAfterEpochSeconds
+        it.validationFailureCount = validationFailureCount
+        it.validationRetryAfterEpochSeconds = validationRetryAfterEpochSeconds
+        it.validationLastFailureAtEpochSeconds = validationLastFailureAtEpochSeconds
+        it.validationLastFailureReason = validationLastFailureReason
+        it.refreshWindowFailureCount = refreshWindowFailureCount
+        it.refreshWindowRetryAfterEpochSeconds = refreshWindowRetryAfterEpochSeconds
+        it.refreshWindowLastFailureAtEpochSeconds = refreshWindowLastFailureAtEpochSeconds
+        it.refreshWindowLastFailureReason = refreshWindowLastFailureReason
+        it.refreshFailureCount = refreshFailureCount
+        it.refreshRetryAfterEpochSeconds = refreshRetryAfterEpochSeconds
+        it.refreshLastFailureAtEpochSeconds = refreshLastFailureAtEpochSeconds
+        it.refreshLastFailureReason = refreshLastFailureReason
         it.extraCookies = LinkedHashMap(extraCookies.orEmpty())
     }
 

@@ -56,8 +56,18 @@ public class Cookies {
     private Long serverRefreshCheckedAtEpochSeconds;
     private Long serverRefreshWindowExpiresAtEpochSeconds;
     private Long serverRefreshTimestampMillis;
+    private Integer validationFailureCount;
+    private Long validationRetryAfterEpochSeconds;
+    private Long validationLastFailureAtEpochSeconds;
+    private String validationLastFailureReason;
+    private Integer refreshWindowFailureCount;
+    private Long refreshWindowRetryAfterEpochSeconds;
+    private Long refreshWindowLastFailureAtEpochSeconds;
+    private String refreshWindowLastFailureReason;
     private Integer refreshFailureCount;
     private Long refreshRetryAfterEpochSeconds;
+    private Long refreshLastFailureAtEpochSeconds;
+    private String refreshLastFailureReason;
 
     /** Forward-compatible cookie values not yet modelled explicitly. */
     private Map<String, String> extraCookies;
@@ -81,8 +91,18 @@ public class Cookies {
         this.serverRefreshCheckedAtEpochSeconds = 0L;
         this.serverRefreshWindowExpiresAtEpochSeconds = 0L;
         this.serverRefreshTimestampMillis = 0L;
+        this.validationFailureCount = 0;
+        this.validationRetryAfterEpochSeconds = 0L;
+        this.validationLastFailureAtEpochSeconds = 0L;
+        this.validationLastFailureReason = "";
+        this.refreshWindowFailureCount = 0;
+        this.refreshWindowRetryAfterEpochSeconds = 0L;
+        this.refreshWindowLastFailureAtEpochSeconds = 0L;
+        this.refreshWindowLastFailureReason = "";
         this.refreshFailureCount = 0;
         this.refreshRetryAfterEpochSeconds = 0L;
+        this.refreshLastFailureAtEpochSeconds = 0L;
+        this.refreshLastFailureReason = "";
         this.extraCookies = new LinkedHashMap<>();
     }
 
@@ -105,8 +125,18 @@ public class Cookies {
         this.serverRefreshCheckedAtEpochSeconds = 0L;
         this.serverRefreshWindowExpiresAtEpochSeconds = 0L;
         this.serverRefreshTimestampMillis = 0L;
+        this.validationFailureCount = 0;
+        this.validationRetryAfterEpochSeconds = 0L;
+        this.validationLastFailureAtEpochSeconds = 0L;
+        this.validationLastFailureReason = "";
+        this.refreshWindowFailureCount = 0;
+        this.refreshWindowRetryAfterEpochSeconds = 0L;
+        this.refreshWindowLastFailureAtEpochSeconds = 0L;
+        this.refreshWindowLastFailureReason = "";
         this.refreshFailureCount = 0;
         this.refreshRetryAfterEpochSeconds = 0L;
+        this.refreshLastFailureAtEpochSeconds = 0L;
+        this.refreshLastFailureReason = "";
         this.extraCookies = new LinkedHashMap<>();
     }
 
@@ -148,10 +178,30 @@ public class Cookies {
     public void setServerRefreshWindowExpiresAtEpochSeconds(Long value) { serverRefreshWindowExpiresAtEpochSeconds = value; }
     public Long getServerRefreshTimestampMillis() { return serverRefreshTimestampMillis; }
     public void setServerRefreshTimestampMillis(Long value) { serverRefreshTimestampMillis = value; }
+    public Integer getValidationFailureCount() { return validationFailureCount; }
+    public void setValidationFailureCount(Integer value) { validationFailureCount = value; }
+    public Long getValidationRetryAfterEpochSeconds() { return validationRetryAfterEpochSeconds; }
+    public void setValidationRetryAfterEpochSeconds(Long value) { validationRetryAfterEpochSeconds = value; }
+    public Long getValidationLastFailureAtEpochSeconds() { return validationLastFailureAtEpochSeconds; }
+    public void setValidationLastFailureAtEpochSeconds(Long value) { validationLastFailureAtEpochSeconds = value; }
+    public String getValidationLastFailureReason() { return validationLastFailureReason; }
+    public void setValidationLastFailureReason(String value) { validationLastFailureReason = value; }
+    public Integer getRefreshWindowFailureCount() { return refreshWindowFailureCount; }
+    public void setRefreshWindowFailureCount(Integer value) { refreshWindowFailureCount = value; }
+    public Long getRefreshWindowRetryAfterEpochSeconds() { return refreshWindowRetryAfterEpochSeconds; }
+    public void setRefreshWindowRetryAfterEpochSeconds(Long value) { refreshWindowRetryAfterEpochSeconds = value; }
+    public Long getRefreshWindowLastFailureAtEpochSeconds() { return refreshWindowLastFailureAtEpochSeconds; }
+    public void setRefreshWindowLastFailureAtEpochSeconds(Long value) { refreshWindowLastFailureAtEpochSeconds = value; }
+    public String getRefreshWindowLastFailureReason() { return refreshWindowLastFailureReason; }
+    public void setRefreshWindowLastFailureReason(String value) { refreshWindowLastFailureReason = value; }
     public Integer getRefreshFailureCount() { return refreshFailureCount; }
     public void setRefreshFailureCount(Integer value) { refreshFailureCount = value; }
     public Long getRefreshRetryAfterEpochSeconds() { return refreshRetryAfterEpochSeconds; }
     public void setRefreshRetryAfterEpochSeconds(Long value) { refreshRetryAfterEpochSeconds = value; }
+    public Long getRefreshLastFailureAtEpochSeconds() { return refreshLastFailureAtEpochSeconds; }
+    public void setRefreshLastFailureAtEpochSeconds(Long value) { refreshLastFailureAtEpochSeconds = value; }
+    public String getRefreshLastFailureReason() { return refreshLastFailureReason; }
+    public void setRefreshLastFailureReason(String value) { refreshLastFailureReason = value; }
     public Map<String, String> getExtraCookies() { return extraCookies; }
     public void setExtraCookies(Map<String, String> value) { extraCookies = value; }
 }

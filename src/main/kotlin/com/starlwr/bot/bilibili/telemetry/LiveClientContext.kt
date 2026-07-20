@@ -2,8 +2,6 @@ package com.starlwr.bot.bilibili.telemetry
 
 import com.starlwr.bot.bilibili.http.BilibiliHttpPipeline
 import com.starlwr.bot.core.plugin.StarBotComponent
-import org.springframework.beans.factory.annotation.Qualifier
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -37,7 +35,6 @@ data class LiveClientContext(
 @StarBotComponent
 class PlayUrlProvider(
     private val http: BilibiliHttpPipeline,
-    @param:Qualifier("bilibiliThreadPool") private val executor: ThreadPoolTaskExecutor,
 ) {
     private val cache = ConcurrentHashMap<Long, PlayUrlLease>()
     private val inFlight = ConcurrentHashMap<Long, CompletableFuture<PlayUrlLease>>()
@@ -46,9 +43,17 @@ class PlayUrlProvider(
 
     fun get(roomId: Long, force: Boolean = false): PlayUrlLease {
         if (!force) current(roomId)?.let { return it }
-        return inFlight.computeIfAbsent(roomId) {
-            CompletableFuture.supplyAsync({ fetch(roomId) }, executor).whenComplete { _, _ -> inFlight.remove(roomId) }
-        }.join()
+        val candidate = CompletableFuture<PlayUrlLease>()
+        val existing = inFlight.putIfAbsent(roomId, candidate)
+        if (existing != null) return existing.join()
+        try {
+            return fetch(roomId).also(candidate::complete)
+        } catch (error: Throwable) {
+            candidate.completeExceptionally(error)
+            throw error
+        } finally {
+            inFlight.remove(roomId, candidate)
+        }
     }
 
     private fun fetch(roomId: Long): PlayUrlLease {

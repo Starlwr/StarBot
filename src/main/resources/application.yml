@@ -17,7 +17,6 @@ starbot:
     onebot-command:
       enabled: false
       websocket-url: ws://127.0.0.1:3000/
-      http-url: http://127.0.0.1:3000
       access-token: ""
       bot-qq: 0
       sender-platform: qq-onebot
@@ -35,6 +34,10 @@ starbot:
       refresh-at-lifecycle-ratio: 0.25
       external-credential-initial-refresh: true
       maintenance-interval-millis: 30000
+      validation-retry-base-seconds: 60
+      validation-retry-max-seconds: 900
+      refresh-window-retry-base-seconds: 60
+      refresh-window-retry-max-seconds: 900
       refresh-retry-base-seconds: 300
       refresh-retry-max-seconds: 21600
       qr-poll-millis: 3000
@@ -96,6 +99,7 @@ starbot:
       web-log-enabled: false
       gol-postweb-enabled: false
       legacy000916-enabled: false
+      # Reserved for the planned x25Kn/E/X watch-spyder implementation; currently has no runtime sender.
       watch-tracker-enabled: false
       legacy-rdata-heartbeat-enabled: false
       legacy000916-interval-seconds: 15
@@ -104,6 +108,22 @@ starbot:
       web-log-minimum-interval-seconds: 10
       web-log-maximum-interval-seconds: 300
       gol-flush-seconds: 60
+      # Optional telemetry is isolated from live WebSocket workers.
+      executor-scheduler-pool-size: 2
+      executor-core-pool-size: 4
+      executor-max-pool-size: 16
+      executor-queue-capacity: 1024
+      executor-keep-alive-seconds: 60
+      executor-submit-timeout-millis: 100
+      web-log-start-max-attempts: 3
+      web-log-rebootstrap-seconds: 300
+      web-log-rebootstrap-jitter-seconds: 60
+    live:
+      disconnect-summary-enabled: true
+      disconnect-summary-room-threshold: 3
+      disconnect-summary-window-seconds: 15
+      disconnect-summary-quiet-seconds: 30
+      disconnect-summary-sample-limit: 10
     network:
       # Full exchanges are emitted at DEBUG when enabled.
       http-log-enabled: false

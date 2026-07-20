@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.credential.BilibiliCredentialService;
+import com.starlwr.bot.bilibili.credential.CredentialMaintenanceException;
 import com.starlwr.bot.bilibili.browser.BilibiliBrowserRuntime;
 import com.starlwr.bot.bilibili.credential.QrCodePollResult;
 import com.starlwr.bot.bilibili.credential.QrCodeSession;
@@ -138,11 +139,15 @@ public class BilibiliAccountService {
                 browserRuntime.refreshCanonicalIdentity();
                 updateBilibiliWebSign();
             }
-        } catch (Exception e) {
-            long retrySeconds = credentialService.recordMaintenanceFailure(current);
-            log.warn("自动检查或刷新 Bilibili Credential 失败；保留当前凭据，{} 秒后重试: {}",
-                    retrySeconds, e.toString());
+        } catch (CredentialMaintenanceException e) {
+            log.warn("Bilibili Credential {}失败；仅该阶段进入退避，保留当前凭据，{} 秒后重试: {}",
+                    e.getStage().getLabel(), e.getRetrySeconds(), e.getCause().toString());
             log.debug("Credential maintenance failure detail", e);
+        } catch (Exception e) {
+            // Reaching this branch means a programming/lifecycle error escaped the
+            // stage boundary. Do not poison any persisted retry state without a
+            // known owner.
+            log.error("Bilibili Credential 维护发生未归类异常；未修改任何阶段退避状态", e);
         }
     }
 

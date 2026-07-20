@@ -162,6 +162,21 @@ public class StarBotBilibiliProperties {
          */
         private int liveRoomReconnectInterval = 1000;
 
+        /** Whether concentrated live-room disconnects are summarized as one incident. */
+        private boolean disconnectSummaryEnabled = true;
+
+        /** Distinct rooms required to open a disconnect incident. */
+        private int disconnectSummaryRoomThreshold = 3;
+
+        /** Sliding window used to correlate disconnects, in seconds. */
+        private int disconnectSummaryWindowSeconds = 15;
+
+        /** Quiet time before the final incident summary, in seconds. */
+        private int disconnectSummaryQuietSeconds = 30;
+
+        /** Maximum room identifiers retained as incident samples. */
+        private int disconnectSummarySampleLimit = 10;
+
         /**
          * 礼物数据缓存时间，单位：秒
          */

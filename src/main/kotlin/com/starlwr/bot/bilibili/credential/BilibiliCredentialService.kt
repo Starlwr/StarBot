@@ -51,6 +51,10 @@ class BilibiliCredentialProperties {
     var refreshAtLifecycleRatio: Double = 0.25
     var externalCredentialInitialRefresh: Boolean = true
     var maintenanceIntervalMillis: Long = 30_000
+    var validationRetryBaseSeconds: Long = 60
+    var validationRetryMaxSeconds: Long = 900
+    var refreshWindowRetryBaseSeconds: Long = 60
+    var refreshWindowRetryMaxSeconds: Long = 900
     var refreshRetryBaseSeconds: Long = 300
     var refreshRetryMaxSeconds: Long = 21_600
     var qrPollMillis: Long = 3_000
@@ -67,6 +71,18 @@ data class QrCodeSession(val url: String, val key: String)
 enum class QrCodeState { WAIT_SCAN, WAIT_CONFIRM, EXPIRED, DONE, ERROR }
 data class QrCodePollResult(val state: QrCodeState, val credential: Cookies? = null, val message: String? = null)
 internal data class CredentialRefreshWindow(val refresh: Boolean, val timestampMillis: Long)
+internal enum class CredentialMaintenanceStage(val label: String) {
+    VALIDATION("有效性校验"),
+    REFRESH_WINDOW("服务器刷新窗口探针"),
+    REFRESH("实际刷新"),
+}
+
+internal class CredentialMaintenanceException(
+    val stage: CredentialMaintenanceStage,
+    val retrySeconds: Long,
+    cause: Throwable,
+) : RuntimeException("Credential ${stage.label}失败，${retrySeconds} 秒后重试", cause)
+
 internal data class CredentialValidationResult(
     val valid: Boolean,
     val navValid: Boolean,
@@ -207,11 +223,18 @@ class BilibiliCredentialService @Autowired constructor(
             val repairedLegacyExpiry = repairLegacyCredentialExpiry(credential)
             val pendingInitialRefresh = credential.nextRefreshAtEpochSeconds <= 0 &&
                 properties.externalCredentialInitialRefresh && credential.acTimeValue.isNotBlank()
-            val refreshWindow = result.refreshWindow ?: if (
-                properties.refreshCredential && credential.acTimeValue.isNotBlank()
-            ) checkRefreshWindow(credential) else null
+            val refreshWindow = result.refreshWindow
             refreshWindow?.let { recordRefreshWindow(credential, it) }
             renewValidationLease(credential)
+            clearMaintenanceFailure(credential, CredentialMaintenanceStage.VALIDATION, "有效性校验成功")
+            if (refreshWindow != null) {
+                clearMaintenanceFailure(
+                    credential,
+                    CredentialMaintenanceStage.REFRESH_WINDOW,
+                    "有效性校验已取得服务器刷新窗口",
+                )
+                reconcileRefreshFailureWithServerWindow(credential)
+            }
             if (!repairedLegacyExpiry || !fileStore.saveValidatedExpiryRepair(credential)) save(credential)
             log.info(
                 "Credential 校验租约已重置: validationLeaseExpiresAt={}, credentialExpiresAt={}, " +
@@ -308,17 +331,53 @@ class BilibiliCredentialService @Autowired constructor(
     }
 
     fun maintain(credential: Cookies): Cookies = synchronized(lock) {
-        resumePendingRefresh(credential)?.let { return it }
         val now = System.currentTimeMillis() / 1000
+        if (fileStore.pendingRefresh() != null) {
+            if (isMaintenanceBackoffActive(credential, CredentialMaintenanceStage.REFRESH, now)) {
+                log.info(
+                    "跳过未完成的 Credential 刷新事务恢复: 实际刷新退避中, retryAfter={}",
+                    describeEpoch(credential.refreshRetryAfterEpochSeconds),
+                )
+                return credential
+            }
+            return try {
+                resumePendingRefresh(credential, propagateFailure = true) ?: credential
+            } catch (error: Exception) {
+                throw recordMaintenanceFailure(
+                    credential,
+                    CredentialMaintenanceStage.REFRESH,
+                    error,
+                    now,
+                )
+            }
+        }
+
         var refreshWindow = storedRefreshWindow(credential, now)
         val validationDue = (credential.validationLeaseExpiresAtEpochSeconds ?: 0L) <= now
         if (validationDue && properties.validateCredential) {
-            log.info(
-                "开始 Credential 有效性校验: 校验租约已到期, now={}, validationLeaseExpiresAt={}",
-                describeEpoch(now), describeEpoch(credential.validationLeaseExpiresAtEpochSeconds)
-            )
-            check(validateAndUpdateLease(credential)) { "Bilibili Credential is no longer valid" }
-            refreshWindow = storedRefreshWindow(credential, now)
+            if (isMaintenanceBackoffActive(credential, CredentialMaintenanceStage.VALIDATION, now)) {
+                log.info(
+                    "跳过本轮 Credential 有效性校验: 该阶段退避中, retryAfter={}, lastFailure={}",
+                    describeEpoch(credential.validationRetryAfterEpochSeconds),
+                    credential.validationLastFailureReason,
+                )
+            } else {
+                log.info(
+                    "开始 Credential 有效性校验: 校验租约已到期, now={}, validationLeaseExpiresAt={}",
+                    describeEpoch(now), describeEpoch(credential.validationLeaseExpiresAtEpochSeconds)
+                )
+                try {
+                    check(validateAndUpdateLease(credential)) { "Bilibili Credential is no longer valid" }
+                    refreshWindow = storedRefreshWindow(credential, now)
+                } catch (error: Exception) {
+                    throw recordMaintenanceFailure(
+                        credential,
+                        CredentialMaintenanceStage.VALIDATION,
+                        error,
+                        now,
+                    )
+                }
+            }
         } else if (validationDue) {
             log.info("跳过本轮 Credential 有效性校验: starbot.bilibili.account.validate-credential=false")
         } else {
@@ -329,13 +388,37 @@ class BilibiliCredentialService @Autowired constructor(
         }
 
         if (refreshWindow == null && properties.refreshCredential && credential.acTimeValue.isNotBlank()) {
+            if (isMaintenanceBackoffActive(credential, CredentialMaintenanceStage.REFRESH_WINDOW, now)) {
+                log.info(
+                    "跳过本轮 Credential 服务器刷新窗口探针: 该阶段退避中, retryAfter={}, lastFailure={}",
+                    describeEpoch(credential.refreshWindowRetryAfterEpochSeconds),
+                    credential.refreshWindowLastFailureReason,
+                )
+                return credential
+            }
             log.info(
                 "开始 Credential 服务器刷新窗口探针: now={}, serverRefreshWindowExpiresAt={}",
                 describeEpoch(now), describeEpoch(credential.serverRefreshWindowExpiresAtEpochSeconds)
             )
-            refreshWindow = checkRefreshWindow(credential)
-            recordRefreshWindow(credential, refreshWindow)
-            save(credential)
+            try {
+                val probedWindow = checkRefreshWindow(credential)
+                refreshWindow = probedWindow
+                recordRefreshWindow(credential, probedWindow)
+                clearMaintenanceFailure(
+                    credential,
+                    CredentialMaintenanceStage.REFRESH_WINDOW,
+                    "服务器刷新窗口探针成功",
+                )
+                reconcileRefreshFailureWithServerWindow(credential)
+                save(credential)
+            } catch (error: Exception) {
+                throw recordMaintenanceFailure(
+                    credential,
+                    CredentialMaintenanceStage.REFRESH_WINDOW,
+                    error,
+                    now,
+                )
+            }
         } else if (!properties.refreshCredential || credential.acTimeValue.isBlank()) {
             log.info("跳过本轮 Credential 服务器刷新窗口探针: refresh-credential=false 或缺少 refresh_token")
         } else {
@@ -347,25 +430,56 @@ class BilibiliCredentialService @Autowired constructor(
                 describeEpoch(credential.serverRefreshWindowExpiresAtEpochSeconds)
             )
         }
-        if ((credential.refreshRetryAfterEpochSeconds ?: 0L) > now) {
-            log.info("跳过本轮 Credential 实际刷新: 刷新失败退避中, retryAfter={}, serverRefresh={}",
-                describeEpoch(credential.refreshRetryAfterEpochSeconds), describeServerRefresh(credential))
+        if (refreshWindow?.refresh == false && reconcileRefreshFailureWithServerWindow(credential)) {
+            save(credential)
+        }
+        if (refreshWindow?.refresh == true &&
+            isMaintenanceBackoffActive(credential, CredentialMaintenanceStage.REFRESH, now)
+        ) {
+            log.info(
+                "跳过本轮 Credential 实际刷新: 该阶段退避中, retryAfter={}, serverRefresh=true, lastFailure={}",
+                describeEpoch(credential.refreshRetryAfterEpochSeconds), credential.refreshLastFailureReason,
+            )
             return credential
         }
-        refreshIfNeeded(credential, false, refreshWindow)
+        try {
+            refreshIfNeeded(credential, false, refreshWindow)
+        } catch (error: Exception) {
+            throw recordMaintenanceFailure(
+                credential,
+                CredentialMaintenanceStage.REFRESH,
+                error,
+                now,
+            )
+        }
     }
 
-    fun recordMaintenanceFailure(credential: Cookies): Long = synchronized(lock) {
-        val failures = ((credential.refreshFailureCount ?: 0) + 1).coerceAtMost(30)
+    internal fun recordMaintenanceFailure(
+        credential: Cookies,
+        stage: CredentialMaintenanceStage,
+        error: Throwable,
+        now: Long = System.currentTimeMillis() / 1000,
+    ): CredentialMaintenanceException = synchronized(lock) {
+        val failures = (maintenanceFailureCount(credential, stage) + 1).coerceAtMost(30)
         val multiplier = 1L shl (failures - 1).coerceAtMost(20)
-        val delay = (properties.refreshRetryBaseSeconds.coerceAtLeast(60) * multiplier)
-            .coerceAtMost(properties.refreshRetryMaxSeconds.coerceAtLeast(60))
-        credential.refreshFailureCount = failures
-        credential.refreshRetryAfterEpochSeconds = System.currentTimeMillis() / 1000 + delay
+        val (baseSeconds, maxSeconds) = maintenanceRetryPolicy(stage)
+        val delay = (baseSeconds.coerceAtLeast(60) * multiplier)
+            .coerceAtMost(maxSeconds.coerceAtLeast(60))
+        val reason = "${error.javaClass.simpleName}: ${error.message.orEmpty()}".take(MAX_FAILURE_REASON_LENGTH)
+        setMaintenanceFailure(credential, stage, failures, now + delay, now, reason)
         save(credential)
-        log.warn("Credential 维护失败已进入退避: failures={}, delaySeconds={}, retryAfter={}",
-            failures, delay, describeEpoch(credential.refreshRetryAfterEpochSeconds))
-        delay
+        if (stage == CredentialMaintenanceStage.REFRESH && fileStore.pendingRefresh() != null) {
+            fileStore.updatePendingRefresh { pending ->
+                if (sameCredentialGeneration(credential, pending.candidate)) {
+                    copyMaintenanceState(credential, pending.candidate)
+                }
+            }
+        }
+        log.warn(
+            "Credential {}失败已进入独立退避: failures={}, delaySeconds={}, retryAfter={}, reason={}",
+            stage.label, failures, delay, describeEpoch(maintenanceRetryAfter(credential, stage)), reason,
+        )
+        CredentialMaintenanceException(stage, delay, error)
     }
 
     fun refresh(old: Cookies): Cookies = synchronized(lock) {
@@ -429,12 +543,23 @@ class BilibiliCredentialService @Autowired constructor(
         return refreshed
     }
 
-    private fun resumePendingRefresh(currentCredential: Cookies? = null): Cookies? {
+    private fun resumePendingRefresh(
+        currentCredential: Cookies? = null,
+        propagateFailure: Boolean = false,
+    ): Cookies? {
         val pending = fileStore.pendingRefresh() ?: return null
         return runCatching {
             log.warn("检测到未完成的 Credential 刷新事务，开始恢复: transactionId={}, phase={}",
                 pending.transactionId, pending.phase)
             finalizePendingRefresh(pending)
+            if (clearMaintenanceFailure(
+                    pending.candidate,
+                    CredentialMaintenanceStage.REFRESH,
+                    "未完成的刷新事务已成功恢复",
+                )
+            ) {
+                save(pending.candidate)
+            }
             pending.candidate
         }.getOrElse { error ->
             fileStore.updatePendingRefresh {
@@ -443,6 +568,7 @@ class BilibiliCredentialService @Autowired constructor(
             }
             log.warn("Credential 刷新事务恢复尚未完成，将保留新候选并稍后重试: transactionId={}, error={}",
                 pending.transactionId, error.toString())
+            if (propagateFailure) throw error
             currentCredential?.takeIf { sameCredentialGeneration(it, pending.candidate) } ?: pending.candidate
         }
     }
@@ -691,8 +817,126 @@ class BilibiliCredentialService @Autowired constructor(
             now + ((it - now) * ratio).toLong().coerceAtLeast(1)
         } ?: 0L
         renewValidationLease(credential, now)
+        clearMaintenanceFailureFields(credential, CredentialMaintenanceStage.VALIDATION)
+        clearMaintenanceFailureFields(credential, CredentialMaintenanceStage.REFRESH_WINDOW)
         credential.refreshFailureCount = 0
         credential.refreshRetryAfterEpochSeconds = 0L
+        credential.refreshLastFailureAtEpochSeconds = 0L
+        credential.refreshLastFailureReason = ""
+    }
+
+    internal fun isMaintenanceBackoffActive(
+        credential: Cookies,
+        stage: CredentialMaintenanceStage,
+        now: Long = System.currentTimeMillis() / 1000,
+    ): Boolean = maintenanceRetryAfter(credential, stage) > now
+
+    internal fun clearMaintenanceFailure(
+        credential: Cookies,
+        stage: CredentialMaintenanceStage,
+        resolution: String,
+    ): Boolean {
+        val failures = maintenanceFailureCount(credential, stage)
+        val retryAfter = maintenanceRetryAfter(credential, stage)
+        if (failures <= 0 && retryAfter <= 0) return false
+        clearMaintenanceFailureFields(credential, stage)
+        log.info(
+            "Credential {}故障状态已解除: previousFailures={}, previousRetryAfter={}, resolution={}",
+            stage.label, failures, describeEpoch(retryAfter), resolution,
+        )
+        return true
+    }
+
+    internal fun reconcileRefreshFailureWithServerWindow(credential: Cookies): Boolean {
+        if (credential.serverRefreshRequired != false) return false
+        val checkedAt = credential.serverRefreshCheckedAtEpochSeconds ?: 0L
+        val failedAt = credential.refreshLastFailureAtEpochSeconds ?: 0L
+        if (checkedAt <= 0 || (failedAt > 0 && checkedAt < failedAt)) {
+            log.info(
+                "保留 Credential 实际刷新故障状态: refresh=false 观测早于最近失败, " +
+                    "serverRefreshCheckedAt={}, refreshLastFailureAt={}",
+                describeEpoch(checkedAt), describeEpoch(failedAt),
+            )
+            return false
+        }
+        return clearMaintenanceFailure(
+            credential,
+            CredentialMaintenanceStage.REFRESH,
+            "服务器刷新窗口在最近失败之后明确为 refresh=false",
+        )
+    }
+
+    private fun maintenanceFailureCount(credential: Cookies, stage: CredentialMaintenanceStage): Int =
+        when (stage) {
+            CredentialMaintenanceStage.VALIDATION -> credential.validationFailureCount ?: 0
+            CredentialMaintenanceStage.REFRESH_WINDOW -> credential.refreshWindowFailureCount ?: 0
+            CredentialMaintenanceStage.REFRESH -> credential.refreshFailureCount ?: 0
+        }
+
+    private fun maintenanceRetryAfter(credential: Cookies, stage: CredentialMaintenanceStage): Long =
+        when (stage) {
+            CredentialMaintenanceStage.VALIDATION -> credential.validationRetryAfterEpochSeconds ?: 0L
+            CredentialMaintenanceStage.REFRESH_WINDOW -> credential.refreshWindowRetryAfterEpochSeconds ?: 0L
+            CredentialMaintenanceStage.REFRESH -> credential.refreshRetryAfterEpochSeconds ?: 0L
+        }
+
+    private fun maintenanceRetryPolicy(stage: CredentialMaintenanceStage): Pair<Long, Long> =
+        when (stage) {
+            CredentialMaintenanceStage.VALIDATION ->
+                properties.validationRetryBaseSeconds to properties.validationRetryMaxSeconds
+            CredentialMaintenanceStage.REFRESH_WINDOW ->
+                properties.refreshWindowRetryBaseSeconds to properties.refreshWindowRetryMaxSeconds
+            CredentialMaintenanceStage.REFRESH ->
+                properties.refreshRetryBaseSeconds to properties.refreshRetryMaxSeconds
+        }
+
+    private fun setMaintenanceFailure(
+        credential: Cookies,
+        stage: CredentialMaintenanceStage,
+        failures: Int,
+        retryAfter: Long,
+        failedAt: Long,
+        reason: String,
+    ) {
+        when (stage) {
+            CredentialMaintenanceStage.VALIDATION -> {
+                credential.validationFailureCount = failures
+                credential.validationRetryAfterEpochSeconds = retryAfter
+                credential.validationLastFailureAtEpochSeconds = failedAt
+                credential.validationLastFailureReason = reason
+            }
+            CredentialMaintenanceStage.REFRESH_WINDOW -> {
+                credential.refreshWindowFailureCount = failures
+                credential.refreshWindowRetryAfterEpochSeconds = retryAfter
+                credential.refreshWindowLastFailureAtEpochSeconds = failedAt
+                credential.refreshWindowLastFailureReason = reason
+            }
+            CredentialMaintenanceStage.REFRESH -> {
+                credential.refreshFailureCount = failures
+                credential.refreshRetryAfterEpochSeconds = retryAfter
+                credential.refreshLastFailureAtEpochSeconds = failedAt
+                credential.refreshLastFailureReason = reason
+            }
+        }
+    }
+
+    private fun clearMaintenanceFailureFields(credential: Cookies, stage: CredentialMaintenanceStage) {
+        setMaintenanceFailure(credential, stage, 0, 0L, 0L, "")
+    }
+
+    private fun copyMaintenanceState(source: Cookies, target: Cookies) {
+        target.validationFailureCount = source.validationFailureCount
+        target.validationRetryAfterEpochSeconds = source.validationRetryAfterEpochSeconds
+        target.validationLastFailureAtEpochSeconds = source.validationLastFailureAtEpochSeconds
+        target.validationLastFailureReason = source.validationLastFailureReason
+        target.refreshWindowFailureCount = source.refreshWindowFailureCount
+        target.refreshWindowRetryAfterEpochSeconds = source.refreshWindowRetryAfterEpochSeconds
+        target.refreshWindowLastFailureAtEpochSeconds = source.refreshWindowLastFailureAtEpochSeconds
+        target.refreshWindowLastFailureReason = source.refreshWindowLastFailureReason
+        target.refreshFailureCount = source.refreshFailureCount
+        target.refreshRetryAfterEpochSeconds = source.refreshRetryAfterEpochSeconds
+        target.refreshLastFailureAtEpochSeconds = source.refreshLastFailureAtEpochSeconds
+        target.refreshLastFailureReason = source.refreshLastFailureReason
     }
 
     private fun validationLeaseSeconds(): Long = properties.validationLeaseSeconds.coerceIn(60, 300)
@@ -914,7 +1158,18 @@ class BilibiliCredentialService @Autowired constructor(
             ?: c.serverRefreshCheckedAtEpochSeconds.takeIf { it > 0 }
                 ?.plus(properties.refreshWindowLeaseSeconds.coerceIn(60, 3600)) ?: 0L
         c.serverRefreshTimestampMillis = c.serverRefreshTimestampMillis ?: 0L
-        c.refreshFailureCount = c.refreshFailureCount ?: 0; c.refreshRetryAfterEpochSeconds = c.refreshRetryAfterEpochSeconds ?: 0L
+        c.validationFailureCount = c.validationFailureCount ?: 0
+        c.validationRetryAfterEpochSeconds = c.validationRetryAfterEpochSeconds ?: 0L
+        c.validationLastFailureAtEpochSeconds = c.validationLastFailureAtEpochSeconds ?: 0L
+        c.validationLastFailureReason = c.validationLastFailureReason.orEmpty()
+        c.refreshWindowFailureCount = c.refreshWindowFailureCount ?: 0
+        c.refreshWindowRetryAfterEpochSeconds = c.refreshWindowRetryAfterEpochSeconds ?: 0L
+        c.refreshWindowLastFailureAtEpochSeconds = c.refreshWindowLastFailureAtEpochSeconds ?: 0L
+        c.refreshWindowLastFailureReason = c.refreshWindowLastFailureReason.orEmpty()
+        c.refreshFailureCount = c.refreshFailureCount ?: 0
+        c.refreshRetryAfterEpochSeconds = c.refreshRetryAfterEpochSeconds ?: 0L
+        c.refreshLastFailureAtEpochSeconds = c.refreshLastFailureAtEpochSeconds ?: 0L
+        c.refreshLastFailureReason = c.refreshLastFailureReason.orEmpty()
         c.extraCookies = c.extraCookies ?: LinkedHashMap()
     }
 
@@ -929,7 +1184,7 @@ class BilibiliCredentialService @Autowired constructor(
         it.serverRefreshCheckedAtEpochSeconds=s.serverRefreshCheckedAtEpochSeconds
         it.serverRefreshWindowExpiresAtEpochSeconds=s.serverRefreshWindowExpiresAtEpochSeconds
         it.serverRefreshTimestampMillis=s.serverRefreshTimestampMillis
-        it.refreshFailureCount=s.refreshFailureCount; it.refreshRetryAfterEpochSeconds=s.refreshRetryAfterEpochSeconds
+        copyMaintenanceState(s, it)
     }
     private fun Cookies.hasLoginCredential() = sessData.isNotBlank() && biliJct.isNotBlank()
     private fun Cookies.hasRefreshableCredential() = hasLoginCredential() && dedeUserId.isNotBlank() && acTimeValue.isNotBlank() && buvid3.isNotBlank()
@@ -945,6 +1200,7 @@ class BilibiliCredentialService @Autowired constructor(
         private const val CONFIRM_REFRESH_URL="https://passport.bilibili.com/x/passport-login/web/confirm/refresh"
         private const val SSO_LIST_URL="https://passport.bilibili.com/x/passport-login/web/sso/list"
         private const val MAX_SSO_TARGETS=32
+        private const val MAX_FAILURE_REASON_LENGTH=512
         private const val MIN_CREDENTIAL_LIFETIME_SECONDS=600L
         private const val MAX_CREDENTIAL_LIFETIME_SECONDS=400L * 24 * 60 * 60
         private const val LEGACY_EXPIRY_TOLERANCE_SECONDS=5L
