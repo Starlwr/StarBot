@@ -26,11 +26,22 @@ import java.time.Instant;
 @NoArgsConstructor
 @ToString(callSuper = true)
 public class BilibiliLiveOnEvent extends LiveOnEvent {
+    private BilibiliLiveEventOrigin origin = BilibiliLiveEventOrigin.REALTIME;
+
+    public BilibiliLiveEventOrigin getOrigin() {
+        return origin;
+    }
+
     public BilibiliLiveOnEvent(LiveStreamerInfo source) {
         super(LivePlatform.BILIBILI, source);
     }
 
     public BilibiliLiveOnEvent(LiveStreamerInfo source, Instant instant) {
         super(LivePlatform.BILIBILI, source, instant);
+    }
+
+    public BilibiliLiveOnEvent(LiveStreamerInfo source, Instant instant, BilibiliLiveEventOrigin origin) {
+        super(LivePlatform.BILIBILI, source, instant);
+        this.origin = origin == null ? BilibiliLiveEventOrigin.REALTIME : origin;
     }
 }

@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.service;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveEventOrigin;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.LivePlatform;
@@ -123,10 +124,10 @@ public class BilibiliBackupLivePushService {
                         Boolean lastLiveStatus = optionalLastLiveStatus.get();
                         if (!lastLiveStatus && liveInfo.getLiveStatus() == 1) {
                             log.warn("备用直播推送捕获到开播事件, 若该日志大量出现, 说明直播间连接已被数据风控");
-                            eventPublisher.publishEvent(new BilibiliLiveOnEvent(liveInfo, Instant.now()));
+                            eventPublisher.publishEvent(new BilibiliLiveOnEvent(liveInfo, Instant.now(), BilibiliLiveEventOrigin.BACKUP_PUSH));
                         } else if (lastLiveStatus && liveInfo.getLiveStatus() != 1) {
                             log.warn("备用直播推送捕获到下播事件, 若该日志大量出现, 说明直播间连接已被数据风控");
-                            eventPublisher.publishEvent(new BilibiliLiveOffEvent(liveInfo, Instant.now()));
+                            eventPublisher.publishEvent(new BilibiliLiveOffEvent(liveInfo, Instant.now(), BilibiliLiveEventOrigin.BACKUP_PUSH));
                         }
                     }
                 }
