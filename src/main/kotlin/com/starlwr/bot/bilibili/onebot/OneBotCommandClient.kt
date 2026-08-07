@@ -8,6 +8,7 @@ import com.starlwr.bot.core.enums.PushTargetType
 import com.starlwr.bot.core.model.Message
 import com.starlwr.bot.core.plugin.StarBotComponent
 import com.starlwr.bot.core.sender.StarBotMessageSender
+import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -18,8 +19,11 @@ import java.net.http.HttpClient
 import java.net.http.WebSocket
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -52,7 +56,9 @@ class OneBotCommandClient(
         Thread(runnable, "onebot-command-reconnect").apply { isDaemon = true }
     }
     private val connecting = AtomicBoolean(false)
-    @Volatile private var closed = false
+    private val closed = AtomicBoolean(false)
+    @Volatile private var connectFuture: CompletableFuture<WebSocket>? = null
+    @Volatile private var reconnectTask: ScheduledFuture<*>? = null
     @Volatile private var socket: WebSocket? = null
 
     @EventListener(ApplicationReadyEvent::class)
@@ -65,7 +71,7 @@ class OneBotCommandClient(
     }
 
     private fun connect() {
-        if (closed || !connecting.compareAndSet(false, true)) return
+        if (closed.get() || !connecting.compareAndSet(false, true)) return
         val builder = http.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(10))
         val headers = linkedMapOf<String, String>()
         if (properties.accessToken.isNotBlank()) {
@@ -73,8 +79,15 @@ class OneBotCommandClient(
             builder.header("Authorization", headers.getValue("Authorization"))
         }
         val trace = networkLog.httpRequest("onebot-command-ws-handshake", "GET", properties.websocketUrl, headers, null)
-        builder.buildAsync(URI.create(properties.websocketUrl), Listener()).whenComplete { webSocket, error ->
+        val future = builder.buildAsync(URI.create(properties.websocketUrl), Listener())
+        connectFuture = future
+        future.whenComplete { webSocket, error ->
             connecting.set(false)
+            connectFuture = null
+            if (closed.get()) {
+                webSocket?.sendClose(WebSocket.NORMAL_CLOSURE, "shutdown")
+                return@whenComplete
+            }
             if (error != null) {
                 networkLog.httpFailure(trace, error)
                 log.warn("OneBot command WebSocket connection failed: {}", error.toString())
@@ -88,7 +101,18 @@ class OneBotCommandClient(
     }
 
     private fun scheduleReconnect() {
-        if (!closed) scheduler.schedule(::connect, properties.reconnectSeconds.coerceAtLeast(1), TimeUnit.SECONDS)
+        if (closed.get()) return
+        try {
+            reconnectTask?.cancel(false)
+            reconnectTask = scheduler.schedule({
+                reconnectTask = null
+                if (!closed.get()) connect()
+            }, properties.reconnectSeconds.coerceAtLeast(1), TimeUnit.SECONDS)
+        } catch (error: RejectedExecutionException) {
+            if (!closed.get()) {
+                log.warn("OneBot command WebSocket reconnect scheduling failed: {}", error.toString())
+            }
+        }
     }
 
     private fun handle(raw: String) {
@@ -143,17 +167,25 @@ class OneBotCommandClient(
             properties.senderPlatform, targetType, target, messages.size)
     }
 
+    @PreDestroy
     override fun close() {
-        closed = true
+        if (!closed.compareAndSet(false, true)) return
+        reconnectTask?.cancel(false)
+        reconnectTask = null
+        connectFuture?.cancel(true)
+        connectFuture = null
         networkLog.websocketOut("onebot-command", null, "CLOSE", "shutdown".toByteArray(StandardCharsets.UTF_8).size,
             "shutdown", false)
         socket?.sendClose(WebSocket.NORMAL_CLOSURE, "shutdown")
+        socket = null
         scheduler.shutdownNow()
     }
 
     private inner class Listener : WebSocket.Listener {
         private val buffer = StringBuilder()
-        override fun onOpen(webSocket: WebSocket) { webSocket.request(1) }
+        override fun onOpen(webSocket: WebSocket) {
+            if (closed.get()) webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "shutdown") else webSocket.request(1)
+        }
         override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
             synchronized(buffer) {
                 buffer.append(data)
@@ -170,12 +202,12 @@ class OneBotCommandClient(
         }
         override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? {
             socket = null
-            if (!closed) { log.warn("OneBot command WebSocket closed ({}: {}), reconnecting", statusCode, reason); scheduleReconnect() }
+            if (!closed.get()) { log.warn("OneBot command WebSocket closed ({}: {}), reconnecting", statusCode, reason); scheduleReconnect() }
             return null
         }
         override fun onError(webSocket: WebSocket, error: Throwable) {
             socket = null
-            if (!closed) { log.warn("OneBot command WebSocket error: {}", error.toString()); scheduleReconnect() }
+            if (!closed.get()) { log.warn("OneBot command WebSocket error: {}", error.toString()); scheduleReconnect() }
         }
     }
 
