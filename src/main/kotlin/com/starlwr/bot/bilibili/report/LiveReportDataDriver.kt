@@ -9,7 +9,11 @@ interface LiveReportDataDriver : Closeable {
     /** Returns false when eventId was already committed. */
     fun apply(session: ReportSession, eventId: String, delta: ReportDelta): Boolean
     fun snapshot(sessionId: String): LiveReportSnapshot?
-    fun complete(sessionId: String, endedAt: Long): LiveReportSnapshot?
+    fun openSessions(): List<LiveReportSnapshot>
+    fun updateLifecycle(sessionId: String, update: SessionLifecycleUpdate): LiveReportSnapshot?
+    fun complete(sessionId: String, endedAt: Long,
+                 disposition: ReportCloseDisposition = ReportCloseDisposition.NORMAL,
+                 reason: String? = null): LiveReportSnapshot?
     fun recent(uid: Long, limit: Int = 10): List<LiveReportSnapshot>
     fun health(): DriverHealth
     override fun close() {}
@@ -29,7 +33,15 @@ class InMemoryLiveReportDataDriver(private val maxSessions: Int = 1_000, private
         sessions.computeIfAbsent(session.sessionId) { session.snapshot() }.apply(delta); return true
     }
     override fun snapshot(sessionId: String) = sessions[sessionId]?.copySafe()
-    override fun complete(sessionId: String, endedAt: Long) = sessions[sessionId]?.also { it.endedAt = endedAt }?.copySafe()
+    override fun openSessions() = sessions.values.filter { it.endedAt == null }.map { it.copySafe() }
+    @Synchronized override fun updateLifecycle(sessionId: String, update: SessionLifecycleUpdate) =
+        sessions[sessionId]?.also { it.updateLifecycle(update) }?.copySafe()
+    @Synchronized override fun complete(sessionId: String, endedAt: Long, disposition: ReportCloseDisposition, reason: String?) =
+        sessions[sessionId]?.also {
+            it.endedAt = endedAt; it.lifecycleState = ReportLifecycleState.CLOSED
+            it.closeDisposition = disposition; it.closeReason = reason
+            if (disposition == ReportCloseDisposition.ABNORMAL) it.reportEligible = false
+        }?.copySafe()
     override fun recent(uid: Long, limit: Int) = sessions.values.filter { it.uid == uid && it.endedAt != null }
         .sortedByDescending { it.startedAt }.take(limit).map { it.copySafe() }
     override fun health() = DriverHealth(true)

@@ -3,51 +3,37 @@ package com.starlwr.bot.bilibili.report
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent
 import com.starlwr.bot.core.event.live.base.StarBotLiveInteractionEvent
 import com.starlwr.bot.core.event.live.common.*
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent
 import com.starlwr.bot.core.plugin.StarBotComponent
-import com.starlwr.bot.core.service.LiveDataService
 import org.slf4j.LoggerFactory
 import org.springframework.context.event.EventListener
+import org.springframework.core.annotation.Order
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 
 @StarBotComponent
 class LiveReportCollector(
     private val driver: LiveReportDataDriver,
     private val demandService: LiveReportDemandService,
-    private val liveDataService: LiveDataService
+    private val sessions: LiveReportSessionManager,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val active = ConcurrentHashMap<String, ReportSession>()
-    private val latest = ConcurrentHashMap<String, ReportSession>()
-    private val completed = ConcurrentHashMap<String, LiveReportSnapshot>()
 
-    @EventListener fun onLive(event: LiveOnEvent) {
+    @Order(-1_000) @EventListener fun onLive(event: LiveOnEvent) {
         if (!demandService.forUid(event.source.uid).enabled) return
-        val key = roomKey(event)
-        if (event.isReconnect && active.containsKey(key)) return
-        // Bilibili LIVE carries the authoritative live_time. Using it directly
-        // avoids observing stale LiveData while other event listeners update it.
-        val start = event.timestamp
-        val session = ReportSession("${event.platform}:${event.source.uid}:$start", event.platform,
-            event.source.uid ?: 0, event.source.roomId ?: 0, event.source.uname ?: "", start)
-        driver.createOrResume(session)
-        completed.remove(key)
-        active[key] = session
-        latest[key] = session
+        val result = sessions.onLive(event)
         val demand = demandService.forUid(event.source.uid)
-        log.info("直播报告采集会话已开始, session={}, sections={}, charts={}, wordCloud={}",
-            session.sessionId, demand.sections, demand.charts, demand.wordCloud)
+        log.info("直播报告采集 Session 已{}, session={}, baseline={}, origin={}, sections={}, charts={}, wordCloud={}",
+            if (result.createdFull) "开始" else "恢复", result.snapshot.sessionId, result.snapshot.baselineType,
+            eventOrigin(event), demand.sections, demand.charts, demand.wordCloud)
     }
 
-    @EventListener fun onOff(event: LiveOffEvent) {
-        if (!demandService.forUid(event.source.uid).enabled && !active.containsKey(roomKey(event))) return
-        val key = roomKey(event); val session = active.remove(key) ?: sessionFor(event)
-        latest[key] = session
-        driver.complete(session.sessionId, liveEnd(event))?.let {
-            completed[key] = it
-            log.info("直播报告采集会话已完成, session={}, counts={}", session.sessionId, it.counts)
-        } ?: log.warn("直播报告采集会话完成时未找到快照, session={}", session.sessionId)
+    @Order(-1_000) @EventListener fun onOff(event: LiveOffEvent) {
+        sessions.onOff(event)?.let {
+            log.info("直播报告采集 Session 已完成, session={}, disposition={}, origin={}, counts={}",
+                it.sessionId, it.closeDisposition, eventOrigin(event), it.counts)
+        } ?: log.debug("实时下播事件没有对应的活动报告 Session, uid={}", event.source.uid)
     }
 
     @EventListener fun onDanmu(event: DanmuEvent) = commit(event, ReportDelta(
@@ -89,57 +75,35 @@ class LiveReportCollector(
             user = user(event, count.toLong(), value), occurredAt = event.timestamp, label = level))
     }
 
-    fun completed(event: StarBotExternalBaseEvent): LiveReportSnapshot? = active[roomKey(event)]
-        ?.let { driver.snapshot(it.sessionId) } ?: completed[roomKey(event)]
+    fun completed(event: StarBotExternalBaseEvent): LiveReportSnapshot? = sessions.completed(event)
+
+    fun shouldCollectBaseline(event: StarBotExternalBaseEvent): Boolean = sessions.shouldCollectBaseline(event)
 
     fun recordMetadata(event: StarBotExternalBaseEvent, phase: String, values: Map<String, Long>) {
-        val key = roomKey(event)
-        val session = active[key] ?: latest[key] ?: completed[key]?.let {
-            ReportSession(it.sessionId, it.platform, it.uid, it.roomId, it.uname, it.startedAt)
-        } ?: sessionFor(event)
-        latest[key] = session
-        driver.apply(session, "metadata:$phase:${event.timestamp}", ReportDelta(ReportMetric.DANMU,
-            occurredAt = 0, metadata = values.mapKeys { "${phase}_${it.key}" }))
-        if (phase == "after") driver.snapshot(session.sessionId)?.let { completed[key] = it }
+        sessions.recordMetadata(event, phase, values)
     }
 
     private fun commit(event: StarBotLiveInteractionEvent, delta: ReportDelta) {
         if (!demandService.forUid(event.source.uid).enabled) return
-        val key = roomKey(event)
-        val session = active.computeIfAbsent(key) {
-            sessionFor(event).also { created ->
-                latest[key] = created
-                log.info("直播报告在直播中途建立采集会话, session={}", created.sessionId)
-            }
-        }
+        val session = sessions.interactionSession(event)
         val demand = demandService.forUid(event.source.uid)
         val metricKey = delta.metric.name.lowercase()
         val adjusted = if (metricKey in demand.charts || (delta.metric == ReportMetric.BOX && "box_profit" in demand.charts)) delta
             else delta.copy(occurredAt = 0)
         driver.apply(session, eventId(event, delta), adjusted)
     }
-    private fun sessionFor(event: StarBotExternalBaseEvent): ReportSession {
-        val start = liveStart(event)
-        return ReportSession("${event.platform}:${event.source.uid}:$start", event.platform,
-            event.source.uid ?: 0, event.source.roomId ?: 0, event.source.uname ?: "", start)
-    }
-    private fun liveStart(event: StarBotExternalBaseEvent): Long {
-        val uid = event.source.uid ?: return event.timestamp
-        return liveDataService.getLiveStartTime(event.platform, uid).orElse(event.timestamp)
-            .takeIf { it > 0 && it <= event.timestamp } ?: event.timestamp
-    }
-    private fun liveEnd(event: StarBotExternalBaseEvent): Long {
-        val uid = event.source.uid ?: return event.timestamp
-        return liveDataService.getLiveEndTime(event.platform, uid).orElse(event.timestamp)
-            .takeIf { it >= liveStart(event) } ?: event.timestamp
-    }
     private fun user(event: StarBotLiveInteractionEvent, count: Long, value: Double = 0.0, profit: Double = 0.0): ReportUserDelta? =
         event.sender?.let { ReportUserDelta((it.uid ?: it.uname.hashCode().toLong()).toString(), it.uname ?: "", it.face, count, value, profit) }
-    private fun roomKey(event: StarBotExternalBaseEvent) = "${event.platform}:${event.source.uid}:${event.source.roomId}"
     private fun eventId(event: StarBotExternalBaseEvent, delta: ReportDelta): String {
         val raw = listOf(event.platform, event.source.uid, event.source.roomId, event.javaClass.name, event.timestamp,
             delta.metric, delta.user?.uid, delta.count, delta.value, delta.profit, delta.text, delta.label).joinToString("|")
         return MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(StandardCharsets.UTF_8))
             .take(16).joinToString("") { "%02x".format(it) }
+    }
+
+    private fun eventOrigin(event: StarBotExternalBaseEvent): String = when (event) {
+        is BilibiliLiveOnEvent -> event.getOrigin().name
+        is BilibiliLiveOffEvent -> event.getOrigin().name
+        else -> "REALTIME"
     }
 }

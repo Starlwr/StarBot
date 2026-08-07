@@ -9,6 +9,7 @@ data class LiveReportTargetConfig(
     val onlyWhenNonEmpty: Boolean = false,
     val atAll: Boolean = false,
     val sections: Map<String, Boolean> = DEFAULT_SECTIONS,
+    val amounts: Map<String, Boolean> = DEFAULT_AMOUNTS,
     val rankings: Map<String, Int> = emptyMap(),
     val charts: Map<String, Boolean> = emptyMap(),
     val wordCloud: Boolean = false,
@@ -21,11 +22,14 @@ data class LiveReportTargetConfig(
     val saveDirectory: String = "report"
 ) {
     fun section(name: String) = sections[name] == true
+    /** Whether monetary values for a metric may be shown in a rendered report. */
+    fun amount(name: String) = amounts[name] != false
     fun top(name: String) = rankings[name]?.coerceIn(0, 20) ?: 0
     fun chart(name: String) = charts[name] == true
     companion object {
         val DEFAULT_SECTIONS = mapOf("time" to true, "danmu" to true, "box" to true,
             "gift" to true, "sc" to true, "guard" to true, "fans" to false, "fans_medal" to false)
+        val DEFAULT_AMOUNTS = mapOf("box" to true, "gift" to true, "sc" to true, "guard" to true)
         fun from(params: JSONObject?): LiveReportTargetConfig {
             if (params == null) return LiveReportTargetConfig()
             val sectionsJson = params.getJSONObject("sections")
@@ -33,6 +37,10 @@ data class LiveReportTargetConfig(
                 if (sectionsJson?.containsKey(key) == true) sectionsJson.getBooleanValue(key) else default
             }
             val rankingsJson = params.getJSONObject("rankings")
+            val amountsJson = params.getJSONObject("amounts")
+            val amounts = DEFAULT_AMOUNTS.mapValues { (key, default) ->
+                if (amountsJson?.containsKey(key) == true) amountsJson.getBooleanValue(key) else default
+            }
             val rankings = ReportMetric.entries.associate { metric ->
                 val key = metric.name.lowercase(); val node = rankingsJson?.getJSONObject(key)
                 key to if (node?.getBooleanValue("enabled") == true) node.getIntValue("top", 3).coerceIn(1, 20) else 0
@@ -45,7 +53,8 @@ data class LiveReportTargetConfig(
                 enabled = params.getBooleanValue("enabled", true), output = params.getString("output") ?: "image",
                 textFallback = params.getBooleanValue("text_fallback", true),
                 onlyWhenNonEmpty = params.getBooleanValue("only_when_non_empty", false),
-                atAll = params.getBooleanValue("at_all", false), sections = sections, rankings = rankings, charts = charts,
+                atAll = params.getBooleanValue("at_all", false), sections = sections, amounts = amounts,
+                rankings = rankings, charts = charts,
                 wordCloud = cloud?.getBooleanValue("enabled") == true,
                 maxWords = cloud?.getIntValue("max_words", 80)?.coerceIn(10, 300) ?: 80,
                 maxFontSize = cloud?.getIntValue("max_font_size", 200)?.coerceIn(36, 240) ?: 200,

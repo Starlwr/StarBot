@@ -25,6 +25,7 @@ internal object V2InteractionChartRenderer {
         startedAt: Long,
         endedAt: Long,
         cumulative: Boolean = false,
+        showNumericAxis: Boolean = true,
         width: Int = 900,
         height: Int = 500
     ): BufferedImage {
@@ -57,9 +58,11 @@ internal object V2InteractionChartRenderer {
             val y = top + (plotHeight * ratio).toInt()
             g.color = Color(220, 220, 220)
             g.drawLine(left, y, left + plotWidth, y)
-            g.color = Color(105, 105, 105)
-            val label = format(value)
-            g.drawString(label, left - g.fontMetrics.stringWidth(label) - 8, y + 5)
+            if (showNumericAxis) {
+                g.color = Color(105, 105, 105)
+                val label = format(value)
+                g.drawString(label, left - g.fontMetrics.stringWidth(label) - 8, y + 5)
+            }
         }
         repeat(5) { index ->
             val ratio = index / 4.0

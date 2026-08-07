@@ -10,7 +10,10 @@ import org.springframework.scheduling.annotation.Async
 class LiveReportBaselineCollector(private val api: BilibiliApiUtil, private val collector: LiveReportCollector,
                                   private val demandService: LiveReportDemandService) {
     @Async("bilibiliLiveReportThreadPool") @EventListener
-    fun before(event: LiveOnEvent) { if (needsBaseline(event.source.uid)) collect(event.source.uid, event.source.roomId)?.let { collector.recordMetadata(event, "before", it) } }
+    fun before(event: LiveOnEvent) {
+        if (collector.shouldCollectBaseline(event) && needsBaseline(event.source.uid))
+            collect(event.source.uid, event.source.roomId)?.let { collector.recordMetadata(event, "before", it) }
+    }
 
     private fun needsBaseline(uid: Long?) = demandService.forUid(uid).sections.any { it in setOf("fans", "fans_medal", "guard") }
 

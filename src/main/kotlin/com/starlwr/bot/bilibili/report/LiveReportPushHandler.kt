@@ -47,6 +47,11 @@ class LiveReportPushHandler(
             }
         }
         val snapshot = collector.completed(event) ?: return
+        if (!snapshot.reportEligible || snapshot.closeDisposition != ReportCloseDisposition.NORMAL) {
+            log.info("跳过不完整直播报告发送: session={}, disposition={}, reason={}",
+                snapshot.sessionId, snapshot.closeDisposition, snapshot.closeReason)
+            return
+        }
         if (config.onlyWhenNonEmpty && snapshot.counts.values.sum() == 0L) return
         val target = pushMessage.target
         val content = try {
@@ -70,6 +75,7 @@ class LiveReportPushHandler(
     override fun getDefaultParams() = JSONObject.parseObject("""{
       "enabled":true,"output":"image","text_fallback":true,"only_when_non_empty":false,"at_all":false,
       "sections":{"time":true,"danmu":true,"box":true,"gift":true,"sc":true,"guard":true,"fans":false,"fans_medal":false},
+      "amounts":{"box":true,"gift":true,"sc":true,"guard":true},
       "rankings":{"danmu":{"enabled":false,"top":3},"box":{"enabled":false,"top":3},"gift":{"enabled":false,"top":3},"sc":{"enabled":false,"top":3},"guard":{"enabled":false,"top":3}},
       "charts":{"danmu":{"enabled":false},"box":{"enabled":false},"box_profit":{"enabled":false},"gift":{"enabled":false},"sc":{"enabled":false},"guard":{"enabled":false}},
       "word_cloud":{"enabled":false,"max_words":80,"max_font_size":200,"dictionary":null,"stop_words":null},

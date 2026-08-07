@@ -31,6 +31,14 @@ public class Room extends LiveStreamerInfo {
      */
     private String cover;
 
+    public Integer getLiveStatus() {
+        return liveStatus;
+    }
+
+    public Long getLiveStartTime() {
+        return liveStartTime;
+    }
+
     public Room(Long uid, String uname, Long roomId, Integer liveStatus, Long liveStartTime, String title, String cover) {
         super(uid, uname, roomId);
         this.liveStatus = liveStatus;

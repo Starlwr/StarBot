@@ -144,6 +144,15 @@ starbot:
       file-deduplicate: true
       file-deduplicate-seconds: 900
     live-report:
+      recovery:
+        enabled: true
+        same-session-tolerance: 10m
+        pending-close-delay: 10m
+        pending-close-retry-interval: 2m
+        pending-close-max-duration: 30m
+        trusted-time-cache: 5m
+        trusted-time-timeout: 3s
+        cloudflare-trace-url: https://www.cloudflare-cn.com/cdn-cgi/trace
       storage:
         # sqlite (default), redis, mysql, or memory
         type: sqlite

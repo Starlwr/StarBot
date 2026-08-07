@@ -31,13 +31,30 @@ class LiveReportPainterTest {
         ).apply {
             apply(ReportDelta(ReportMetric.DANMU, 6, user = ReportUserDelta("1", "观众", count = 6),
                 occurredAt = now, text = "测试弹幕内容"))
+            apply(ReportDelta(ReportMetric.GIFT, 1, value = 0.1,
+                user = ReportUserDelta("3", "礼物用户", count = 1, value = 0.1), occurredAt = now))
+            apply(ReportDelta(ReportMetric.SC, 2, value = 123.0, user = ReportUserDelta("2", "supporter", count = 2, value = 123.0), occurredAt = now))
             metadata["before_fans"] = 100
             metadata["after_fans"] = 101
         }
         val config = LiveReportTargetConfig(
             sections = LiveReportTargetConfig.DEFAULT_SECTIONS + ("fans" to true),
-            rankings = mapOf("danmu" to 10), charts = mapOf("danmu" to true), wordCloud = true
+            rankings = mapOf("danmu" to 10, "gift" to 10), charts = mapOf("danmu" to true, "sc" to true), wordCloud = true
         )
+
+        val hiddenConfig = config.copy(amounts = mapOf("box" to false, "gift" to false, "sc" to false, "guard" to false))
+        val hiddenText = painter.text(snapshot, hiddenConfig)
+        assertTrue(!hiddenText.contains("金额"))
+        assertTrue(hiddenText.contains("礼物: 1人"))
+        assertTrue(hiddenText.contains("SC: 1人"))
+        assertTrue(!hiddenText.contains("SC: 2"))
+
+        if (System.getProperty("starbot.test.saveImages").toBoolean()) {
+            val hiddenImage = ImageIO.read(ByteArrayInputStream(Base64.getDecoder().decode(painter.paint(snapshot, hiddenConfig))))
+            val hiddenOutput = java.nio.file.Path.of("target", "live-report-painter-hidden-amounts-test.png")
+            java.nio.file.Files.createDirectories(hiddenOutput.parent)
+            ImageIO.write(hiddenImage, "PNG", hiddenOutput.toFile())
+        }
 
         val image = ImageIO.read(ByteArrayInputStream(Base64.getDecoder().decode(painter.paint(snapshot, config))))
         if (System.getProperty("starbot.test.saveImages").toBoolean()) {
@@ -46,9 +63,9 @@ class LiveReportPainterTest {
             ImageIO.write(image, "PNG", output.toFile())
         }
         assertEquals(1_000, image.width)
-        assertTrue(image.height in 300..2_500, "unexpected untrimmed image height ${image.height}")
-        val center = Color(image.getRGB(image.width / 2, image.height / 2), true)
-        assertTrue(center.red > 240 && center.green > 240 && center.blue > 240,
+        assertTrue(image.height in 300..4_000, "unexpected untrimmed image height ${image.height}")
+        val background = Color(image.getRGB(10, image.height / 2), true)
+        assertTrue(background.red > 240 && background.green > 240 && background.blue > 240,
             "report background should be visible instead of transparent/black")
     }
 }

@@ -48,6 +48,23 @@ class LiveReportDataDriverTest {
         driver.close()
     }
 
+    @Test fun `open session and abnormal close survive sqlite reopen`() {
+        val url = "jdbc:sqlite:${temp.resolve("recovery.db").toAbsolutePath()}"
+        JdbcLiveReportDataDriver("sqlite", url).use { first ->
+            first.initialize(); first.createOrResume(session)
+            first.updateLifecycle(session.sessionId, SessionLifecycleUpdate(
+                lifecycleState = ReportLifecycleState.PENDING_CLOSE, pendingCloseSince = 1_500))
+        }
+        JdbcLiveReportDataDriver("sqlite", url).use { second ->
+            second.initialize()
+            val open = second.openSessions().single()
+            assertEquals(ReportLifecycleState.PENDING_CLOSE, open.lifecycleState)
+            val closed = second.complete(open.sessionId, 2_000, ReportCloseDisposition.ABNORMAL, "test")!!
+            assertFalse(closed.reportEligible)
+            assertTrue(second.openSessions().isEmpty())
+        }
+    }
+
     @Test fun `schema one snapshots migrate without rewriting timestamp keys`() {
         val legacy = LiveReportSnapshot(schemaVersion = 1).apply {
             buckets["danmu"] = java.util.concurrent.ConcurrentHashMap(mapOf(60_000L to 3.0))

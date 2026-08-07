@@ -58,8 +58,21 @@ class JdbcLiveReportDataDriver(
     }
 
     override fun snapshot(sessionId: String): LiveReportSnapshot? = connection().use { load(it, sessionId, false)?.copySafe() }
-    override fun complete(sessionId: String, endedAt: Long): LiveReportSnapshot? = transaction { c ->
-        load(c, sessionId, true)?.also { it.endedAt = endedAt; save(c, it) }?.copySafe()
+    override fun openSessions(): List<LiveReportSnapshot> = connection().use { c ->
+        c.prepareStatement("SELECT payload FROM starbot_report_session WHERE ended_at IS NULL ORDER BY started_at").use { p ->
+            p.executeQuery().use { rs -> buildList { while (rs.next()) add(decode(rs.getString(1)).copySafe()) } }
+        }
+    }
+    override fun updateLifecycle(sessionId: String, update: SessionLifecycleUpdate): LiveReportSnapshot? = transaction { c ->
+        load(c, sessionId, true)?.also { it.updateLifecycle(update); save(c, it) }?.copySafe()
+    }
+    override fun complete(sessionId: String, endedAt: Long, disposition: ReportCloseDisposition, reason: String?): LiveReportSnapshot? = transaction { c ->
+        load(c, sessionId, true)?.also {
+            it.endedAt = endedAt; it.lifecycleState = ReportLifecycleState.CLOSED
+            it.closeDisposition = disposition; it.closeReason = reason
+            if (disposition == ReportCloseDisposition.ABNORMAL) it.reportEligible = false
+            save(c, it)
+        }?.copySafe()
     }
     override fun recent(uid: Long, limit: Int): List<LiveReportSnapshot> = connection().use { c ->
         c.prepareStatement("SELECT payload FROM starbot_report_session WHERE uid=? AND ended_at IS NOT NULL ORDER BY started_at DESC LIMIT ?").use { p ->

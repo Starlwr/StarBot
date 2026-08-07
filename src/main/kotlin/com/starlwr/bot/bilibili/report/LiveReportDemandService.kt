@@ -6,6 +6,7 @@ import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadComplete
 import com.starlwr.bot.core.plugin.StarBotComponent
 import org.slf4j.LoggerFactory
 import org.springframework.context.event.EventListener
+import org.springframework.core.annotation.Order
 import java.util.concurrent.ConcurrentHashMap
 
 data class ReportDemand(val enabled: Boolean = false, val sections: Set<String> = emptySet(),
@@ -15,7 +16,7 @@ data class ReportDemand(val enabled: Boolean = false, val sections: Set<String> 
 class LiveReportDemandService(private val dataSource: AbstractDataSource) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val demands = ConcurrentHashMap<Long, ReportDemand>()
-    @EventListener(StarBotDataSourceLoadCompleteEvent::class)
+    @Order(-10_000) @EventListener(StarBotDataSourceLoadCompleteEvent::class)
     fun reload() {
         demands.clear()
         dataSource.allUsers.forEach { user ->
@@ -34,4 +35,5 @@ class LiveReportDemandService(private val dataSource: AbstractDataSource) {
     }
     @EventListener fun onChange(@Suppress("UNUSED_PARAMETER") event: StarBotDataSourceChangeEvent) = reload()
     fun forUid(uid: Long?) = uid?.let { demands[it] } ?: ReportDemand()
+    fun enabledUids(): Set<Long> = demands.filterValues { it.enabled }.keys.toSet()
 }

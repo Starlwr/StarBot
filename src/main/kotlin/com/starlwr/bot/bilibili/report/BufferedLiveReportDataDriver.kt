@@ -29,14 +29,30 @@ class BufferedLiveReportDataDriver(
         return true
     }
     override fun snapshot(sessionId: String): LiveReportSnapshot? = snapshots[sessionId]?.copySafe() ?: delegate.snapshot(sessionId)
-    override fun complete(sessionId: String, endedAt: Long): LiveReportSnapshot? {
+    override fun openSessions(): List<LiveReportSnapshot> {
+        flushBatch()
+        return (delegate.openSessions() + snapshots.values.filter { it.endedAt == null })
+            .associateBy { it.sessionId }.values.map { it.copySafe() }
+    }
+    override fun updateLifecycle(sessionId: String, update: SessionLifecycleUpdate): LiveReportSnapshot? {
+        flushSession(sessionId)
+        val updated = delegate.updateLifecycle(sessionId, update)
+            ?: snapshots[sessionId]?.also { it.updateLifecycle(update) }?.copySafe()
+        if (updated != null) snapshots[sessionId] = updated
+        return updated?.copySafe()
+    }
+    override fun complete(sessionId: String, endedAt: Long, disposition: ReportCloseDisposition, reason: String?): LiveReportSnapshot? {
         return try {
-            flushSession(sessionId); val completed = delegate.complete(sessionId, endedAt)
+            flushSession(sessionId); val completed = delegate.complete(sessionId, endedAt, disposition, reason)
             if (completed != null) snapshots[sessionId] = completed
             completed
         } catch (e: Exception) {
             log.error("持久层暂时不可用，会话 {} 保留在内存缓冲并生成临时报告", sessionId, e)
-            snapshots[sessionId]?.also { it.endedAt = endedAt }?.copySafe()
+            snapshots[sessionId]?.also {
+                it.endedAt = endedAt; it.lifecycleState = ReportLifecycleState.CLOSED
+                it.closeDisposition = disposition; it.closeReason = reason
+                if (disposition == ReportCloseDisposition.ABNORMAL) it.reportEligible = false
+            }?.copySafe()
         }
     }
     override fun recent(uid: Long, limit: Int): List<LiveReportSnapshot> { flushBatch(); return delegate.recent(uid, limit) }
