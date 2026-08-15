@@ -28,7 +28,8 @@ public class BilibiliWbiUtil {
      */
     public static String getWbiSign(Map<String, Object> params, String imgKey, String subKey) {
         TreeMap<String, Object> map = new TreeMap<>(params);
-        map.put("wts", System.currentTimeMillis() / 1000);
+        long wts = System.currentTimeMillis() / 1000;
+        map.put("wts", wts);
         String encodedParams = map.entrySet().stream()
                 .map(entry -> String.format("%s=%s", entry.getKey(), urlEncode(entry.getValue())))
                 .collect(Collectors.joining("&"));
@@ -36,10 +37,7 @@ public class BilibiliWbiUtil {
         String mixinKey = getMixinKey(imgKey, subKey);
         String wbiSign = md5(encodedParams + mixinKey);
 
-        return "?" + params.entrySet().stream()
-                .map(entry -> String.format("%s=%s", entry.getKey(), entry.getValue()))
-                .collect(Collectors.joining("&")) +
-                "&w_rid=" + wbiSign + "&wts=" + map.get("wts");
+        return "?" + encodedParams + "&w_rid=" + wbiSign;
     }
 
     /**
