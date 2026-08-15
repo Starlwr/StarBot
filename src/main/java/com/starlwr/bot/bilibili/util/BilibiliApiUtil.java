@@ -31,6 +31,7 @@ import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.CollectionUtils;
 
 import java.awt.image.BufferedImage;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -80,6 +81,7 @@ public class BilibiliApiUtil {
     public void init() {
         Map<Class<? extends Throwable>, Boolean> retryableExceptions = new HashMap<>();
         retryableExceptions.put(NetworkException.class, true);
+        retryableExceptions.put(SocketException.class, true);
         retryableExceptions.put(SocketTimeoutException.class, true);
 
         SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy(properties.getNetwork().getApiRetryMaxTimes(), retryableExceptions, true);
@@ -641,8 +643,10 @@ public class BilibiliApiUtil {
                 Long liveStartTime = roomInfo.getLong("live_time") * 1000;
                 String title = roomInfo.getString("title");
                 String cover = roomInfo.getString("cover_from_user");
+                String parentAreaName = roomInfo.getString("area_v2_parent_name");
+                String areaName = roomInfo.getString("area_v2_name");
 
-                Room room = new Room(uid, uname, roomId, face, liveStatus, liveStartTime, title, cover);
+                Room room = new Room(uid, uname, roomId, face, liveStatus, liveStartTime, title, cover, parentAreaName, areaName);
                 rooms.put(uid, room);
             }
         }
@@ -676,8 +680,10 @@ public class BilibiliApiUtil {
 
         String title = result.getString("title");
         String cover = result.getString("user_cover");
+        String parentAreaName = result.getString("parent_area_name");
+        String areaName = result.getString("area_name");
 
-        return new Room(uid, null, realRoomId, liveStatus, liveStartTime, title, cover);
+        return new Room(uid, null, realRoomId, liveStatus, liveStartTime, title, cover, parentAreaName, areaName);
     }
 
     /**
