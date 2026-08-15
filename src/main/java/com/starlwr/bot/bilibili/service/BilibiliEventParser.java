@@ -448,7 +448,7 @@ public class BilibiliEventParser {
 
         String unit = metaData.getString("unit");
 
-        Instant timestamp = Instant.ofEpochMilli(data.getLong("send_time"));
+        Instant timestamp = Instant.ofEpochSecond(metaData.getLong("start_time"));
 
         switch (guardLevel) {
             case 1 -> {
