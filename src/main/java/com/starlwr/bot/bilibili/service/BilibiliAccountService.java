@@ -126,7 +126,14 @@ public class BilibiliAccountService {
                 log.error("扫码登录中断", e);
             }
 
-            Boolean loginStatus = bilibili.getQrCodeLoginStatus(token);
+            Boolean loginStatus;
+            try {
+                loginStatus = bilibili.getQrCodeLoginStatus(token);
+            } catch (Exception e) {
+                log.error("获取扫码登录状态失败", e);
+                continue;
+            }
+
             if (loginStatus == null) {
                 continue;
             }

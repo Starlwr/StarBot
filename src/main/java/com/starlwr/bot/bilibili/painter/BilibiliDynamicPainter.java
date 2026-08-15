@@ -44,11 +44,11 @@ public class BilibiliDynamicPainter {
 
     private final StarBotCommonPainterFactory factory;
 
+    private final Dynamic dynamic;
+
     private final ResourceLoader resourceLoader;
 
     private final CommonPainter painter;
-
-    private final Dynamic dynamic;
 
     private final Map<String, String> iconUrlMap = new HashMap<>();
 
