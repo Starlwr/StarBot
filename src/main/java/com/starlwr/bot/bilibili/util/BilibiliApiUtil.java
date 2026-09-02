@@ -804,6 +804,43 @@ public class BilibiliApiUtil {
                 throw e;
             }
         }
+    }
 
+    /**
+     * 获取粉丝数
+     * @param uid UID
+     * @return 粉丝数
+     */
+    public int getFansCount(Long uid) {
+        String api = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + uid;
+        JSONObject result = requestBilibiliApi(api);
+
+        return result.getIntValue("follower_num");
+    }
+
+    /**
+     * 获取粉丝团数(点亮粉丝勋章的粉丝数)
+     * @param uid UID
+     * @return 粉丝团数(点亮粉丝勋章的粉丝数)
+     */
+    public int getFansMedalCount(Long uid) {
+        String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuMedalAnchorInfo?ruid=" + uid;
+        JSONObject result = requestBilibiliApi(api);
+
+        return result.getIntValue("fans_club_count");
+    }
+
+    /**
+     * 获取大航海数
+     * @param uid UID
+     * @param roomId 房间号
+     * @return 大航海数
+     */
+    public int getGuardCount(Long uid, Long roomId) {
+        String api = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew?roomid=" + roomId + "&page=1&ruid=" + uid + "&page_size=20&typ=5&platform=web";
+        JSONObject result = requestBilibiliApi(api);
+
+        JSONObject info = result.getJSONObject("info");
+        return info.getIntValue("num");
     }
 }
