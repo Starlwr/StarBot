@@ -1,8 +1,7 @@
 package com.starlwr.bot.bilibili.event.live;
 
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
-import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.live.common.MembershipEvent;
+import com.starlwr.bot.bilibili.enums.GuardType;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
 import lombok.Getter;
@@ -27,19 +26,12 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class BilibiliCommanderEvent extends MembershipEvent {
-    /**
-     * 操作类型
-     */
-    private GuardOperateType operateType;
-
+public class BilibiliCommanderEvent extends BilibiliMembershipEvent {
     public BilibiliCommanderEvent(LiveStreamerInfo source, UserInfo sender, GuardOperateType operateType, Double price, Integer count, String unit) {
-        super(LivePlatform.BILIBILI, source, sender, price, count, unit);
-        this.operateType = operateType;
+        super(source, sender, GuardType.Commander, operateType, price, count, unit);
     }
 
     public BilibiliCommanderEvent(LiveStreamerInfo source, UserInfo sender, GuardOperateType operateType, Double price, Integer count, String unit, Instant instant) {
-        super(LivePlatform.BILIBILI, source, sender, price, count, unit, instant);
-        this.operateType = operateType;
+        super(source, sender, GuardType.Commander, operateType, price, count, unit, instant);
     }
 }
