@@ -4,7 +4,10 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
-import com.starlwr.bot.bilibili.service.BilibiliDynamicService;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.starlwr.bot.bilibili.factory.BilibiliDynamicPainterFactory;
+import com.starlwr.bot.bilibili.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.handler.StarBotEventHandler;
@@ -17,10 +20,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.CollectionUtils;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <h3>Bilibili 动态推送处理器</h3>
@@ -59,13 +67,19 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
 
     private final StarBotMessageSender sender;
 
-    private final BilibiliDynamicService service;
+    private final BilibiliDynamicPainterFactory factory;
+
+    private final Cache<String, String> dynamicImageCache =
+            Caffeine.newBuilder()
+                    .maximumSize(10)
+                    .expireAfterWrite(1, TimeUnit.MINUTES)
+                    .build();
 
     @Autowired
-    public BilibiliDynamicPushHandler(StarBotBilibiliProperties properties, StarBotMessageSender sender, BilibiliDynamicService service) {
+    public BilibiliDynamicPushHandler(StarBotBilibiliProperties properties, StarBotMessageSender sender, BilibiliDynamicPainterFactory factory) {
         this.properties = properties;
         this.sender = sender;
-        this.service = service;
+        this.factory = factory;
     }
 
     /**
@@ -112,11 +126,32 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
             }
         }
 
-        Optional<String> optionalBase64 = service.paint(event.getDynamic());
+        String cacheKey = event.getSource().getUid() + "|" + event.getDynamic().getId();
+        String base64 = dynamicImageCache.getIfPresent(cacheKey);
 
-        if (optionalBase64.isPresent()) {
-            String base64 = optionalBase64.get();
+        if (base64 == null) {
+            BilibiliDynamicPainter dynamicPainter = factory.create(event.getDynamic());
 
+            Optional<String> optionalBase64;
+            if (properties.getDynamic().isAutoSaveImage()) {
+                Path path = Paths.get("DynamicImage", event.getDynamic().getId() + ".png");
+                try {
+                    Files.createDirectories(path.getParent());
+                } catch (IOException e) {
+                    log.error("创建动态图片保存目录失败: {}", path.getParent(), e);
+                }
+                optionalBase64 = dynamicPainter.paint(path.toString());
+            } else {
+                optionalBase64 = dynamicPainter.paint();
+            }
+
+            if (optionalBase64.isPresent()) {
+                base64 = optionalBase64.get();
+                dynamicImageCache.put(cacheKey, base64);
+            }
+        }
+
+        if (base64 != null) {
             String raw = params.getString("message");
             String atAll = params.getBooleanValue("at_all") && PushTargetType.GROUP == pushMessage.getTarget().getType() && !raw.contains("{at=all}") ? "{at=all}{next}" : "";
             String content = atAll + raw.replace("{uname}", event.getSource().getUname())

@@ -3,10 +3,8 @@ package com.starlwr.bot.bilibili.service;
 import com.alibaba.fastjson2.JSON;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
-import com.starlwr.bot.bilibili.factory.BilibiliDynamicPainterFactory;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.model.Up;
-import com.starlwr.bot.bilibili.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.LivePlatform;
@@ -20,15 +18,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -52,8 +45,6 @@ public class BilibiliDynamicService {
 
     private final BilibiliAccountService accountService;
 
-    private final BilibiliDynamicPainterFactory factory;
-
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -65,13 +56,12 @@ public class BilibiliDynamicService {
     private final FixedSizeSetQueue<String> dynamicIds = new FixedSizeSetQueue<>(1000);
 
     @Autowired
-    public BilibiliDynamicService(ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, AbstractDataSource dataSource, BilibiliApiUtil bilibili, BilibiliAccountService accountService, BilibiliDynamicPainterFactory factory) {
+    public BilibiliDynamicService(ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, AbstractDataSource dataSource, BilibiliApiUtil bilibili, BilibiliAccountService accountService) {
         this.eventPublisher = eventPublisher;
         this.properties = properties;
         this.dataSource = dataSource;
         this.bilibili = bilibili;
         this.accountService = accountService;
-        this.factory = factory;
     }
 
     /**
@@ -240,28 +230,5 @@ public class BilibiliDynamicService {
         log.info("检测到 {} 个打开了动态推送但未关注的 UP 主: [{}], 开始自动关注", notFollowUps.size(), notFollowUps.stream().map(up -> up.getUname() + "(" + up.getUid() + ")").collect(Collectors.joining(", ")));
 
         autoFollowQueue.addAll(notFollowUps);
-    }
-
-    /**
-     * 绘制动态图片
-     * @param dynamic 动态
-     * @return 动态图片的 Base64 字符串
-     */
-    @Cacheable(value = "bilibiliDynamicImageCache", keyGenerator = "cacheKeyGenerator")
-    public Optional<String> paint(Dynamic dynamic) {
-        BilibiliDynamicPainter painter = factory.create(dynamic);
-
-        if (properties.getDynamic().isAutoSaveImage()) {
-            Path path = Paths.get("DynamicImage", dynamic.getId() + ".png");
-            try {
-                Files.createDirectories(path.getParent());
-            } catch (IOException e) {
-                log.error("创建动态图片保存目录失败: {}", path.getParent(), e);
-            }
-            String savePath = path.toString();
-            return painter.paint(savePath);
-        } else {
-            return painter.paint();
-        }
     }
 }

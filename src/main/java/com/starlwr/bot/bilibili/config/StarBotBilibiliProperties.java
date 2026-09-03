@@ -166,6 +166,11 @@ public class StarBotBilibiliProperties {
          * 弹幕词云最多绘制的词条数量
          */
         private int wordCloudLimit = 100;
+
+        /**
+         * 是否自动保存绘制的直播报告图片
+         */
+        private boolean autoSaveLiveReportImage = false;
     }
 
     /**
