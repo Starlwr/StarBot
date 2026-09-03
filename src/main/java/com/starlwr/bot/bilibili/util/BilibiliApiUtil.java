@@ -45,6 +45,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -252,7 +254,16 @@ public class BilibiliApiUtil {
         List<CompletableFuture<Optional<BufferedImage>>> downloadPictureTasks = new ArrayList<>();
 
         for (String url : urls) {
-            CompletableFuture<Optional<BufferedImage>> task = asyncGetBilibiliImage(url, headers);
+            CompletableFuture<Optional<BufferedImage>> task = asyncGetBilibiliImage(url, headers)
+                    .orTimeout(30, TimeUnit.SECONDS)
+                    .exceptionally(throwable -> {
+                        if (throwable instanceof TimeoutException) {
+                            log.warn("从 {} 下载头像超时", url);
+                        } else {
+                            log.warn("从 {} 下载头像失败", url, throwable);
+                        }
+                        return Optional.empty();
+                    });
             downloadPictureTasks.add(task);
         }
 
