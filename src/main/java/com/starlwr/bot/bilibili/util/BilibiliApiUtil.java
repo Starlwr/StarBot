@@ -126,7 +126,7 @@ public class BilibiliApiUtil {
      * @return 请求结果
      */
     public JSONObject requestBilibiliApi(String url) {
-        return requestBilibiliApi(url, "GET", getBilibiliHeaders(), new HashMap<>());
+        return requestBilibiliApi(url, "GET", getBilibiliHeaders(), new HashMap<>(), JSONObject.class);
     }
 
     /**
@@ -136,7 +136,26 @@ public class BilibiliApiUtil {
      * @return 请求结果
      */
     public JSONObject requestBilibiliApi(String url, Map<String, Object> params) {
-        return requestBilibiliApi(url, "POST", getBilibiliHeaders(), params);
+        return requestBilibiliApi(url, "POST", getBilibiliHeaders(), params, JSONObject.class);
+    }
+
+    /**
+     * 使用默认 bilibili 请求头 GET 请求返回列表的 bilibili API
+     * @param url URL
+     * @return 请求结果
+     */
+    public JSONArray requestBilibiliApiForArray(String url) {
+        return requestBilibiliApi(url, "GET", getBilibiliHeaders(), new HashMap<>(), JSONArray.class);
+    }
+
+    /**
+     * 使用默认 bilibili 请求头 POST 请求返回列表的 bilibili API
+     * @param url URL
+     * @param params 请求参数
+     * @return 请求结果
+     */
+    public JSONArray requestBilibiliApiForArray(String url, Map<String, Object> params) {
+        return requestBilibiliApi(url, "POST", getBilibiliHeaders(), params, JSONArray.class);
     }
 
     /**
@@ -145,11 +164,11 @@ public class BilibiliApiUtil {
      * @param method 请求方法，GET 或 POST
      * @param headers 请求头
      * @param params 请求参数
+     * @param type 返回类型，JSONObject 或 JSONArray
      * @return 请求结果
      */
-    public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params) {
-        return retryTemplate.execute(retryContext -> {
-            JSONObject rtn;
+    public <T> T requestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params, Class<T> type) {
+        return (T) retryTemplate.execute(retryContext -> {
             JSONObject result;
 
             if ("GET".equalsIgnoreCase(method)) {
@@ -174,14 +193,24 @@ public class BilibiliApiUtil {
             }
 
             if (result.containsKey("data")) {
-                rtn = result.getJSONObject("data");
+                if (type == JSONArray.class) {
+                    return result.getJSONArray("data");
+                } else if (type == JSONObject.class) {
+                    return result.getJSONObject("data");
+                } else {
+                    throw new IllegalArgumentException("返回类型参数只能为 JSONObject 或 JSONArray");
+                }
             } else if (result.containsKey("result")) {
-                rtn = result.getJSONObject("result");
+                if (type == JSONArray.class) {
+                    return result.getJSONArray("result");
+                } else if (type == JSONObject.class) {
+                    return result.getJSONObject("result");
+                } else {
+                    throw new IllegalArgumentException("返回类型参数只能为 JSONObject 或 JSONArray");
+                }
             } else {
                 throw new RequestFailedException("API 返回数据未含 data 或 result 字段: " + result);
             }
-
-            return rtn;
         });
     }
 
@@ -279,7 +308,7 @@ public class BilibiliApiUtil {
      */
     public WebSign generateBilibiliWebSign() {
         String api = BilibiliTicketUtil.getBilibiliTicketUrl(cookies.getBiliJct());
-        JSONObject result = requestBilibiliApi(api, "POST", new HashMap<>(), new HashMap<>());
+        JSONObject result = requestBilibiliApi(api, "POST", new HashMap<>(), new HashMap<>(), JSONObject.class);
         String ticket = result.getString("ticket");
         Integer ticketExpires = result.getInteger("created_at") + result.getInteger("ttl");
 
@@ -671,7 +700,7 @@ public class BilibiliApiUtil {
     /**
      * 根据 UID 列表批量获取直播间信息
      * @param uids UID 列表
-     * @return 直播间信息
+     * @return 直播间信息列表
      */
     public Map<Long, Room> getLiveInfoByUids(Set<Long> uids) {
         Map<Long, Room> rooms = new HashMap<>();
@@ -713,6 +742,39 @@ public class BilibiliApiUtil {
         }
 
         return rooms;
+    }
+
+    /**
+     * 根据 UID 列表批量获取用户信息
+     * @param uids UID 集合
+     * @return 用户信息列表
+     */
+    public Map<Long, UserInfo> getUserInfoByUids(Set<Long> uids) {
+        if (CollectionUtils.isEmpty(uids)) {
+            return new HashMap<>();
+        }
+
+        Map<Long, UserInfo> infos = new HashMap<>();
+
+        for (Long uid : uids) {
+            infos.put(uid, new UserInfo(uid, "昵称获取失败"));
+        }
+
+        List<List<Long>> parts = CollectionUtil.splitCollection(uids, 10);
+        for (List<Long> part: parts) {
+            String param = part.stream().map(String::valueOf).collect(Collectors.joining(","));
+            String api = "https://api.vc.bilibili.com/account/v1/user/cards?uids=" + param;
+            JSONArray results = requestBilibiliApiForArray(api);
+            for (Object result : results) {
+                JSONObject info = (JSONObject) result;
+                Long uid = info.getLong("mid");
+                String uname = info.getString("name");
+                String face = info.getString("face");
+                infos.put(uid, new UserInfo(uid, uname, face));
+            }
+        }
+
+        return infos;
     }
 
     /**
