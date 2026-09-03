@@ -12,7 +12,7 @@
 
     <groupId>com.starlwr</groupId>
     <artifactId>starbot-bilibili</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.0-beta</version>
     <name>StarBotBilibili</name>
     <description>StarBot For Bilibili</description>
     <url>https://bot.starlwr.com</url>
@@ -77,6 +77,11 @@
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
             <version>3.2.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.huaban</groupId>
+            <artifactId>jieba-analysis</artifactId>
+            <version>1.0.2</version>
         </dependency>
 
         <dependency>
