@@ -481,6 +481,31 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 获取最近一场直播的时间范围
+     *
+     * @return 时间范围，不可用时返回 null，单位：毫秒
+     */
+    private long[] getLiveRange() {
+        Optional<Long> optionalStartTime = liveDataService.getLiveStartTime(LivePlatform.BILIBILI.getName(), up.getUid());
+        Optional<Long> optionalEndTime = liveDataService.getLiveEndTime(LivePlatform.BILIBILI.getName(), up.getUid());
+        if (optionalStartTime.isPresent() && optionalEndTime.isPresent() && optionalEndTime.get() > optionalStartTime.get()) {
+            return new long[]{optionalStartTime.get(), optionalEndTime.get()};
+        }
+        return null;
+    }
+
+    /**
+     * 绘制直播报告曲线图
+     *
+     * @param samples    曲线图数据点列表
+     * @param cumulative 是否为累计曲线
+     */
+    private void drawLineChart(List<ChartPainter.LinePoint> samples, boolean cumulative) {
+        long[] range = getLiveRange();
+        ChartPainter.renderLineChart(samples, cumulative, 20, CHART_WIDTH, font, range != null ? range[0] : null, range != null ? range[1] : null).ifPresent(this.painter::drawImage);
+    }
+
+    /**
      * 绘制弹幕分析模块
      */
     private void drawDanmuAnalysis() {
@@ -532,13 +557,13 @@ public class BilibiliLiveReportPainter {
             // 弹幕累计曲线图
             if (config.isShowDanmuGrowthChart()) {
                 drawSection("弹幕累计曲线图");
-                ChartPainter.renderLineChart(samples, true, 20, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+                drawLineChart(samples, true);
             }
 
             // 弹幕互动曲线图
             if (config.isShowDanmuInteractionChart()) {
                 drawSection("弹幕互动曲线图");
-                ChartPainter.renderLineChart(samples, false, 20, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+                drawLineChart(samples, false);
             }
         }
 
@@ -731,13 +756,13 @@ public class BilibiliLiveReportPainter {
             // 盲盒数量累计曲线图
             if (config.isShowBoxGrowthChart()) {
                 drawSection("盲盒数量累计曲线图");
-                ChartPainter.renderLineChart(countSamples, true, 20, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+                drawLineChart(countSamples, true);
             }
 
             // 盲盒数量互动曲线图
             if (config.isShowBoxInteractionChart()) {
                 drawSection("盲盒数量互动曲线图");
-                ChartPainter.renderLineChart(countSamples, false, 20, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+                drawLineChart(countSamples, false);
             }
         }
 
@@ -749,13 +774,13 @@ public class BilibiliLiveReportPainter {
             // 盲盒盈亏累计曲线图
             if (config.isShowBoxProfitGrowthChart()) {
                 drawSection("盲盒盈亏累计曲线图");
-                ChartPainter.renderLineChart(profitSamples, true, 20, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+                drawLineChart(profitSamples, true);
             }
 
             // 盲盒盈亏互动曲线图
             if (config.isShowBoxProfitInteractionChart()) {
                 drawSection("盲盒盈亏互动曲线图");
-                ChartPainter.renderLineChart(profitSamples, false, 20, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+                drawLineChart(profitSamples, false);
             }
         }
 
@@ -880,13 +905,13 @@ public class BilibiliLiveReportPainter {
             // 礼物累计曲线图
             if (config.isShowGiftGrowthChart()) {
                 drawSection("礼物累计曲线图");
-                ChartPainter.renderLineChart(samples, true, 20, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+                drawLineChart(samples, true);
             }
 
             // 礼物互动曲线图
             if (config.isShowGiftInteractionChart()) {
                 drawSection("礼物互动曲线图");
-                ChartPainter.renderLineChart(samples, false, 20, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+                drawLineChart(samples, false);
             }
         }
 
@@ -958,13 +983,13 @@ public class BilibiliLiveReportPainter {
             // SC（醒目留言）累计曲线图
             if (config.isShowSuperChatGrowthChart()) {
                 drawSection("SC（醒目留言）累计曲线图");
-                ChartPainter.renderLineChart(samples, true, 20, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+                drawLineChart(samples, true);
             }
 
             // SC（醒目留言）互动曲线图
             if (config.isShowSuperChatInteractionChart()) {
                 drawSection("SC（醒目留言）互动曲线图");
-                ChartPainter.renderLineChart(samples, false, 20, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+                drawLineChart(samples, false);
             }
         }
 
