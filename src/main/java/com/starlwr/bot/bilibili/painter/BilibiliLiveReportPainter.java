@@ -460,6 +460,20 @@ public class BilibiliLiveReportPainter {
      * @param userInfos    用户信息
      */
     private void drawSenderRankingChart(String sectionTitle, List<Map.Entry<String, Double>> sorted, int limit, Map<Long, UserInfo> userInfos) {
+        drawSenderRankingChart(sectionTitle, sorted, limit, userInfos, null, null);
+    }
+
+    /**
+     * 绘制发送者排行榜
+     *
+     * @param sectionTitle  小节标题
+     * @param sorted        按数值降序排序的发送者统计
+     * @param limit         展示前多少名
+     * @param userInfos     用户信息
+     * @param barStartColor 条形渐变起始颜色
+     * @param barEndColor   条形渐变终止颜色
+     */
+    private void drawSenderRankingChart(String sectionTitle, List<Map.Entry<String, Double>> sorted, int limit, Map<Long, UserInfo> userInfos, Color barStartColor, Color barEndColor) {
         List<Map.Entry<String, Double>> top = sorted.stream().limit(limit).toList();
         drawSection(sectionTitle + " (Top " + top.size() + ")");
 
@@ -477,7 +491,7 @@ public class BilibiliLiveReportPainter {
         for (int i = 0; i < top.size(); i++) {
             items.add(new ChartPainter.RankingItem(faces.get(i).orElse(defaultFace), userInfos.get(topUids.get(i)).getUname(), top.get(i).getValue()));
         }
-        ChartPainter.renderRankingChart(items, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+        ChartPainter.renderRankingChart(items, CHART_WIDTH, font, barStartColor, barEndColor, null, null).ifPresent(this.painter::drawImage);
     }
 
     /**
@@ -745,7 +759,18 @@ public class BilibiliLiveReportPainter {
 
         // 盲盒盈亏排行榜
         if (config.getBoxProfitRankingLimit() > 0) {
-            drawSenderRankingChart("盲盒盈亏排行榜", sortedProfit, config.getBoxProfitRankingLimit(), userInfos);
+            boolean hasPositive = sortedProfit.stream().anyMatch(entry -> entry.getValue() > 0);
+            boolean hasNegative = sortedProfit.stream().anyMatch(entry -> entry.getValue() < 0);
+            Color barStartColor = null;
+            Color barEndColor = null;
+            if (hasPositive && !hasNegative) {
+                barStartColor = ChartPainter.COLOR_DEEP_RED;
+                barEndColor = ChartPainter.COLOR_LIGHT_RED;
+            } else if (hasNegative && !hasPositive) {
+                barStartColor = ChartPainter.COLOR_DEEP_GREEN;
+                barEndColor = ChartPainter.COLOR_LIGHT_GREEN;
+            }
+            drawSenderRankingChart("盲盒盈亏排行榜", sortedProfit, config.getBoxProfitRankingLimit(), userInfos, barStartColor, barEndColor);
         }
 
         if (config.isShowBoxGrowthChart() || config.isShowBoxInteractionChart()) {
