@@ -884,14 +884,15 @@ public class BilibiliLiveReportPainter {
 
         List<JSONObject> freeGifts = liveDataService.getFreeGift(platform, uid, JSONObject.class);
         List<JSONObject> paidGifts = liveDataService.getPaidGift(platform, uid, JSONObject.class);
+        List<JSONObject> boxes = liveDataService.getRandomGift(platform, uid, JSONObject.class);
 
-        if (CollectionUtils.isEmpty(freeGifts) && CollectionUtils.isEmpty(paidGifts)) {
+        if (CollectionUtils.isEmpty(freeGifts) && CollectionUtils.isEmpty(paidGifts) && CollectionUtils.isEmpty(boxes)) {
             return;
         }
 
         if (config.isShowGiftDetails()) {
-            double totalValue = paidGifts.stream().mapToDouble(json -> json.getDoubleValue("value")).sum();
-            long senderCount = Stream.concat(paidGifts.stream(), freeGifts.stream())
+            double totalValue = paidGifts.stream().mapToDouble(json -> json.getDoubleValue("value")).sum() + boxes.stream().mapToDouble(json -> json.getDoubleValue("value")).sum();
+            long senderCount = Stream.concat(Stream.concat(paidGifts.stream(), freeGifts.stream()), boxes.stream())
                     .map(json -> json.getLong("sender"))
                     .distinct()
                     .count();
@@ -901,13 +902,24 @@ public class BilibiliLiveReportPainter {
             drawTitle("礼物分析");
         }
 
-        if (CollectionUtils.isEmpty(paidGifts)) {
+        if (CollectionUtils.isEmpty(paidGifts) && CollectionUtils.isEmpty(boxes)) {
             this.painter.setPos(MARGIN, this.painter.getY() + 25);
             return;
         }
 
         // 按发送者分组统计礼物价值
-        Map<String, Double> valueBySender = paidGifts.stream().collect(Collectors.groupingBy(json -> json.getString("sender"), Collectors.summingDouble(json -> json.getDoubleValue("value"))));
+        List<ChartPainter.LinePoint> valueSamples = new ArrayList<>();
+        Map<String, Double> valueBySender = new HashMap<>();
+        for (JSONObject gift : paidGifts) {
+            double value = gift.getDoubleValue("value");
+            valueSamples.add(new ChartPainter.LinePoint(gift.getLongValue("timestamp"), value));
+            valueBySender.merge(gift.getString("sender"), value, Double::sum);
+        }
+        for (JSONObject box : boxes) {
+            double value = box.getDoubleValue("value");
+            valueSamples.add(new ChartPainter.LinePoint(box.getLongValue("timestamp"), value));
+            valueBySender.merge(box.getString("sender"), value, Double::sum);
+        }
         List<Map.Entry<String, Double>> sorted = valueBySender.entrySet().stream()
                 .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                 .toList();
@@ -923,27 +935,28 @@ public class BilibiliLiveReportPainter {
         }
 
         if (config.isShowGiftGrowthChart() || config.isShowGiftInteractionChart()) {
-            List<ChartPainter.LinePoint> samples = paidGifts.stream()
-                    .map(json -> new ChartPainter.LinePoint(json.getLongValue("timestamp"), json.getDoubleValue("value")))
-                    .toList();
-
             // 礼物累计曲线图
             if (config.isShowGiftGrowthChart()) {
                 drawSection("礼物累计曲线图");
-                drawLineChart(samples, true);
+                drawLineChart(valueSamples, true);
             }
 
             // 礼物互动曲线图
             if (config.isShowGiftInteractionChart()) {
                 drawSection("礼物互动曲线图");
-                drawLineChart(samples, false);
+                drawLineChart(valueSamples, false);
             }
         }
 
         // 礼物类型分布图
         if (config.isShowGiftTypeDistributionChart()) {
-            Map<String, Long> countByGiftName = paidGifts.stream().collect(Collectors.groupingBy(
-                    json -> json.getJSONObject("giftInfo").getString("name"), Collectors.summingLong(this::getGiftCount)));
+            Map<String, Long> countByGiftName = paidGifts.stream().collect(Collectors.groupingBy(json -> json.getJSONObject("giftInfo").getString("name"), Collectors.summingLong(this::getGiftCount)));
+            for (JSONObject box : boxes) {
+                JSONObject randomGiftInfo = box.getJSONObject("randomGiftInfo");
+                if (randomGiftInfo != null && StringUtil.isNotBlank(randomGiftInfo.getString("name"))) {
+                    countByGiftName.merge(randomGiftInfo.getString("name"), getBoxCount(box), Long::sum);
+                }
+            }
             List<Map.Entry<String, Long>> sortedGifts = countByGiftName.entrySet().stream()
                     .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                     .toList();
