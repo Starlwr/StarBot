@@ -25,7 +25,10 @@ public class BilibiliLiveReportConfig {
             "boxAnalysis",
             "giftAnalysis",
             "superChatAnalysis",
-            "guardAnalysis"
+            "guardAnalysis",
+            "enterRoomAnalysis",
+            "likeAnalysis",
+            "shareAnalysis"
     ));
 
     // ================ 基础信息 ================
@@ -246,4 +249,75 @@ public class BilibiliLiveReportConfig {
      * 是否展示本场直播开通大航海观众列表
      */
     private boolean showGuardList;
+
+    // ================ 进房分析 ================
+
+    /**
+     * 是否启用进房分析模块
+     */
+    private boolean enableEnterRoomAnalysis;
+
+    /**
+     * 是否展示本场直播进房次数、进房人数
+     */
+    private boolean showEnterRoomDetails;
+
+    /**
+     * 是否展示本场直播的进房累计曲线图
+     */
+    private boolean showEnterRoomGrowthChart;
+
+    /**
+     * 是否展示本场直播的进房互动曲线图
+     */
+    private boolean showEnterRoomInteractionChart;
+
+    // ================ 点赞分析 ================
+
+    /**
+     * 是否启用点赞分析模块
+     */
+    private boolean enableLikeAnalysis;
+
+    /**
+     * 是否展示本场直播点赞次数、点赞人数
+     */
+    private boolean showLikeDetails;
+
+    /**
+     * 展示本场直播点赞排行榜的前多少名，0 为不展示
+     */
+    private int likeRankingLimit;
+
+    /**
+     * 是否展示本场直播的点赞累计曲线图
+     */
+    private boolean showLikeGrowthChart;
+
+    /**
+     * 是否展示本场直播的点赞互动曲线图
+     */
+    private boolean showLikeInteractionChart;
+
+    // ================ 分享分析 ================
+
+    /**
+     * 是否启用分享分析模块
+     */
+    private boolean enableShareAnalysis;
+
+    /**
+     * 是否展示本场直播分享次数、分享人数
+     */
+    private boolean showShareDetails;
+
+    /**
+     * 是否展示本场直播的分享累计曲线图
+     */
+    private boolean showShareGrowthChart;
+
+    /**
+     * 是否展示本场直播的分享互动曲线图
+     */
+    private boolean showShareInteractionChart;
 }

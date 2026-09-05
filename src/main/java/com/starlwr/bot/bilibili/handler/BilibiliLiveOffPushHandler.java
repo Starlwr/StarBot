@@ -57,7 +57,7 @@ import java.util.concurrent.TimeUnit;
  *         "at_all": false,
  *         "message": "{uname} 直播结束了{next}{picture}",
  *         "modules": {
- *             "sequence": ["changeInfo", "danmuAnalysis", "boxAnalysis", "giftAnalysis", "superChatAnalysis", "guardAnalysis"],
+ *             "sequence": ["changeInfo", "danmuAnalysis", "boxAnalysis", "giftAnalysis", "superChatAnalysis", "guardAnalysis", "enterRoomAnalysis", "likeAnalysis", "shareAnalysis"],
  *             "enableBasicInfo": true,
  *             "showLiveArea": true,
  *             "showLiveTitle": true,
@@ -98,7 +98,20 @@ import java.util.concurrent.TimeUnit;
  *             "showSuperChatInteractionChart": true,
  *             "enableGuardAnalysis": true,
  *             "showGuardDetails": true,
- *             "showGuardList": true
+ *             "showGuardList": true,
+ *             "enableEnterRoomAnalysis": true,
+ *             "showEnterRoomDetails": true,
+ *             "showEnterRoomGrowthChart": true,
+ *             "showEnterRoomInteractionChart": true,
+ *             "enableLikeAnalysis": true,
+ *             "showLikeDetails": true,
+ *             "likeRankingLimit": 5,
+ *             "showLikeGrowthChart": true,
+ *             "showLikeInteractionChart": true,
+ *             "enableShareAnalysis": true,
+ *             "showShareDetails": true,
+ *             "showShareGrowthChart": true,
+ *             "showShareInteractionChart": true
  *         }
  *     }
  * </pre>
@@ -249,7 +262,7 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
         params.put("message", "{uname} 直播结束了{next}{picture}");
 
         JSONObject modules = new JSONObject();
-        modules.put("sequence", List.of("changeInfo", "danmuAnalysis", "boxAnalysis", "giftAnalysis", "superChatAnalysis", "guardAnalysis"));
+        modules.put("sequence", List.of("changeInfo", "danmuAnalysis", "boxAnalysis", "giftAnalysis", "superChatAnalysis", "guardAnalysis", "enterRoomAnalysis", "likeAnalysis", "shareAnalysis"));
         modules.put("enableBasicInfo", true);
         modules.put("showLiveArea", true);
         modules.put("showLiveTitle", true);
@@ -291,6 +304,19 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
         modules.put("enableGuardAnalysis", true);
         modules.put("showGuardDetails", true);
         modules.put("showGuardList", true);
+        modules.put("enableEnterRoomAnalysis", true);
+        modules.put("showEnterRoomDetails", true);
+        modules.put("showEnterRoomGrowthChart", true);
+        modules.put("showEnterRoomInteractionChart", true);
+        modules.put("enableLikeAnalysis", true);
+        modules.put("showLikeDetails", true);
+        modules.put("likeRankingLimit", 5);
+        modules.put("showLikeGrowthChart", true);
+        modules.put("showLikeInteractionChart", true);
+        modules.put("enableShareAnalysis", true);
+        modules.put("showShareDetails", true);
+        modules.put("showShareGrowthChart", true);
+        modules.put("showShareInteractionChart", true);
 
         params.put("modules", modules);
 
