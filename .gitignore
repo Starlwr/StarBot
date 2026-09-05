@@ -3,6 +3,8 @@ target/
 logs/
 LiveDebug/
 DynamicDebug/
+EventDebug/
+NetworkDebug/
 data.json
 cookies.json
 datasource.json

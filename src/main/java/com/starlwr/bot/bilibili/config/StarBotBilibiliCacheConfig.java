@@ -27,11 +27,5 @@ public class StarBotBilibiliCacheConfig {
                         .expireAfterAccess(5, TimeUnit.MINUTES)
                         .maximumSize(100000)
                         .build());
-
-        cacheManager.registerCustomCache("bilibiliDynamicImageCache",
-                Caffeine.newBuilder()
-                        .expireAfterWrite(1, TimeUnit.MINUTES)
-                        .maximumSize(10)
-                        .build());
     }
 }

@@ -1,6 +1,8 @@
 package com.starlwr.bot.bilibili.listener;
 
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.LivePlatform;
@@ -146,5 +148,47 @@ public class BilibiliLiveDataListener {
                 }
             }
         }
+    }
+
+    /**
+     * 开播存储粉丝数、粉丝勋章数、大航海数
+     * @param event 事件
+     */
+    @Order(-10000)
+    @EventListener
+    public void onBilibiliLiveOnEvent(BilibiliLiveOnEvent event) {
+        String platform = LivePlatform.BILIBILI.getName();
+
+        Long uid = event.getSource().getUid();
+        Long roomId = event.getSource().getRoomId();
+
+        int fansCount = bilibili.getFansCount(uid);
+        int fansMedalCount = bilibili.getFansMedalCount(uid);
+        int guardCount = bilibili.getGuardCount(uid, roomId);
+
+        liveDataService.setCustomObject(fansCount, platform, "BeforeFansCount", String.valueOf(uid));
+        liveDataService.setCustomObject(fansMedalCount, platform, "BeforeFansMedalCount", String.valueOf(uid));
+        liveDataService.setCustomObject(guardCount, platform, "BeforeGuardCount", String.valueOf(uid));
+    }
+
+    /**
+     * 下播存储粉丝数、粉丝勋章数、大航海数
+     * @param event 事件
+     */
+    @Order(-10000)
+    @EventListener
+    public void onBilibiliLiveOffEvent(BilibiliLiveOffEvent event) {
+        String platform = LivePlatform.BILIBILI.getName();
+
+        Long uid = event.getSource().getUid();
+        Long roomId = event.getSource().getRoomId();
+
+        int fansCount = bilibili.getFansCount(uid);
+        int fansMedalCount = bilibili.getFansMedalCount(uid);
+        int guardCount = bilibili.getGuardCount(uid, roomId);
+
+        liveDataService.setCustomObject(fansCount, platform, "AfterFansCount", String.valueOf(uid));
+        liveDataService.setCustomObject(fansMedalCount, platform, "AfterFansMedalCount", String.valueOf(uid));
+        liveDataService.setCustomObject(guardCount, platform, "AfterGuardCount", String.valueOf(uid));
     }
 }

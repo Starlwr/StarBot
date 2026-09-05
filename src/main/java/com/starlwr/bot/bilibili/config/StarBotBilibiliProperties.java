@@ -76,6 +76,11 @@ public class StarBotBilibiliProperties {
          * 是否记录原始动态信息日志
          */
         private boolean dynamicRawMessageLog = false;
+
+        /**
+         * 是否输出弹幕词云分词调试结果
+         */
+        private boolean wordCloudDebug = false;
     }
 
     /**
@@ -214,6 +219,16 @@ public class StarBotBilibiliProperties {
          * 备用直播推送检测时间间隔，单位：秒
          */
         private int backupLivePushInterval = 10;
+
+        /**
+         * 弹幕词云最多绘制的词条数量
+         */
+        private int wordCloudLimit = 100;
+
+        /**
+         * 是否自动保存绘制的直播报告图片
+         */
+        private boolean autoSaveLiveReportImage = false;
     }
 
     /**
