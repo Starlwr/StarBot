@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.painter;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.huaban.analysis.jieba.SegToken;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportConfig;
 import com.starlwr.bot.bilibili.model.Room;
@@ -31,6 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -258,6 +260,40 @@ public class BilibiliLiveReportPainterTest {
             Files.deleteIfExists(debugFile);
         }
         Files.deleteIfExists(debugDirectory);
+    }
+
+    /**
+     * 测试分词过滤不完整表情字符
+     * <p>
+     * Emoji 等补充平面字符会被分词工具拆成孤立代理项，编码为 UTF-8 时变成问号，
+     * 只应剔除这些不完整的字符；完整的符号（如 ✓）与正常汉字、数字、字母应保留
+     */
+    @Test
+    public void testSegmentFiltersEmoji() {
+        BilibiliWordCloudUtil wordCloudUtil = new BilibiliWordCloudUtil();
+        wordCloudUtil.init();
+
+        List<SegToken> tokens = wordCloudUtil.segment("测试😮测试✓🚀 666");
+
+        boolean hasIncompleteUtf8 = tokens.stream().anyMatch(token -> {
+            String word = token.word;
+            for (int i = 0; i < word.length(); i++) {
+                char c = word.charAt(i);
+                if (Character.isHighSurrogate(c)) {
+                    if (i + 1 >= word.length() || !Character.isLowSurrogate(word.charAt(i + 1))) {
+                        return true;
+                    }
+                    i++;
+                } else if (Character.isLowSurrogate(c)) {
+                    return true;
+                }
+            }
+            return false;
+        });
+        assertFalse(hasIncompleteUtf8, "分词结果不应包含不完整字符（孤立代理项）");
+        assertTrue(tokens.stream().anyMatch(token -> "测试".equals(token.word)), "正常汉字应保留");
+        assertTrue(tokens.stream().anyMatch(token -> "666".equals(token.word)), "数字词条应保留");
+        assertTrue(tokens.stream().anyMatch(token -> "✓".equals(token.word)), "完整符号（✓）应保留");
     }
 
     /**
