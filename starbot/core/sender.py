@@ -350,14 +350,27 @@ class Bot(BaseModel):
 
         limited = self.__at_all_limited == time.localtime(time.time()).tm_yday
         for target in filter(lambda t: t.type == PushType.Group, up.targets):
+            if not target.live_on.enabled:
+                continue
+
             group = await self.__bot.get_group(target.id)
             if group is None:
                 continue
-            bot_info = await self.__bot.get_member(target.id, self.qq)
-            not_admin = bot_info.permission < MemberPerm.Administrator
-            if target.live_on.enabled and (limited or "{atall}" not in target.live_on.message or not_admin):
-                ats = " ".join(["{at" + str(x) + "}" for x in await redis.range_live_on_at(target.id)])
-                await self.send_message(Message(id=target.id, content=ats, type=target.type))
+
+            # 消息含 @全体成员 且未超过每日上限时, Bot 若是管理员, 主推送已 @ 全员, 无需再推送 @列表
+            if not limited and "{atall}" in target.live_on.message:
+                try:
+                    bot_info = await self.__bot.get_member(target.id, self.qq)
+                except UnknownTarget:
+                    logger.warning(
+                        f"Bot({self.qq}) 无法获取群({target.id})的自身成员信息, 无法确认 @全体成员 权限, 已跳过本次 @列表 推送"
+                    )
+                    continue
+                if bot_info.permission >= MemberPerm.Administrator:
+                    continue
+
+            ats = " ".join(["{at" + str(x) + "}" for x in await redis.range_live_on_at(target.id)])
+            await self.send_message(Message(id=target.id, content=ats, type=target.type))
 
     async def send_live_off(self, up: Up, args: Dict[str, Any]):
         """
