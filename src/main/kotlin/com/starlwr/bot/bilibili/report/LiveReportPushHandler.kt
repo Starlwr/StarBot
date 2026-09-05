@@ -77,7 +77,7 @@ class LiveReportPushHandler(
       "sections":{"time":true,"danmu":true,"box":true,"gift":true,"sc":true,"guard":true,"fans":false,"fans_medal":false},
       "amounts":{"box":true,"gift":true,"sc":true,"guard":true},
       "rankings":{"danmu":{"enabled":false,"top":3},"box":{"enabled":false,"top":3},"gift":{"enabled":false,"top":3},"sc":{"enabled":false,"top":3},"guard":{"enabled":false,"top":3}},
-      "charts":{"danmu":{"enabled":false},"box":{"enabled":false},"box_profit":{"enabled":false},"gift":{"enabled":false},"sc":{"enabled":false},"guard":{"enabled":false}},
+      "charts":{"danmu":{"enabled":false},"danmu_type":{"enabled":false},"danmu_sender":{"enabled":false},"box":{"enabled":false},"box_profit":{"enabled":false},"box_profit_distribution":{"enabled":false},"box_gift_distribution":{"enabled":false},"gift":{"enabled":false},"gift_type":{"enabled":false},"sc":{"enabled":false},"guard":{"enabled":false}},
       "word_cloud":{"enabled":false,"max_words":80,"max_font_size":200,"dictionary":null,"stop_words":null},
       "logo":null,"save_image":false,"save_directory":"report"
     }""")

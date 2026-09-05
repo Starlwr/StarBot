@@ -2,6 +2,7 @@ package com.starlwr.bot.bilibili.report
 
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory
 import com.starlwr.bot.core.model.TextWithStyle
+import com.starlwr.bot.core.painter.ChartPainter
 import com.starlwr.bot.core.painter.CommonPainter
 import com.starlwr.bot.core.plugin.StarBotComponent
 import java.awt.*
@@ -76,6 +77,26 @@ class LiveReportPainter(private val factory: StarBotCommonPainterFactory) {
                     showNumericAxis = config.amount(metric.name.lowercase())))
             }
         }
+        if (config.chart("danmu_type")) {
+            drawDistribution(painter, "\u5F39\u5E55\u7C7B\u578B\u5206\u5E03\u56FE", distribution(snapshot.labels["danmu"], mapOf("normal" to "普通弹幕", "emoji" to "表情弹幕")))
+        }
+        if (config.chart("danmu_sender")) {
+            val senderSlices = snapshot.users["danmu"].orEmpty().entries
+                .sortedByDescending { it.value.count }
+                .take(20)
+                .map { ChartPainter.DistributionSlice(it.value.uname.ifBlank { it.key }, it.value.count.toDouble()) }
+            drawDistribution(painter, "\u5F39\u5E55\u53D1\u9001\u8005\u5206\u5E03\u56FE", senderSlices)
+        }
+        if (config.chart("gift_type")) {
+            drawDistribution(painter, "\u793C\u7269\u7C7B\u578B\u5206\u5E03\u56FE", distribution(snapshot.labels["gift"]))
+        }
+        if (config.chart("box_profit_distribution")) {
+            drawDistribution(painter, "\u76F2\u76D2\u76C8\u4E8F\u5206\u5E03\u56FE", distribution(snapshot.labels["box_profit"], mapOf(
+                "profit" to "盈利", "even" to "不赚不亏", "loss" to "亏损")))
+        }
+        if (config.chart("box_gift_distribution")) {
+            drawDistribution(painter, "\u76F2\u76D2\u7206\u51FA\u793C\u7269\u5206\u5E03\u56FE", distribution(snapshot.labels["box"]))
+        }
         if (config.wordCloud && snapshot.danmuTexts.isNotEmpty()) {
             painter.drawSection("弹幕词云")
             painter.drawImage(V2WordCloudRenderer.render(snapshot.danmuTexts, config))
@@ -91,6 +112,17 @@ class LiveReportPainter(private val factory: StarBotCommonPainterFactory) {
         // makes dark text visible and crops the canvas to the actual draw cursor.
         painter.createSolidRoundedRectangleBackground(Color.WHITE, 35)
         return painter.base64().orElseThrow { IllegalStateException("直播报告图片编码失败") }
+    }
+
+    private fun distribution(values: Map<String, Long>?, labels: Map<String, String> = emptyMap()): List<ChartPainter.DistributionSlice> =
+        values.orEmpty().entries.filter { it.value > 0 }.sortedByDescending { it.value }.take(20)
+            .map { ChartPainter.DistributionSlice(labels[it.key] ?: it.key, it.value.toDouble()) }
+
+    private fun drawDistribution(painter: CommonPainter, title: String, slices: List<ChartPainter.DistributionSlice>) {
+        if (slices.isEmpty()) return
+        ChartPainter.renderDistributionChart(
+            slices, 900, Font("SansSerif", Font.PLAIN, CommonPainter.TEXT_FONT_SIZE)
+        ).ifPresent { painter.drawSection(title).drawImage(it) }
     }
 
     fun text(snapshot: LiveReportSnapshot, config: LiveReportTargetConfig): String = if (LiveReportTargetConfig.DEFAULT_AMOUNTS.keys.all { config.amount(it) }) buildString {

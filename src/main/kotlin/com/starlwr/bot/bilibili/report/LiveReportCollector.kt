@@ -38,10 +38,12 @@ class LiveReportCollector(
 
     @EventListener fun onDanmu(event: DanmuEvent) = commit(event, ReportDelta(
         ReportMetric.DANMU, count = 1, user = user(event, 1), occurredAt = event.timestamp,
+        label = "normal",
         text = event.contentText?.take(500)?.takeIf { demandService.forUid(event.source.uid).wordCloud }))
 
     @EventListener fun onEmoji(event: EmojiEvent) = commit(event, ReportDelta(
         ReportMetric.DANMU, count = 1, user = user(event, 1), occurredAt = event.timestamp,
+        label = "emoji",
         text = event.emoji?.name?.take(500)?.takeIf { demandService.forUid(event.source.uid).wordCloud }))
 
     @EventListener fun onGift(event: PaidGiftEvent) {

@@ -103,9 +103,18 @@ data class LiveReportSnapshot(
             buckets.computeIfAbsent(key) { ConcurrentHashMap() }.merge(second,
                 if (delta.value != 0.0) delta.value else delta.count.toDouble(), Double::plus)
         }
-        if (delta.metric == ReportMetric.BOX && delta.profit != 0.0 && delta.occurredAt > 0) {
-            buckets.computeIfAbsent("box_profit") { ConcurrentHashMap() }
-                .merge(delta.occurredAt / 1_000 * 1_000, delta.profit, Double::plus)
+        if (delta.metric == ReportMetric.BOX && delta.occurredAt > 0) {
+            if (delta.profit != 0.0) {
+                buckets.computeIfAbsent("box_profit") { ConcurrentHashMap() }
+                    .merge(delta.occurredAt / 1_000 * 1_000, delta.profit, Double::plus)
+            }
+            val profitLabel = when {
+                delta.profit > 0.0 -> "profit"
+                delta.profit < 0.0 -> "loss"
+                else -> "even"
+            }
+            labels.computeIfAbsent("box_profit") { ConcurrentHashMap() }
+                .merge(profitLabel, delta.count.coerceAtLeast(1), Long::plus)
         }
         delta.text?.takeIf { it.isNotBlank() && danmuTexts.size < maxTexts }?.let(danmuTexts::add)
     }

@@ -23,4 +23,17 @@ class LiveReportConfigTest {
         assertTrue(!config.amount("sc"))
         assertTrue(config.amount("guard"))
     }
+
+    @Test
+    fun `upstream modules are imported without changing local defaults`() {
+        val config = LiveReportTargetConfig.from(JSONObject.parseObject(
+            """{"modules":{"enableDanmuAnalysis":true,"showDanmuTypeDistributionChart":true,"showDanmuWordCloud":true,"wordCloudLimit":42,"showGiftDetails":false,"giftRankingLimit":3}}"""
+        ))
+        assertTrue(config.section("danmu"))
+        assertTrue(config.chart("danmu_type"))
+        assertTrue(config.wordCloud)
+        assertEquals(42, config.maxWords)
+        assertTrue(!config.amount("gift"))
+        assertEquals(3, config.top("gift"))
+    }
 }
