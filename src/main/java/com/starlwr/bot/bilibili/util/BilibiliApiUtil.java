@@ -5,11 +5,19 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.credential.BilibiliBrowserIdentity;
+import com.starlwr.bot.bilibili.credential.BilibiliCredentialFileStore;
+import com.starlwr.bot.bilibili.http.BilibiliHttpPipeline;
+import com.starlwr.bot.bilibili.http.BilibiliHttpResponse;
 import com.starlwr.bot.bilibili.enums.DanmuType;
 import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
+import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger;
 import com.starlwr.bot.bilibili.model.*;
+import com.starlwr.bot.bilibili.risk.BilibiliRiskProperties;
+import com.starlwr.bot.bilibili.risk.GaiaChallenge;
+import com.starlwr.bot.bilibili.risk.GaiaChallengeProvider;
 import com.starlwr.bot.core.model.UserInfo;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.CollectionUtil;
@@ -25,8 +33,6 @@ import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.util.Pair;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseEntity;
 import org.springframework.retry.backoff.FixedBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
 import org.springframework.retry.support.RetryTemplate;
@@ -35,6 +41,7 @@ import org.springframework.util.CollectionUtils;
 import java.awt.image.BufferedImage;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,6 +52,10 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
@@ -59,20 +70,49 @@ public class BilibiliApiUtil {
 
     private final HttpUtil http;
 
+    private final BilibiliBrowserIdentity browserIdentity;
+
+    private final BilibiliNetworkLogger networkLog;
+
+    private final BilibiliHttpPipeline httpPipeline;
+
+    private final BilibiliCredentialFileStore credentialFileStore;
+
+    private final BilibiliRiskProperties riskProperties;
+
+    private final GaiaChallengeProvider gaiaChallengeProvider;
+
+    private final AtomicLong webSignUpdatedAtMillis = new AtomicLong();
+
+    private final AtomicBoolean webSignRefreshInProgress = new AtomicBoolean();
+
     private final RetryTemplate retryTemplate = new RetryTemplate();
 
     private WebSign sign;
 
     @Getter
     @Setter
-    private Cookies cookies = new Cookies();
+    private volatile Cookies cookies = new Cookies();
+
+    private final Pattern sessDataPattern = Pattern.compile("SESSDATA=(.*?)&");
+
+    private final Pattern biliJctPattern = Pattern.compile("bili_jct=(.*?)&");
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Autowired
-    public BilibiliApiUtil(StarBotBilibiliProperties properties, HttpUtil http) {
+    public BilibiliApiUtil(StarBotBilibiliProperties properties, HttpUtil http,
+                           BilibiliBrowserIdentity browserIdentity, BilibiliNetworkLogger networkLog,
+                           BilibiliHttpPipeline httpPipeline, BilibiliCredentialFileStore credentialFileStore,
+                           BilibiliRiskProperties riskProperties, GaiaChallengeProvider gaiaChallengeProvider) {
         this.properties = properties;
         this.http = http;
+        this.browserIdentity = browserIdentity;
+        this.networkLog = networkLog;
+        this.httpPipeline = httpPipeline;
+        this.credentialFileStore = credentialFileStore;
+        this.riskProperties = riskProperties;
+        this.gaiaChallengeProvider = gaiaChallengeProvider;
     }
 
     @PostConstruct
@@ -98,24 +138,26 @@ public class BilibiliApiUtil {
     public Map<String, String> getBilibiliHeaders() {
         Map<String, String> headers = new HashMap<>();
         headers.put("Referer", "https://www.bilibili.com");
-        headers.put("User-Agent", properties.getNetwork().getUserAgent());
-        if (StringUtil.isNotBlank(cookies.getSessData()) && StringUtil.isNotBlank(cookies.getBiliJct()) && StringUtil.isNotBlank(cookies.getBuvid3())) {
-            StringJoiner cookie = new StringJoiner("; ");
-            cookie.add("SESSDATA=" + cookies.getSessData());
-            cookie.add("buvid3=" + cookies.getBuvid3());
-            cookie.add("bili_jct=" + cookies.getBiliJct());
-            if (StringUtil.isNotBlank(cookies.getDedeUserId())) {
-                cookie.add("DedeUserID=" + cookies.getDedeUserId());
+        headers.putAll(browserIdentity.headers(properties.getNetwork().getUserAgent()));
+        if (StringUtil.isNotBlank(cookies.getSessData()) && StringUtil.isNotBlank(cookies.getBiliJct())) {
+            Map<String, String> values = new LinkedHashMap<>();
+            if (cookies.getExtraCookies() != null) {
+                values.putAll(cookies.getExtraCookies());
             }
-            if (StringUtil.isNotBlank(cookies.getDedeUserIdCkMd5())) {
-                cookie.add("DedeUserID__ckMd5=" + cookies.getDedeUserIdCkMd5());
+            values.put("SESSDATA", cookies.getSessData());
+            values.put("bili_jct", cookies.getBiliJct());
+            values.put("buvid3", cookies.getBuvid3());
+            values.put("buvid4", cookies.getBuvid4());
+            values.put("DedeUserID", cookies.getDedeUserId());
+            values.put("b_nut", cookies.getBNut());
+            if (sign != null) {
+                values.put("bili_ticket", sign.getTicket());
+                values.put("bili_ticket_expires", String.valueOf(sign.getTicketExpires()));
             }
-            if (StringUtil.isNotBlank(cookies.getSid())) {
-                cookie.add("sid=" + cookies.getSid());
-            }
-            cookie.add("bili_ticket=" + sign.getTicket());
-            cookie.add("bili_ticket_expires=" + sign.getTicketExpires());
-            headers.put("Cookie", cookie.toString());
+            headers.put("Cookie", values.entrySet().stream()
+                    .filter(entry -> StringUtil.isNotBlank(entry.getValue()))
+                    .map(entry -> entry.getKey() + "=" + entry.getValue())
+                    .collect(Collectors.joining("; ")));
         }
         return headers;
     }
@@ -126,7 +168,7 @@ public class BilibiliApiUtil {
      * @return 请求结果
      */
     public JSONObject requestBilibiliApi(String url) {
-        return requestBilibiliApi(url, "GET", getBilibiliHeaders(), new HashMap<>(), JSONObject.class);
+        return requestBilibiliApi(url, "GET", getBilibiliHeaders(), new HashMap<>());
     }
 
     /**
@@ -136,26 +178,34 @@ public class BilibiliApiUtil {
      * @return 请求结果
      */
     public JSONObject requestBilibiliApi(String url, Map<String, Object> params) {
-        return requestBilibiliApi(url, "POST", getBilibiliHeaders(), params, JSONObject.class);
+        return requestBilibiliApi(url, "POST", getBilibiliHeaders(), params);
     }
 
-    /**
-     * 使用默认 bilibili 请求头 GET 请求返回列表的 bilibili API
-     * @param url URL
-     * @return 请求结果
-     */
+    /** Request a Bilibili API whose data/result payload is an array. */
     public JSONArray requestBilibiliApiForArray(String url) {
-        return requestBilibiliApi(url, "GET", getBilibiliHeaders(), new HashMap<>(), JSONArray.class);
+        return requestBilibiliApiForArrayInternal(url, "GET", new HashMap<>());
     }
 
-    /**
-     * 使用默认 bilibili 请求头 POST 请求返回列表的 bilibili API
-     * @param url URL
-     * @param params 请求参数
-     * @return 请求结果
-     */
+    /** Request a Bilibili API whose data/result payload is an array. */
     public JSONArray requestBilibiliApiForArray(String url, Map<String, Object> params) {
-        return requestBilibiliApi(url, "POST", getBilibiliHeaders(), params, JSONArray.class);
+        return requestBilibiliApiForArrayInternal(url, "POST", params);
+    }
+
+    private JSONArray requestBilibiliApiForArrayInternal(String url, String method, Map<String, Object> params) {
+        return retryTemplate.execute(retryContext -> {
+            BilibiliHttpResponse response = "GET".equals(method)
+                    ? httpPipeline.get(url, getBilibiliHeaders(), "bilibili-api-array")
+                    : httpPipeline.postForm(url, getBilibiliHeaders(), params, "bilibili-api-array");
+            if (!response.successful()) throw new NetworkException(response.getStatus());
+            JSONObject result = response.json();
+            int code = result.getIntValue("code", 0);
+            if (code != 0) throw new ResponseCodeException(code, result.getString("message"));
+            Object payload = result.containsKey("data") ? result.get("data") : result.get("result");
+            if (!(payload instanceof JSONArray array)) {
+                throw new RequestFailedException("API 返回数据未含 JSONArray data 或 result 字段: " + result);
+            }
+            return array;
+        });
     }
 
     /**
@@ -164,26 +214,76 @@ public class BilibiliApiUtil {
      * @param method 请求方法，GET 或 POST
      * @param headers 请求头
      * @param params 请求参数
-     * @param type 返回类型，JSONObject 或 JSONArray
      * @return 请求结果
      */
-    public <T> T requestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params, Class<T> type) {
-        return (T) retryTemplate.execute(retryContext -> {
+    public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params) {
+        AtomicBoolean gaiaRetryPerformed = new AtomicBoolean();
+        return retryTemplate.execute(retryContext -> {
+            JSONObject rtn;
             JSONObject result;
-
+            BilibiliHttpResponse response;
             if ("GET".equalsIgnoreCase(method)) {
-                result = http.getJson(url, headers);
+                response = httpPipeline.get(url, headers, "bilibili-api");
             } else if ("POST".equalsIgnoreCase(method)) {
-                result = http.postJsonAsForm(url, headers, params);
+                response = httpPipeline.postForm(url, headers, params, "bilibili-api");
             } else {
                 throw new IllegalArgumentException("不支持的请求方法: " + method);
             }
+            if (!response.successful()) {
+                throw new NetworkException(response.getStatus());
+            }
+            synchronizeCookiesFromStore();
+            result = response.json();
 
             if (!result.containsKey("code")) {
                 throw new RequestFailedException("API 返回数据未含 code 字段: " + result);
             }
             Integer code = result.getInteger("code");
+            if ((code == -352 || code == -401) && riskProperties.getGaiaEnabled()) {
+                JSONObject challengeData = result.getJSONObject("data");
+                String voucher = responseHeader(response, "x-bili-gaia-vvoucher");
+                if (StringUtil.isBlank(voucher) && challengeData != null) {
+                    voucher = Optional.ofNullable(challengeData.getString("voucher"))
+                            .orElse(challengeData.getString("gaia_vvoucher"));
+                }
+                Object gaDataValue = challengeData == null ? null : challengeData.get("ga_data");
+                String gaData = gaDataValue == null ? null
+                        : gaDataValue instanceof String value ? value : JSON.toJSONString(gaDataValue);
+                String token = gaiaChallengeProvider.submit(new GaiaChallenge(code, voucher, gaData, url));
+                if (StringUtil.isNotBlank(token) && gaiaRetryPerformed.compareAndSet(false, true)) {
+                    String encoded = URLEncoder.encode(token, StandardCharsets.UTF_8);
+                    String retryUrl = url + (url.contains("?") ? "&" : "?") + "gaia_vtoken=" + encoded;
+                    if (code == -401) retryUrl += "&token=" + encoded;
+                    Map<String, String> retryHeaders = new HashMap<>(headers);
+                    retryHeaders.put("x-bili-gaia-vtoken", token);
+                    log.info("Bilibili Gaia challenge 已由交互 provider 完成，原请求仅重试一次: code={}, uri={}", code, url);
+                    response = "GET".equalsIgnoreCase(method)
+                            ? httpPipeline.get(retryUrl, retryHeaders, "bilibili-api-gaia-retry")
+                            : httpPipeline.postForm(retryUrl, retryHeaders, params, "bilibili-api-gaia-retry");
+                    if (!response.successful()) throw new NetworkException(response.getStatus());
+                    result = response.json();
+                    code = result.getInteger("code");
+                }
+            }
             if (code != 0) {
+                if (code == -352 && retryContext.getRetryCount() == 0) {
+                    long updatedAt = webSignUpdatedAtMillis.get();
+                    long ageSeconds = updatedAt == 0 ? Long.MAX_VALUE
+                            : Math.max(0, (System.currentTimeMillis() - updatedAt) / 1000);
+                    if (ageSeconds >= 900 && webSignRefreshInProgress.compareAndSet(false, true)) {
+                        try {
+                            log.info("Bilibili API 返回 -352，WBI 已使用 {} 秒，达到 900 秒阈值，重新计算后重试一次", ageSeconds);
+                            generateBilibiliWebSign();
+                            throw new NetworkException(code);
+                        } finally {
+                            webSignRefreshInProgress.set(false);
+                        }
+                    } else if (ageSeconds < 900) {
+                        log.info("Bilibili API 返回 -352，但 WBI 仅使用 {} 秒，未达到 900 秒阈值，不重复计算", ageSeconds);
+                    } else {
+                        log.info("Bilibili API 返回 -352，但已有 WBI 重算任务正在进行，本请求不再重复触发");
+                    }
+                }
                 // 4101130: 请求数据发生错误，请刷新或稍后重试, 4101131: 加载错误，请稍后再试, 4101132: 加载错误，请稍后再试, 22015: 您的账号异常，请稍后再试
                 if (code == 4101130 || code == 4101131 || code == 4101132 || code == 22015) {
                     throw new NetworkException(code);
@@ -193,25 +293,29 @@ public class BilibiliApiUtil {
             }
 
             if (result.containsKey("data")) {
-                if (type == JSONArray.class) {
-                    return result.getJSONArray("data");
-                } else if (type == JSONObject.class) {
-                    return result.getJSONObject("data");
-                } else {
-                    throw new IllegalArgumentException("返回类型参数只能为 JSONObject 或 JSONArray");
-                }
+                rtn = result.getJSONObject("data");
             } else if (result.containsKey("result")) {
-                if (type == JSONArray.class) {
-                    return result.getJSONArray("result");
-                } else if (type == JSONObject.class) {
-                    return result.getJSONObject("result");
-                } else {
-                    throw new IllegalArgumentException("返回类型参数只能为 JSONObject 或 JSONArray");
-                }
+                rtn = result.getJSONObject("result");
             } else {
                 throw new RequestFailedException("API 返回数据未含 data 或 result 字段: " + result);
             }
+
+            return rtn;
         });
+    }
+
+    private String responseHeader(BilibiliHttpResponse response, String name) {
+        return response.getHeaders().entrySet().stream()
+                .filter(entry -> entry.getKey().equalsIgnoreCase(name))
+                .flatMap(entry -> entry.getValue().stream())
+                .findFirst().orElse(null);
+    }
+
+    private void synchronizeCookiesFromStore() {
+        Cookies persisted = credentialFileStore.loadCookies();
+        if (persisted != null && StringUtil.isNotBlank(persisted.getSessData())) {
+            cookies = persisted;
+        }
     }
 
     /**
@@ -234,7 +338,17 @@ public class BilibiliApiUtil {
             return Optional.empty();
         }
 
-        return http.getBufferedImage(url, headers);
+        BilibiliNetworkLogger.HttpTrace trace = networkLog.httpRequest("bilibili-image", "GET", url, headers, null);
+        try {
+            Optional<BufferedImage> image = http.getBufferedImage(url, headers);
+            networkLog.httpResponse(trace, image.isPresent() ? 200 : 204, Collections.emptyMap(),
+                    image.<Object>map(value -> Map.of("width", value.getWidth(), "height", value.getHeight()))
+                            .orElse("<empty image>"));
+            return image;
+        } catch (RuntimeException e) {
+            networkLog.httpFailure(trace, e);
+            throw e;
+        }
     }
 
     /**
@@ -257,7 +371,16 @@ public class BilibiliApiUtil {
             return CompletableFuture.completedFuture(Optional.empty());
         }
 
-        return http.asyncGetBufferedImage(url, headers);
+        BilibiliNetworkLogger.HttpTrace trace = networkLog.httpRequest("bilibili-image-async", "GET", url, headers, null);
+        return http.asyncGetBufferedImage(url, headers).whenComplete((image, error) -> {
+            if (error != null) {
+                networkLog.httpFailure(trace, error);
+            } else {
+                networkLog.httpResponse(trace, image.isPresent() ? 200 : 204, Collections.emptyMap(),
+                        image.<Object>map(value -> Map.of("width", value.getWidth(), "height", value.getHeight()))
+                                .orElse("<empty image>"));
+            }
+        });
     }
 
     /**
@@ -308,7 +431,7 @@ public class BilibiliApiUtil {
      */
     public WebSign generateBilibiliWebSign() {
         String api = BilibiliTicketUtil.getBilibiliTicketUrl(cookies.getBiliJct());
-        JSONObject result = requestBilibiliApi(api, "POST", new HashMap<>(), new HashMap<>(), JSONObject.class);
+        JSONObject result = requestBilibiliApi(api, "POST", new HashMap<>(), new HashMap<>());
         String ticket = result.getString("ticket");
         Integer ticketExpires = result.getInteger("created_at") + result.getInteger("ttl");
 
@@ -318,8 +441,29 @@ public class BilibiliApiUtil {
         String subKey = sub.substring(sub.lastIndexOf("/") + 1, sub.lastIndexOf("."));
 
         sign = new WebSign(ticket, ticketExpires, imgKey, subKey);
+        webSignUpdatedAtMillis.set(System.currentTimeMillis());
+        cookies.setBiliTicket(ticket);
+        cookies.setBiliTicketExpires(ticketExpires.longValue());
+        credentialFileStore.saveCookies(cookies);
 
         return sign;
+    }
+
+    /** Keep the JVM-owned Web ticket valid using the same 30 minute safety window as current Web clients. */
+    public synchronized WebSign ensureBilibiliWebSign() {
+        long now = System.currentTimeMillis() / 1000;
+        if (sign != null && sign.getTicketExpires() > now + 1800) {
+            log.debug("跳过 Bilibili Web ticket 更新: 当前 ticket 仍在安全窗口内, expires={}, remainingSeconds={}",
+                    sign.getTicketExpires(), sign.getTicketExpires() - now);
+            return sign;
+        }
+        log.info("准备更新 Bilibili Web ticket: reason={}",
+                sign == null ? "JVM 尚无 ticket/WBI 状态" : "ticket 距到期不足 30 分钟");
+        return generateBilibiliWebSign();
+    }
+
+    public long getWebSignUpdatedAtMillis() {
+        return webSignUpdatedAtMillis.get();
     }
 
     /**
@@ -345,39 +489,30 @@ public class BilibiliApiUtil {
     /**
      * 获取扫码登录状态
      * @param token 二维码 Token
-     * @return 是否登录成功，null 表示尚未扫码或已扫码待确认
+     * @return 是否登录成功
      */
     public Boolean getQrCodeLoginStatus(String token) {
         String api = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=" + token;
+        JSONObject result = requestBilibiliApi(api);
 
-        ResponseEntity<String> response = http.getForEntity(api, getBilibiliHeaders());
-
-        JSONObject body = response.getBody() == null ? null : JSON.parseObject(response.getBody());
-        JSONObject data = body == null ? null : body.getJSONObject("data");
-        Integer code = data == null ? null : data.getInteger("code");
-        if (code == null) {
-            log.warn("获取扫码登录接口状态码失败");
-            return null;
-        }
-
+        Integer code = result.getInteger("code");
         if (code == 0) {
-            Cookies loginCookies = parseLoginCookies(response.getHeaders().get(HttpHeaders.SET_COOKIE));
-            if (StringUtil.isBlank(loginCookies.getSessData()) || StringUtil.isBlank(loginCookies.getBiliJct())) {
-                log.error("扫码登录成功, 但未能解析出登录凭据, 原始接口返回结果: {}", body.toJSONString());
+            String url = result.getString("url");
+
+            Matcher sessDataMatcher = sessDataPattern.matcher(url);
+            Matcher biliJctMatcher = biliJctPattern.matcher(url);
+            if (sessDataMatcher.find() && biliJctMatcher.find()) {
+                String sessData = sessDataMatcher.group(1);
+                String biliJct = biliJctMatcher.group(1);
+                String buvid3 = getBuvid3();
+                cookies = new Cookies(sessData, biliJct, buvid3);
+            } else {
+                log.error("二维码登录失败, 原始接口返回结果: {}", result.toJSONString());
                 return false;
             }
 
             try {
-                loginCookies.setBuvid3(getBuvid3());
-            } catch (Exception e) {
-                log.warn("获取 buvid3 失败: {}", e.getMessage());
-            }
-
-            cookies = loginCookies;
-
-            Path cookiePath = Path.of("cookies.json");
-            try {
-                Files.writeString(cookiePath, JSON.toJSONString(cookies, JSONWriter.Feature.PrettyFormat), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+                credentialFileStore.saveCookies(cookies);
             } catch (Exception e) {
                 log.error("保存登录凭据文件失败", e);
             }
@@ -388,46 +523,6 @@ public class BilibiliApiUtil {
         } else {
             return null;
         }
-    }
-
-    /**
-     * 从扫码登录 Set-Cookie 响应头中解析登录凭据
-     * @param setCookies Set-Cookie 响应头
-     * @return 解析出的登录凭据
-     */
-    private Cookies parseLoginCookies(List<String> setCookies) {
-        Cookies loginCookies = new Cookies();
-        if (CollectionUtils.isEmpty(setCookies)) {
-            return loginCookies;
-        }
-
-        for (String header : setCookies) {
-            if (StringUtil.isBlank(header)) {
-                continue;
-            }
-
-            String pair = header.split(";", 2)[0].trim();
-            int equals = pair.indexOf('=');
-            if (equals <= 0) {
-                continue;
-            }
-
-            String name = pair.substring(0, equals).trim();
-            String value = pair.substring(equals + 1).trim();
-            if (value.isEmpty()) {
-                continue;
-            }
-
-            switch (name) {
-                case "SESSDATA" -> loginCookies.setSessData(value);
-                case "bili_jct" -> loginCookies.setBiliJct(value);
-                case "DedeUserID" -> loginCookies.setDedeUserId(value);
-                case "DedeUserID__ckMd5" -> loginCookies.setDedeUserIdCkMd5(value);
-                case "sid" -> loginCookies.setSid(value);
-            }
-        }
-
-        return loginCookies;
     }
 
     /**
@@ -526,7 +621,8 @@ public class BilibiliApiUtil {
         Map<String, Object> params = new HashMap<>();
         params.put("id", roomId);
 
-        String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo" + BilibiliWbiUtil.getWbiSign(params, sign.getImgKey(), sign.getSubKey());
+        String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo" +
+                BilibiliWbiUtil.getWbiSign(params, sign.getImgKey(), sign.getSubKey(), properties.getNetwork().isWbiEncodedQuery());
         JSONObject result = requestBilibiliApi(api);
 
         String token = result.getString("token");
@@ -541,9 +637,15 @@ public class BilibiliApiUtil {
     public void liveRoomHeartbeat(@NonNull Long roomId) {
         String api = "https://live-trace.bilibili.com/xlive/rdata-interface/v1/heartbeat/webHeartBeat?pf=web&hb=";
         String hbParam = Base64.getEncoder().encodeToString(("60|" + roomId + "|1|0").getBytes(StandardCharsets.UTF_8));
-        http.asyncGet(api + hbParam, getBilibiliHeaders()).whenComplete((response, exception) -> {
+        String url = api + hbParam;
+        Map<String, String> headers = getBilibiliHeaders();
+        BilibiliNetworkLogger.HttpTrace trace = networkLog.httpRequest("bilibili-web-heartbeat", "GET", url, headers, null);
+        http.asyncGet(url, headers).whenComplete((response, exception) -> {
             if (exception != null) {
+                networkLog.httpFailure(trace, exception);
                 log.error("直播间 {} 发送 Web 心跳包异常, 偶然出现此异常可忽略", roomId, exception);
+            } else {
+                networkLog.httpResponse(trace, 200, Collections.emptyMap(), response);
             }
         });
     }
@@ -700,7 +802,7 @@ public class BilibiliApiUtil {
     /**
      * 根据 UID 列表批量获取直播间信息
      * @param uids UID 列表
-     * @return 直播间信息列表
+     * @return 直播间信息
      */
     public Map<Long, Room> getLiveInfoByUids(Set<Long> uids) {
         Map<Long, Room> rooms = new HashMap<>();
@@ -745,35 +847,28 @@ public class BilibiliApiUtil {
     }
 
     /**
-     * 根据 UID 列表批量获取用户信息
-     * @param uids UID 集合
-     * @return 用户信息列表
+     * Batch-load user profiles for report rankings and other optional enrichments.
+     * A failed member is retained with a readable fallback name and does not abort
+     * the remaining batches.
      */
     public Map<Long, UserInfo> getUserInfoByUids(Set<Long> uids) {
-        if (CollectionUtils.isEmpty(uids)) {
-            return new HashMap<>();
-        }
-
+        if (CollectionUtils.isEmpty(uids)) return new HashMap<>();
         Map<Long, UserInfo> infos = new HashMap<>();
-
-        for (Long uid : uids) {
-            infos.put(uid, new UserInfo(uid, "昵称获取失败"));
-        }
-
-        List<List<Long>> parts = CollectionUtil.splitCollection(uids, 10);
-        for (List<Long> part: parts) {
-            String param = part.stream().map(String::valueOf).collect(Collectors.joining(","));
-            String api = "https://api.vc.bilibili.com/account/v1/user/cards?uids=" + param;
-            JSONArray results = requestBilibiliApiForArray(api);
-            for (Object result : results) {
-                JSONObject info = (JSONObject) result;
-                Long uid = info.getLong("mid");
-                String uname = info.getString("name");
-                String face = info.getString("face");
-                infos.put(uid, new UserInfo(uid, uname, face));
+        for (Long uid : uids) infos.put(uid, new UserInfo(uid, "昵称获取失败"));
+        for (List<Long> part : CollectionUtil.splitCollection(uids, 10)) {
+            String api = "https://api.vc.bilibili.com/account/v1/user/cards?uids=" +
+                    part.stream().map(String::valueOf).collect(Collectors.joining(","));
+            try {
+                JSONArray results = requestBilibiliApiForArray(api);
+                for (Object value : results) {
+                    JSONObject info = (JSONObject) value;
+                    Long uid = info.getLong("mid");
+                    if (uid != null) infos.put(uid, new UserInfo(uid, info.getString("name"), info.getString("face")));
+                }
+            } catch (Exception error) {
+                log.warn("批量获取 Bilibili 用户信息失败: uids={}, reason={}", part, error.toString());
             }
         }
-
         return infos;
     }
 
@@ -915,5 +1010,53 @@ public class BilibiliApiUtil {
 
         JSONObject info = result.getJSONObject("info");
         return info.getIntValue("num");
+    }
+
+    /** Acknowledge the outer danmaku protocol sequence advertised by support_ack. */
+    public void acknowledgeLiveRoomSequence(long sequence) {
+        if (sequence <= 1 || StringUtil.isBlank(cookies.getBiliJct())) {
+            return;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("terminal", 0);
+        body.put("sequence", sequence);
+        body.put("csrf", cookies.getBiliJct());
+        body.put("csrf_token", cookies.getBiliJct());
+        try {
+            httpPipeline.postMultipart(
+                    "https://api.live.bilibili.com/xlive/open-interface/v1/dm/message_ack",
+                    getBilibiliHeaders(), body, "bilibili-live-sequence-ack");
+        } catch (Exception e) {
+            log.warn("Bilibili 直播消息 sequence ACK 失败: sequence={}, reason={}", sequence, e.toString());
+            log.debug("Bilibili live sequence ACK detail", e);
+        }
+    }
+
+    /**
+     * 获取直播报告的可选基线数据。每个接口独立容错，缺失字段表示未知，调用方不得按 0 处理。
+     */
+    public JSONObject getLiveReportBaseStats(Long uid, Long roomId) {
+        JSONObject stats = new JSONObject();
+        try {
+            JSONObject room = requestBilibiliApi("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=" + roomId);
+            if (room.containsKey("attention")) stats.put("fans", room.getLong("attention"));
+        } catch (Exception e) {
+            log.warn("获取直播报告粉丝基线失败, uid={}, roomId={}", uid, roomId, e);
+        }
+        try {
+            JSONObject medal = requestBilibiliApi("https://api.live.bilibili.com/xlive/app-ucenter/v1/fansMedal/fans_medal_info?target_id=" + uid + "&room_id=" + roomId);
+            if (medal.containsKey("fans_medal_light_count")) stats.put("fans_medal", medal.getLong("fans_medal_light_count"));
+        } catch (Exception e) {
+            log.warn("获取直播报告粉丝团基线失败, uid={}, roomId={}", uid, roomId, e);
+        }
+        try {
+            JSONObject guard = requestBilibiliApi("https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew?roomid=" + roomId
+                    + "&page=1&ruid=" + uid + "&page_size=1&typ=5&platform=web");
+            JSONObject info = guard.getJSONObject("info");
+            if (info != null && info.containsKey("num")) stats.put("guard", info.getLong("num"));
+        } catch (Exception e) {
+            log.warn("获取直播报告大航海基线失败, uid={}, roomId={}", uid, roomId, e);
+        }
+        return stats;
     }
 }

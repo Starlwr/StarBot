@@ -27,8 +27,19 @@ public class BilibiliWbiUtil {
      * @return 已包含全部参数的 Wbi 签名
      */
     public static String getWbiSign(Map<String, Object> params, String imgKey, String subKey) {
+        return getWbiSign(params, imgKey, subKey, true);
+    }
+
+    /**
+     * Generate a WBI query with an optional legacy final-query representation.
+     * The signed payload is identical in both modes.
+     */
+    public static String getWbiSign(Map<String, Object> params, String imgKey, String subKey, boolean encodedQuery) {
+        return getWbiSign(params, imgKey, subKey, encodedQuery, System.currentTimeMillis() / 1000);
+    }
+
+    static String getWbiSign(Map<String, Object> params, String imgKey, String subKey, boolean encodedQuery, long wts) {
         TreeMap<String, Object> map = new TreeMap<>(params);
-        long wts = System.currentTimeMillis() / 1000;
         map.put("wts", wts);
         String encodedParams = map.entrySet().stream()
                 .map(entry -> String.format("%s=%s", entry.getKey(), urlEncode(entry.getValue())))
@@ -37,7 +48,10 @@ public class BilibiliWbiUtil {
         String mixinKey = getMixinKey(imgKey, subKey);
         String wbiSign = md5(encodedParams + mixinKey);
 
-        return "?" + encodedParams + "&w_rid=" + wbiSign;
+        String query = encodedQuery ? encodedParams : params.entrySet().stream()
+                .map(entry -> String.format("%s=%s", entry.getKey(), entry.getValue()))
+                .collect(Collectors.joining("&")) + "&wts=" + wts;
+        return "?" + query + "&w_rid=" + wbiSign;
     }
 
     /**

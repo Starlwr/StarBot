@@ -188,7 +188,9 @@ public class BilibiliLiveRoomService {
      */
     private synchronized void removeTask(Up up) {
         BilibiliLiveRoomConnector connector = connectors.get(up.getUid());
-        if (!taskService.remove(connector)) {
+        if (taskService.remove(connector)) {
+            connector.cancelPendingConnection();
+        } else {
             connector.disconnect();
         }
 

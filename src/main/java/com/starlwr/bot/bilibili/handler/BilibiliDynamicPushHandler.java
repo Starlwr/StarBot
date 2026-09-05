@@ -11,6 +11,7 @@ import com.starlwr.bot.bilibili.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.DefaultHandlerForEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
@@ -62,6 +63,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @StarBotComponent
+@DefaultHandlerForEvent(event = "com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent")
 public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     private final StarBotBilibiliProperties properties;
 
@@ -173,7 +175,6 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
      *
      * @return 事件类型
      */
-    @Override
     public Class<? extends StarBotExternalBaseEvent> getEventType() {
         return BilibiliDynamicUpdateEvent.class;
     }

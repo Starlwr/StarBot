@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.service;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveEventOrigin;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.LivePlatform;
@@ -15,6 +16,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -23,9 +25,11 @@ import org.springframework.core.annotation.Order;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -44,7 +48,26 @@ public class BilibiliBackupLivePushService {
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
-    private final Set<Long> uids = new HashSet<>();
+    private final Set<Long> uids = ConcurrentHashMap.newKeySet();
+
+    private final AtomicBoolean closing = new AtomicBoolean();
+
+    @PreDestroy
+    public void close() {
+        if (!closing.compareAndSet(false, true)) {
+            return;
+        }
+        scheduler.shutdown();
+        try {
+            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                scheduler.shutdownNow();
+                scheduler.awaitTermination(1, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException e) {
+            scheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
 
     @Autowired
     public BilibiliBackupLivePushService(ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, BilibiliApiUtil bilibili, LiveDataService liveDataService) {
@@ -75,6 +98,10 @@ public class BilibiliBackupLivePushService {
         scheduler.scheduleWithFixedDelay(() -> {
             Thread.currentThread().setName("backup-live-push");
 
+            if (closing.get()) {
+                return;
+            }
+
             try {
                 Map<Long, Room> liveInfos = bilibili.getLiveInfoByUids(uids);
                 for (Map.Entry<Long, Room> entry : liveInfos.entrySet()) {
@@ -97,15 +124,19 @@ public class BilibiliBackupLivePushService {
                         Boolean lastLiveStatus = optionalLastLiveStatus.get();
                         if (!lastLiveStatus && liveInfo.getLiveStatus() == 1) {
                             log.warn("备用直播推送捕获到开播事件, 若该日志大量出现, 说明直播间连接已被数据风控");
-                            eventPublisher.publishEvent(new BilibiliLiveOnEvent(liveInfo, Instant.now()));
+                            eventPublisher.publishEvent(new BilibiliLiveOnEvent(liveInfo, Instant.now(), BilibiliLiveEventOrigin.BACKUP_PUSH));
                         } else if (lastLiveStatus && liveInfo.getLiveStatus() != 1) {
                             log.warn("备用直播推送捕获到下播事件, 若该日志大量出现, 说明直播间连接已被数据风控");
-                            eventPublisher.publishEvent(new BilibiliLiveOffEvent(liveInfo, Instant.now()));
+                            eventPublisher.publishEvent(new BilibiliLiveOffEvent(liveInfo, Instant.now(), BilibiliLiveEventOrigin.BACKUP_PUSH));
                         }
                     }
                 }
             } catch (Exception e) {
-                log.error("备用直播推送异常", e);
+                if (closing.get()) {
+                    log.debug("备用直播推送任务已随应用关闭");
+                } else {
+                    log.error("备用直播推送异常", e);
+                }
             }
         }, interval, interval, TimeUnit.SECONDS);
 
@@ -119,6 +150,9 @@ public class BilibiliBackupLivePushService {
     @Order(-10000)
     @EventListener
     public void onStarBotDataSourceAddEvent(StarBotDataSourceAddEvent event) {
+        if (closing.get()) {
+            return;
+        }
         PushUser user = event.getUser();
 
         if (!LivePlatform.BILIBILI.getName().equals(user.getPlatform())) {
@@ -137,6 +171,9 @@ public class BilibiliBackupLivePushService {
     @Order(-10000)
     @EventListener
     public void onStarBotDataSourceRemoveEvent(StarBotDataSourceRemoveEvent event) {
+        if (closing.get()) {
+            return;
+        }
         PushUser user = event.getUser();
 
         if (!LivePlatform.BILIBILI.getName().equals(user.getPlatform())) {
@@ -155,6 +192,9 @@ public class BilibiliBackupLivePushService {
     @Order(-10000)
     @EventListener
     public void onStarBotDataSourceUpdateEvent(StarBotDataSourceUpdateEvent event) {
+        if (closing.get()) {
+            return;
+        }
         PushUser oldUser = event.getOldUser();
         PushUser user = event.getUser();
 
@@ -178,6 +218,8 @@ public class BilibiliBackupLivePushService {
                 .map(PushTarget::getMessages)
                 .flatMap(List::stream)
                 .map(PushMessage::getEventClass)
-                .anyMatch(clazz -> clazz.equals(BilibiliLiveOnEvent.class) || clazz.equals(BilibiliLiveOffEvent.class));
+                .filter(Objects::nonNull)
+                .anyMatch(eventClass -> BilibiliLiveOnEvent.class.equals(eventClass)
+                        || BilibiliLiveOffEvent.class.equals(eventClass));
     }
 }

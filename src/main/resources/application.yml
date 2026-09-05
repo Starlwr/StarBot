@@ -2,6 +2,8 @@ server:
   port: 7827
 
 spring:
+  profiles:
+    active: json
   jpa:
     database: mysql
     hibernate:
@@ -11,6 +13,165 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
 
 starbot:
+  bilibili:
+    onebot-command:
+      enabled: false
+      websocket-url: ws://127.0.0.1:3000/
+      access-token: ""
+      bot-qq: 0
+      sender-platform: qq-onebot
+      owners: []
+      reconnect-seconds: 3
+    account:
+      login-on-startup: true
+      credential-file: ./config/bilibili-credential.json
+      legacy-cookie-file: ./cookies.json
+      validate-credential: true
+      refresh-credential: true
+      validation-mode: both
+      validation-lease-seconds: 180
+      refresh-window-lease-seconds: 180
+      refresh-at-lifecycle-ratio: 0.25
+      external-credential-initial-refresh: true
+      maintenance-interval-millis: 30000
+      validation-retry-base-seconds: 60
+      validation-retry-max-seconds: 900
+      refresh-window-retry-base-seconds: 60
+      refresh-window-retry-max-seconds: 900
+      refresh-retry-base-seconds: 300
+      refresh-retry-max-seconds: 21600
+      qr-poll-millis: 3000
+      qr-regenerate-on-expiry: true
+      ua-type: Generic
+      # chrome-user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36
+      # browser-validation-api-key: leave-empty-to-auto-detect-platform
+    browser:
+      # Browser support is optional in production. ga-test enables it explicitly.
+      enabled: false
+      browser-home: ./Browser
+      profile-directory: ./config/BrowserProfile
+      current-manifest: current.json
+      versions-catalog: known-good-versions-with-downloads.json
+      download-enabled: true
+      catalog-endpoint: https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json
+      # Omitted: inherit starbot.bilibili.http.proxy-uri. Empty string: force direct download.
+      # download-proxy-uri: ""
+      download-http-version: auto
+      download-parallelism: 4
+      download-chunk-bytes: 8388608
+      download-probe-bytes: 2097152
+      download-retry-max-attempts: 5
+      allow-system-chrome: true
+      allow-system-chromium: true
+      allow-edge: false
+      allow-address-family-split: true
+      start-minimized: true
+      headless: false
+      # jvm-authoritative (recommended): JVM alone owns login/refresh; browser drift is audit-only.
+      # validated-bidirectional: same-UID browser Cookie + localStorage refresh generations may be atomically promoted.
+      credential-sync-mode: jvm-authoritative
+      # Browser absence never blocks JVM startup. WARN is masked; DEBUG contains complete drift values for replay.
+      credential-audit-interval-seconds: 90
+    http:
+      connect-timeout-seconds: 10
+      request-timeout-seconds: 30
+      maximum-response-bytes: 33554432
+      maximum-redirects: 5
+      retry-max-attempts: 3
+      retry-base-millis: 500
+      # Unified proxy for Bilibili HTTP, Credential and browser traffic. When omitted, all three connect directly.
+      # proxy-uri: http://127.0.0.1:18080
+    risk:
+      http412-enabled: true
+      pow-limit: 5000000
+      submit-reserve-seconds: 30
+      maximum-challenges: 2
+      gaia-enabled: true
+      gaia-backoff-seconds: [30, 120, 600]
+    integrity:
+      secure-collect:
+        enabled: false
+        bootstrap-url: https://www.bilibili.com/robots.txt
+        script-url: https://s1.hdslb.com/bfs/seed/jinkela/short/minntaki-wasm-sdk/bili-sc-sdk.umd.js
+        expected-version: 0.1.15
+        operation-timeout-seconds: 60
+    telemetry:
+      web-log-enabled: false
+      gol-postweb-enabled: false
+      legacy000916-enabled: false
+      # Reserved for the planned x25Kn/E/X watch-spyder implementation; currently has no runtime sender.
+      watch-tracker-enabled: false
+      legacy-rdata-heartbeat-enabled: false
+      legacy000916-interval-seconds: 15
+      legacy-rdata-interval-seconds: 30
+      web-log-default-interval-seconds: 50
+      web-log-minimum-interval-seconds: 10
+      web-log-maximum-interval-seconds: 300
+      gol-flush-seconds: 60
+      # Optional telemetry is isolated from live WebSocket workers.
+      executor-scheduler-pool-size: 2
+      executor-core-pool-size: 4
+      executor-max-pool-size: 16
+      executor-queue-capacity: 1024
+      executor-keep-alive-seconds: 60
+      executor-submit-timeout-millis: 100
+      web-log-start-max-attempts: 3
+      web-log-rebootstrap-seconds: 300
+      web-log-rebootstrap-jitter-seconds: 60
+    live:
+      disconnect-summary-enabled: true
+      disconnect-summary-room-threshold: 3
+      disconnect-summary-window-seconds: 15
+      disconnect-summary-quiet-seconds: 30
+      disconnect-summary-sample-limit: 10
+    network:
+      # Full exchanges are emitted at DEBUG when enabled.
+      http-log-enabled: false
+      websocket-log-enabled: false
+      websocket-heartbeat-log-enabled: false
+      log-headers: true
+      include-sensitive-data: false
+      # 0 disables truncation.
+      log-max-body-length: 16384
+      # Available: all, credential, dynamic, live-api, live-ws, heartbeat, telemetry, risk, integrity, image, onebot, api, other
+      console-categories:
+        - all
+      console-deduplicate: true
+      console-deduplicate-seconds: 300
+      # File selectors also accept values such as live:DANMU_MSG or dynamic:DYNAMIC_TYPE_AV.
+      file-categories:
+        - all
+      file-deduplicate: true
+      file-deduplicate-seconds: 900
+      # Keep WBI's final query representation aligned with the Web client.
+      # Disable only for compatibility diagnostics with legacy callers.
+      wbi-encoded-query: true
+    live-report:
+      recovery:
+        enabled: true
+        same-session-tolerance: 10m
+        pending-close-delay: 10m
+        pending-close-retry-interval: 2m
+        pending-close-max-duration: 30m
+        trusted-time-cache: 5m
+        trusted-time-timeout: 3s
+        cloudflare-trace-url: https://www.cloudflare-cn.com/cdn-cgi/trace
+      storage:
+        # sqlite (default), redis, mysql, or memory
+        type: sqlite
+        # SQLite defaults to the directory containing the external config file.
+        # sqlite-file: ./config/starbot-live-report.sqlite3
+        redis-uri: redis://localhost:6379/0
+        redis-prefix: starbot:report:v1
+        # jdbc-url: jdbc:mysql://localhost:3306/starbot
+        # username: starbot
+        # password: change-me
+        fail-fast: false
+        migrate-legacy: true
+        v2-redis-uri: redis://localhost:6379/0
+        buffer-capacity: 20000
+        batch-size: 500
+        flush-millis: 1000
   core:
     log:
       console: INFO

@@ -6,6 +6,7 @@ import com.starlwr.bot.bilibili.config.TestContextConfig;
 import com.starlwr.bot.bilibili.factory.BilibiliDynamicPainterFactory;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assumptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -21,7 +22,10 @@ import java.util.stream.Collectors;
 
 @Import(TestBuildPropertiesConfig.class)
 @ContextConfiguration(classes = TestContextConfig.class)
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+        "starbot.bilibili.account.login-on-startup=false",
+        "starbot.bilibili.browser.enabled=false"
+})
 public class BilibiliDynamicPainterTest {
     private final BilibiliDynamicPainterFactory factory;
 
@@ -65,6 +69,7 @@ public class BilibiliDynamicPainterTest {
      */
     private List<String> readLatestLines(String filePath, int n, String filter) throws IOException {
         Path path = Paths.get(filePath);
+        Assumptions.assumeTrue(Files.isRegularFile(path), "external dynamic debug fixture is not present");
         List<String> allLines = Files.readAllLines(path);
 
         if (allLines.size() <= n) {

@@ -13,31 +13,25 @@ import lombok.ToString;
 
 import java.time.Instant;
 
-/**
- * Bilibili 大航海事件基类
- */
+/** Common Bilibili event base for captain, commander and governor changes. */
 @Getter
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
 public class BilibiliMembershipEvent extends MembershipEvent {
-    /**
-     * 操作类型
-     */
     private GuardOperateType operateType;
-
-    /**
-     * 大航海类型
-     */
     private GuardType type;
 
-    public BilibiliMembershipEvent(LiveStreamerInfo source, UserInfo sender, GuardType type, GuardOperateType operateType, Double price, Integer count, String unit) {
+    public BilibiliMembershipEvent(LiveStreamerInfo source, UserInfo sender, GuardType type,
+                                  GuardOperateType operateType, Double price, Integer count, String unit) {
         super(LivePlatform.BILIBILI, source, sender, price, count, unit);
         this.type = type;
         this.operateType = operateType;
     }
 
-    public BilibiliMembershipEvent(LiveStreamerInfo source, UserInfo sender, GuardType type, GuardOperateType operateType, Double price, Integer count, String unit, Instant instant) {
+    public BilibiliMembershipEvent(LiveStreamerInfo source, UserInfo sender, GuardType type,
+                                  GuardOperateType operateType, Double price, Integer count, String unit,
+                                  Instant instant) {
         super(LivePlatform.BILIBILI, source, sender, price, count, unit, instant);
         this.type = type;
         this.operateType = operateType;

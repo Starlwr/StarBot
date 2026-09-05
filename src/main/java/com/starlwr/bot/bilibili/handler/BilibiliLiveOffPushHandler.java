@@ -11,6 +11,7 @@ import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.DefaultHandlerForEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
@@ -118,6 +119,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @StarBotComponent
+@DefaultHandlerForEvent(event = "com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent")
 public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
     private final StarBotBilibiliProperties properties;
 
@@ -244,7 +246,6 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
      *
      * @return 事件类型
      */
-    @Override
     public Class<? extends StarBotExternalBaseEvent> getEventType() {
         return BilibiliLiveOffEvent.class;
     }
