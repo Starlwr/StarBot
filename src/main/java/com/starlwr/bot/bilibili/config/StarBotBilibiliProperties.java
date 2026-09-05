@@ -134,6 +134,9 @@ public class StarBotBilibiliProperties {
 
         /** Raw debug file duplicate suppression window in seconds. */
         private long fileDeduplicateSeconds = 900;
+
+        /** Emit the URL-encoded WBI query used by current Bilibili Web clients. */
+        private boolean wbiEncodedQuery = true;
     }
 
     /**

@@ -143,6 +143,9 @@ starbot:
         - all
       file-deduplicate: true
       file-deduplicate-seconds: 900
+      # Keep WBI's final query representation aligned with the Web client.
+      # Disable only for compatibility diagnostics with legacy callers.
+      wbi-encoded-query: true
     live-report:
       recovery:
         enabled: true

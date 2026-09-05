@@ -182,12 +182,19 @@ public class BilibiliEventParser {
     }
 
     private Instant parseGuardTimestamp(JSONObject data, JSONObject metaData) {
-        Long timestamp = data.getLong("send_time");
+        Long timestamp = metaData.getLong("start_time");
         if (isPositive(timestamp)) {
+            log.debug("USER_TOAST_MSG 使用 data.start_time 作为大航海事件时间");
             return normalizeEpochTimestamp(timestamp);
         }
 
-        String[] fallbackFields = {"start_time", "end_time", "timestamp"};
+        timestamp = data.getLong("send_time");
+        if (isPositive(timestamp)) {
+            log.debug("USER_TOAST_MSG 缺少 data.start_time，使用 send_time 作为事件时间");
+            return normalizeEpochTimestamp(timestamp);
+        }
+
+        String[] fallbackFields = {"end_time", "timestamp"};
         for (String field : fallbackFields) {
             timestamp = metaData.getLong(field);
             if (isPositive(timestamp)) {

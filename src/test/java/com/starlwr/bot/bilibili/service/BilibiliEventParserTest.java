@@ -60,7 +60,7 @@ class BilibiliEventParserTest {
     }
 
     @Test
-    void guardSendTimeKeepsMillisecondPrecision() {
+    void guardStartTimeIsPreferredWhenBothServerTimesExist() {
         JSONObject message = JSON.parseObject("""
                 {
                   "cmd": "USER_TOAST_MSG",
@@ -81,7 +81,7 @@ class BilibiliEventParserTest {
 
         StarBotBaseLiveEvent parsed = parser.parse(message, source).orElseThrow();
 
-        assertEquals(1784017489123L, parsed.getTimestamp());
+        assertEquals(Instant.ofEpochSecond(1784017487L).toEpochMilli(), parsed.getTimestamp());
     }
 
     @Test

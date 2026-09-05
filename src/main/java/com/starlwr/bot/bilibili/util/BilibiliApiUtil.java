@@ -39,6 +39,7 @@ import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.CollectionUtils;
 
 import java.awt.image.BufferedImage;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -55,6 +56,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -116,6 +119,7 @@ public class BilibiliApiUtil {
     public void init() {
         Map<Class<? extends Throwable>, Boolean> retryableExceptions = new HashMap<>();
         retryableExceptions.put(NetworkException.class, true);
+        retryableExceptions.put(SocketException.class, true);
         retryableExceptions.put(SocketTimeoutException.class, true);
 
         SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy(properties.getNetwork().getApiRetryMaxTimes(), retryableExceptions, true);
@@ -175,6 +179,33 @@ public class BilibiliApiUtil {
      */
     public JSONObject requestBilibiliApi(String url, Map<String, Object> params) {
         return requestBilibiliApi(url, "POST", getBilibiliHeaders(), params);
+    }
+
+    /** Request a Bilibili API whose data/result payload is an array. */
+    public JSONArray requestBilibiliApiForArray(String url) {
+        return requestBilibiliApiForArrayInternal(url, "GET", new HashMap<>());
+    }
+
+    /** Request a Bilibili API whose data/result payload is an array. */
+    public JSONArray requestBilibiliApiForArray(String url, Map<String, Object> params) {
+        return requestBilibiliApiForArrayInternal(url, "POST", params);
+    }
+
+    private JSONArray requestBilibiliApiForArrayInternal(String url, String method, Map<String, Object> params) {
+        return retryTemplate.execute(retryContext -> {
+            BilibiliHttpResponse response = "GET".equals(method)
+                    ? httpPipeline.get(url, getBilibiliHeaders(), "bilibili-api-array")
+                    : httpPipeline.postForm(url, getBilibiliHeaders(), params, "bilibili-api-array");
+            if (!response.successful()) throw new NetworkException(response.getStatus());
+            JSONObject result = response.json();
+            int code = result.getIntValue("code", 0);
+            if (code != 0) throw new ResponseCodeException(code, result.getString("message"));
+            Object payload = result.containsKey("data") ? result.get("data") : result.get("result");
+            if (!(payload instanceof JSONArray array)) {
+                throw new RequestFailedException("API 返回数据未含 JSONArray data 或 result 字段: " + result);
+            }
+            return array;
+        });
     }
 
     /**
@@ -375,7 +406,16 @@ public class BilibiliApiUtil {
         List<CompletableFuture<Optional<BufferedImage>>> downloadPictureTasks = new ArrayList<>();
 
         for (String url : urls) {
-            CompletableFuture<Optional<BufferedImage>> task = asyncGetBilibiliImage(url, headers);
+            CompletableFuture<Optional<BufferedImage>> task = asyncGetBilibiliImage(url, headers)
+                    .orTimeout(30, TimeUnit.SECONDS)
+                    .exceptionally(throwable -> {
+                        if (throwable instanceof TimeoutException) {
+                            log.warn("从 {} 下载头像超时", url);
+                        } else {
+                            log.warn("从 {} 下载头像失败", url, throwable);
+                        }
+                        return Optional.empty();
+                    });
             downloadPictureTasks.add(task);
         }
 
@@ -581,7 +621,8 @@ public class BilibiliApiUtil {
         Map<String, Object> params = new HashMap<>();
         params.put("id", roomId);
 
-        String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo" + BilibiliWbiUtil.getWbiSign(params, sign.getImgKey(), sign.getSubKey());
+        String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo" +
+                BilibiliWbiUtil.getWbiSign(params, sign.getImgKey(), sign.getSubKey(), properties.getNetwork().isWbiEncodedQuery());
         JSONObject result = requestBilibiliApi(api);
 
         String token = result.getString("token");
@@ -794,13 +835,41 @@ public class BilibiliApiUtil {
                 Long liveStartTime = roomInfo.getLong("live_time") * 1000;
                 String title = roomInfo.getString("title");
                 String cover = roomInfo.getString("cover_from_user");
+                String parentAreaName = roomInfo.getString("area_v2_parent_name");
+                String areaName = roomInfo.getString("area_v2_name");
 
-                Room room = new Room(uid, uname, roomId, face, liveStatus, liveStartTime, title, cover);
+                Room room = new Room(uid, uname, roomId, face, liveStatus, liveStartTime, title, cover, parentAreaName, areaName);
                 rooms.put(uid, room);
             }
         }
 
         return rooms;
+    }
+
+    /**
+     * Batch-load user profiles for report rankings and other optional enrichments.
+     * A failed member is retained with a readable fallback name and does not abort
+     * the remaining batches.
+     */
+    public Map<Long, UserInfo> getUserInfoByUids(Set<Long> uids) {
+        if (CollectionUtils.isEmpty(uids)) return new HashMap<>();
+        Map<Long, UserInfo> infos = new HashMap<>();
+        for (Long uid : uids) infos.put(uid, new UserInfo(uid, "昵称获取失败"));
+        for (List<Long> part : CollectionUtil.splitCollection(uids, 10)) {
+            String api = "https://api.vc.bilibili.com/account/v1/user/cards?uids=" +
+                    part.stream().map(String::valueOf).collect(Collectors.joining(","));
+            try {
+                JSONArray results = requestBilibiliApiForArray(api);
+                for (Object value : results) {
+                    JSONObject info = (JSONObject) value;
+                    Long uid = info.getLong("mid");
+                    if (uid != null) infos.put(uid, new UserInfo(uid, info.getString("name"), info.getString("face")));
+                }
+            } catch (Exception error) {
+                log.warn("批量获取 Bilibili 用户信息失败: uids={}, reason={}", part, error.toString());
+            }
+        }
+        return infos;
     }
 
     /**
@@ -829,8 +898,10 @@ public class BilibiliApiUtil {
 
         String title = result.getString("title");
         String cover = result.getString("user_cover");
+        String parentAreaName = result.getString("parent_area_name");
+        String areaName = result.getString("area_name");
 
-        return new Room(uid, null, realRoomId, liveStatus, liveStartTime, title, cover);
+        return new Room(uid, null, realRoomId, liveStatus, liveStartTime, title, cover, parentAreaName, areaName);
     }
 
     /**
@@ -901,7 +972,44 @@ public class BilibiliApiUtil {
                 throw e;
             }
         }
+    }
 
+    /**
+     * 获取粉丝数
+     * @param uid UID
+     * @return 粉丝数
+     */
+    public int getFansCount(Long uid) {
+        String api = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + uid;
+        JSONObject result = requestBilibiliApi(api);
+
+        return result.getIntValue("follower_num");
+    }
+
+    /**
+     * 获取粉丝团数(点亮粉丝勋章的粉丝数)
+     * @param uid UID
+     * @return 粉丝团数(点亮粉丝勋章的粉丝数)
+     */
+    public int getFansMedalCount(Long uid) {
+        String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuMedalAnchorInfo?ruid=" + uid;
+        JSONObject result = requestBilibiliApi(api);
+
+        return result.getIntValue("fans_club_count");
+    }
+
+    /**
+     * 获取大航海数
+     * @param uid UID
+     * @param roomId 房间号
+     * @return 大航海数
+     */
+    public int getGuardCount(Long uid, Long roomId) {
+        String api = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew?roomid=" + roomId + "&page=1&ruid=" + uid + "&page_size=20&typ=5&platform=web";
+        JSONObject result = requestBilibiliApi(api);
+
+        JSONObject info = result.getJSONObject("info");
+        return info.getIntValue("num");
     }
 
     /** Acknowledge the outer danmaku protocol sequence advertised by support_ack. */
