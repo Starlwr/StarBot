@@ -11,6 +11,8 @@ import com.starlwr.bot.core.plugin.StarBotComponent
 import com.starlwr.bot.core.sender.StarBotMessageSender
 import org.slf4j.LoggerFactory
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil
+import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties
+import com.starlwr.bot.bilibili.factory.BilibiliLiveReportPainterFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 
@@ -20,6 +22,8 @@ class LiveReportPushHandler(
     private val painter: LiveReportPainter,
     private val sender: StarBotMessageSender,
     private val api: BilibiliApiUtil,
+    private val properties: StarBotBilibiliProperties,
+    private val upstreamFactory: BilibiliLiveReportPainterFactory,
     @param:Qualifier("bilibiliLiveReportThreadPool") private val executor: ThreadPoolTaskExecutor
 ) : StarBotEventHandler {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -54,22 +58,35 @@ class LiveReportPushHandler(
         }
         if (config.onlyWhenNonEmpty && snapshot.counts.values.sum() == 0L) return
         val target = pushMessage.target
+        var actualOutput = config.output
         val content = try {
             if (config.output.equals("text", true)) painter.text(snapshot, config)
             else {
-                val base64 = painter.paint(snapshot, config)
+                val base64 = renderImage(snapshot, config)
                 if (config.saveImage) saveImage(snapshot, config, base64)
                 "{image_base64=$base64}"
             }
         } catch (e: Exception) {
             log.error("生成直播报告失败, session={}", snapshot.sessionId, e)
-            if (!config.textFallback) return else painter.text(snapshot, config)
+            if (!config.textFallback) return
+            actualOutput = "text-fallback"
+            painter.text(snapshot, config)
         }
         val prefix = if (config.atAll && target.type == PushTargetType.GROUP) "{at=all}{next}" else ""
         val messages = Message.create(target.platform, target.type, target.num, prefix + content)
         messages.forEach(sender::send)
         log.info("直播报告已生成并加入发送队列, session={}, target={}:{}, output={}, messages={}",
-            snapshot.sessionId, target.platform, target.num, config.output, messages.size)
+            snapshot.sessionId, target.platform, target.num, actualOutput, messages.size)
+    }
+
+    private fun renderImage(snapshot: LiveReportSnapshot, config: LiveReportTargetConfig): String {
+        if (!"upstream".equals(properties.getLiveReport().getPainter(), ignoreCase = true)) {
+            return painter.paint(snapshot, config)
+        }
+        val up = api.getUpInfoByUid(snapshot.uid)
+        return upstreamFactory.create(up, config.toUpstreamConfig()).paint().orElseThrow {
+            IllegalStateException("upstream live report painter returned no image")
+        }
     }
 
     override fun getDefaultParams() = JSONObject.parseObject("""{

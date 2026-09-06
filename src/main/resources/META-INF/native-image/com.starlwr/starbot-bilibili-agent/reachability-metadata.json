@@ -5025,6 +5025,9 @@
       "glob": "com/starlwr/bot/bilibili/config/StarBotBilibiliProperties$Live.class"
     },
     {
+      "glob": "com/starlwr/bot/bilibili/config/StarBotBilibiliProperties$LiveReport.class"
+    },
+    {
       "glob": "com/starlwr/bot/bilibili/config/StarBotBilibiliProperties$Network.class"
     },
     {

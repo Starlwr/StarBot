@@ -418,12 +418,16 @@ public class BilibiliLiveReportPainterTest {
      * @param text      弹幕文本
      * @return 弹幕记录
      */
+    private JSONObject senderObject(long uid) {
+        return new JSONObject().fluentPut("uid", uid).fluentPut("uname", "sender-" + uid);
+    }
+
     private JSONObject createDanmu(long timestamp, long sender, String text) {
         JSONObject danmu = new JSONObject();
         danmu.put("timestamp", timestamp);
         danmu.put("content", text);
         danmu.put("contentText", text);
-        danmu.put("sender", String.valueOf(sender));
+        danmu.put("sender", senderObject(sender));
         return danmu;
     }
 
@@ -438,7 +442,7 @@ public class BilibiliLiveReportPainterTest {
         JSONObject emoji = new JSONObject();
         emoji.put("timestamp", timestamp);
         emoji.put("content", "[表情]弹幕" + sender);
-        emoji.put("sender", String.valueOf(sender));
+        emoji.put("sender", senderObject(sender));
         return emoji;
     }
 
@@ -472,7 +476,7 @@ public class BilibiliLiveReportPainterTest {
     private JSONObject createBox(long timestamp, long sender, int count, String boxName, double price, String giftName, double value) {
         JSONObject box = new JSONObject();
         box.put("timestamp", timestamp);
-        box.put("sender", String.valueOf(sender));
+        box.put("sender", senderObject(sender));
 
         JSONObject randomGiftInfo = new JSONObject();
         randomGiftInfo.put("id", 34914L);
@@ -536,7 +540,7 @@ public class BilibiliLiveReportPainterTest {
     private JSONObject createGift(long timestamp, long sender, int count, String giftName, double price, double value) {
         JSONObject gift = new JSONObject();
         gift.put("timestamp", timestamp);
-        gift.put("sender", String.valueOf(sender));
+        gift.put("sender", senderObject(sender));
 
         JSONObject giftInfo = new JSONObject();
         giftInfo.put("id", 31036L);
@@ -575,7 +579,7 @@ public class BilibiliLiveReportPainterTest {
     private JSONObject createSuperChat(long timestamp, long sender, double value, String content) {
         JSONObject superChat = new JSONObject();
         superChat.put("timestamp", timestamp);
-        superChat.put("sender", String.valueOf(sender));
+        superChat.put("sender", senderObject(sender));
         superChat.put("content", content);
         superChat.put("value", value);
         return superChat;
@@ -609,7 +613,7 @@ public class BilibiliLiveReportPainterTest {
     private JSONObject createGuard(long timestamp, long sender, String type, String operateType, int count, double price) {
         JSONObject guard = new JSONObject();
         guard.put("timestamp", timestamp);
-        guard.put("sender", String.valueOf(sender));
+        guard.put("sender", senderObject(sender));
         guard.put("type", type);
         guard.put("operateType", operateType);
         guard.put("count", count);
@@ -641,7 +645,7 @@ public class BilibiliLiveReportPainterTest {
     private JSONObject createEnterRoom(long timestamp, long sender) {
         JSONObject enter = new JSONObject();
         enter.put("timestamp", timestamp);
-        enter.put("sender", String.valueOf(sender));
+        enter.put("sender", senderObject(sender));
         return enter;
     }
 
@@ -668,7 +672,7 @@ public class BilibiliLiveReportPainterTest {
     private JSONObject createLike(long timestamp, long sender) {
         JSONObject like = new JSONObject();
         like.put("timestamp", timestamp);
-        like.put("sender", String.valueOf(sender));
+        like.put("sender", senderObject(sender));
         return like;
     }
 
@@ -693,7 +697,7 @@ public class BilibiliLiveReportPainterTest {
     private JSONObject createShare(long timestamp, long sender) {
         JSONObject share = new JSONObject();
         share.put("timestamp", timestamp);
-        share.put("sender", String.valueOf(sender));
+        share.put("sender", senderObject(sender));
         return share;
     }
 }

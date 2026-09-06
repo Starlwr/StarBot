@@ -320,4 +320,83 @@ public class BilibiliLiveReportConfig {
      * 是否展示本场直播的分享互动曲线图
      */
     private boolean showShareInteractionChart;
+
+    public List<String> getSequence() { return sequence; }
+    public void setSequence(List<String> value) { sequence = value; }
+    public boolean isEnableBasicInfo() { return enableBasicInfo; }
+    public void setEnableBasicInfo(boolean value) { enableBasicInfo = value; }
+    public boolean isShowLiveTime() { return showLiveTime; }
+    public void setShowLiveTime(boolean value) { showLiveTime = value; }
+    public boolean isEnableChangeInfo() { return enableChangeInfo; }
+    public void setEnableChangeInfo(boolean value) { enableChangeInfo = value; }
+    public boolean isShowFansChange() { return showFansChange; }
+    public void setShowFansChange(boolean value) { showFansChange = value; }
+    public boolean isShowFansMedalChange() { return showFansMedalChange; }
+    public void setShowFansMedalChange(boolean value) { showFansMedalChange = value; }
+    public boolean isShowGuardChange() { return showGuardChange; }
+    public void setShowGuardChange(boolean value) { showGuardChange = value; }
+    public boolean isEnableDanmuAnalysis() { return enableDanmuAnalysis; }
+    public void setEnableDanmuAnalysis(boolean value) { enableDanmuAnalysis = value; }
+    public boolean isShowDanmuDetails() { return showDanmuDetails; }
+    public void setShowDanmuDetails(boolean value) { showDanmuDetails = value; }
+    public int getDanmuRankingLimit() { return danmuRankingLimit; }
+    public void setDanmuRankingLimit(int value) { danmuRankingLimit = value; }
+    public boolean isShowDanmuGrowthChart() { return showDanmuGrowthChart; }
+    public void setShowDanmuGrowthChart(boolean value) { showDanmuGrowthChart = value; }
+    public boolean isShowDanmuInteractionChart() { return showDanmuInteractionChart; }
+    public void setShowDanmuInteractionChart(boolean value) { showDanmuInteractionChart = value; }
+    public boolean isShowDanmuTypeDistributionChart() { return showDanmuTypeDistributionChart; }
+    public void setShowDanmuTypeDistributionChart(boolean value) { showDanmuTypeDistributionChart = value; }
+    public boolean isShowDanmuSenderDistributionChart() { return showDanmuSenderDistributionChart; }
+    public void setShowDanmuSenderDistributionChart(boolean value) { showDanmuSenderDistributionChart = value; }
+    public boolean isShowDanmuWordCloud() { return showDanmuWordCloud; }
+    public void setShowDanmuWordCloud(boolean value) { showDanmuWordCloud = value; }
+    public boolean isEnableBoxAnalysis() { return enableBoxAnalysis; }
+    public void setEnableBoxAnalysis(boolean value) { enableBoxAnalysis = value; }
+    public boolean isShowBoxDetails() { return showBoxDetails; }
+    public void setShowBoxDetails(boolean value) { showBoxDetails = value; }
+    public boolean isShowBoxProfitDetails() { return showBoxProfitDetails; }
+    public void setShowBoxProfitDetails(boolean value) { showBoxProfitDetails = value; }
+    public int getBoxRankingLimit() { return boxRankingLimit; }
+    public void setBoxRankingLimit(int value) { boxRankingLimit = value; }
+    public int getBoxProfitRankingLimit() { return boxProfitRankingLimit; }
+    public void setBoxProfitRankingLimit(int value) { boxProfitRankingLimit = value; }
+    public boolean isShowBoxGrowthChart() { return showBoxGrowthChart; }
+    public void setShowBoxGrowthChart(boolean value) { showBoxGrowthChart = value; }
+    public boolean isShowBoxInteractionChart() { return showBoxInteractionChart; }
+    public void setShowBoxInteractionChart(boolean value) { showBoxInteractionChart = value; }
+    public boolean isShowBoxProfitGrowthChart() { return showBoxProfitGrowthChart; }
+    public void setShowBoxProfitGrowthChart(boolean value) { showBoxProfitGrowthChart = value; }
+    public boolean isShowBoxProfitInteractionChart() { return showBoxProfitInteractionChart; }
+    public void setShowBoxProfitInteractionChart(boolean value) { showBoxProfitInteractionChart = value; }
+    public boolean isShowBoxProfitDistributionChart() { return showBoxProfitDistributionChart; }
+    public void setShowBoxProfitDistributionChart(boolean value) { showBoxProfitDistributionChart = value; }
+    public boolean isShowBoxGiftDistributionChart() { return showBoxGiftDistributionChart; }
+    public void setShowBoxGiftDistributionChart(boolean value) { showBoxGiftDistributionChart = value; }
+    public boolean isEnableGiftAnalysis() { return enableGiftAnalysis; }
+    public void setEnableGiftAnalysis(boolean value) { enableGiftAnalysis = value; }
+    public boolean isShowGiftDetails() { return showGiftDetails; }
+    public void setShowGiftDetails(boolean value) { showGiftDetails = value; }
+    public int getGiftRankingLimit() { return giftRankingLimit; }
+    public void setGiftRankingLimit(int value) { giftRankingLimit = value; }
+    public boolean isShowGiftGrowthChart() { return showGiftGrowthChart; }
+    public void setShowGiftGrowthChart(boolean value) { showGiftGrowthChart = value; }
+    public boolean isShowGiftInteractionChart() { return showGiftInteractionChart; }
+    public void setShowGiftInteractionChart(boolean value) { showGiftInteractionChart = value; }
+    public boolean isShowGiftTypeDistributionChart() { return showGiftTypeDistributionChart; }
+    public void setShowGiftTypeDistributionChart(boolean value) { showGiftTypeDistributionChart = value; }
+    public boolean isEnableSuperChatAnalysis() { return enableSuperChatAnalysis; }
+    public void setEnableSuperChatAnalysis(boolean value) { enableSuperChatAnalysis = value; }
+    public boolean isShowSuperChatDetails() { return showSuperChatDetails; }
+    public void setShowSuperChatDetails(boolean value) { showSuperChatDetails = value; }
+    public int getSuperChatRankingLimit() { return superChatRankingLimit; }
+    public void setSuperChatRankingLimit(int value) { superChatRankingLimit = value; }
+    public boolean isShowSuperChatGrowthChart() { return showSuperChatGrowthChart; }
+    public void setShowSuperChatGrowthChart(boolean value) { showSuperChatGrowthChart = value; }
+    public boolean isShowSuperChatInteractionChart() { return showSuperChatInteractionChart; }
+    public void setShowSuperChatInteractionChart(boolean value) { showSuperChatInteractionChart = value; }
+    public boolean isEnableGuardAnalysis() { return enableGuardAnalysis; }
+    public void setEnableGuardAnalysis(boolean value) { enableGuardAnalysis = value; }
+    public boolean isShowGuardDetails() { return showGuardDetails; }
+    public void setShowGuardDetails(boolean value) { showGuardDetails = value; }
 }

@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.report
 
 import com.alibaba.fastjson2.JSONObject
+import com.starlwr.bot.bilibili.model.BilibiliLiveReportConfig
 
 data class LiveReportTargetConfig(
     val enabled: Boolean = true,
@@ -26,6 +27,49 @@ data class LiveReportTargetConfig(
     fun amount(name: String) = amounts[name] != false
     fun top(name: String) = rankings[name]?.coerceIn(0, 20) ?: 0
     fun chart(name: String) = charts[name] == true
+
+    /** Convert the modern session configuration to the merged upstream renderer's module model. */
+    fun toUpstreamConfig(): BilibiliLiveReportConfig = BilibiliLiveReportConfig().apply {
+        setEnableBasicInfo(true)
+        setShowLiveTime(section("time"))
+        setEnableChangeInfo(section("fans") || section("fans_medal") || section("guard"))
+        setShowFansChange(section("fans"))
+        setShowFansMedalChange(section("fans_medal"))
+        setShowGuardChange(section("guard"))
+        setEnableDanmuAnalysis(section("danmu"))
+        setShowDanmuDetails(section("danmu"))
+        setDanmuRankingLimit(top("danmu"))
+        setShowDanmuGrowthChart(chart("danmu"))
+        setShowDanmuInteractionChart(chart("danmu"))
+        setShowDanmuTypeDistributionChart(chart("danmu_type"))
+        setShowDanmuSenderDistributionChart(chart("danmu_sender"))
+        setShowDanmuWordCloud(wordCloud)
+        setEnableBoxAnalysis(section("box"))
+        setShowBoxDetails(section("box"))
+        setShowBoxProfitDetails(section("box") && amount("box"))
+        setBoxRankingLimit(top("box"))
+        setBoxProfitRankingLimit(top("box_profit"))
+        setShowBoxGrowthChart(chart("box"))
+        setShowBoxInteractionChart(chart("box"))
+        setShowBoxProfitGrowthChart(chart("box_profit"))
+        setShowBoxProfitInteractionChart(chart("box_profit"))
+        setShowBoxProfitDistributionChart(chart("box_profit_distribution"))
+        setShowBoxGiftDistributionChart(chart("box_gift_distribution"))
+        setEnableGiftAnalysis(section("gift"))
+        setShowGiftDetails(section("gift") && amount("gift"))
+        setGiftRankingLimit(top("gift"))
+        setShowGiftGrowthChart(chart("gift"))
+        setShowGiftInteractionChart(chart("gift"))
+        setShowGiftTypeDistributionChart(chart("gift_type"))
+        setEnableSuperChatAnalysis(section("sc"))
+        setShowSuperChatDetails(section("sc") && amount("sc"))
+        setSuperChatRankingLimit(top("sc"))
+        setShowSuperChatGrowthChart(chart("sc"))
+        setShowSuperChatInteractionChart(chart("sc"))
+        setEnableGuardAnalysis(section("guard"))
+        setShowGuardDetails(section("guard") && amount("guard"))
+        setSequence(getSequence().filter { it != "basicInfo" })
+    }
     companion object {
         val DEFAULT_SECTIONS = mapOf("time" to true, "danmu" to true, "box" to true,
             "gift" to true, "sc" to true, "guard" to true, "fans" to false, "fans_medal" to false)

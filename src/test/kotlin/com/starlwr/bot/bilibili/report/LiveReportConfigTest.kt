@@ -36,4 +36,20 @@ class LiveReportConfigTest {
         assertTrue(!config.amount("gift"))
         assertEquals(3, config.top("gift"))
     }
+
+    @Test
+    fun `upstream renderer mapping keeps per-module amount privacy`() {
+        val config = LiveReportTargetConfig.from(JSONObject.parseObject(
+            """{"sections":{"box":true,"gift":true,"sc":true,"guard":true},"amounts":{"box":false,"gift":false,"sc":false,"guard":false},"rankings":{"box":{"enabled":true,"top":7}},"charts":{"box_profit":{"enabled":true}}}"""
+        ))
+        val upstream = config.toUpstreamConfig()
+        assertTrue(upstream.isEnableBoxAnalysis)
+        assertTrue(upstream.isShowBoxDetails)
+        assertTrue(!upstream.isShowBoxProfitDetails)
+        assertTrue(!upstream.isShowGiftDetails)
+        assertTrue(!upstream.isShowSuperChatDetails)
+        assertTrue(!upstream.isShowGuardDetails)
+        assertEquals(7, upstream.boxRankingLimit)
+        assertTrue(upstream.isShowBoxProfitGrowthChart)
+    }
 }

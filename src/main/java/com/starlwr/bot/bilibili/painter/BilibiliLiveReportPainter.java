@@ -533,8 +533,8 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> danmus = liveDataService.getDanmu(platform, uid, JSONObject.class);
-        List<JSONObject> emojis = liveDataService.getEmoji(platform, uid, JSONObject.class);
+        List<JSONObject> danmus = normalizeEventSenders(liveDataService.getDanmu(platform, uid, JSONObject.class));
+        List<JSONObject> emojis = normalizeEventSenders(liveDataService.getEmoji(platform, uid, JSONObject.class));
         List<JSONObject> all = Stream.concat(danmus.stream(), emojis.stream()).toList();
         int count = all.size();
 
@@ -702,7 +702,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> boxes = liveDataService.getRandomGift(platform, uid, JSONObject.class);
+        List<JSONObject> boxes = normalizeEventSenders(liveDataService.getRandomGift(platform, uid, JSONObject.class));
         if (CollectionUtils.isEmpty(boxes)) {
             return;
         }
@@ -885,9 +885,9 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> freeGifts = liveDataService.getFreeGift(platform, uid, JSONObject.class);
-        List<JSONObject> paidGifts = liveDataService.getPaidGift(platform, uid, JSONObject.class);
-        List<JSONObject> boxes = liveDataService.getRandomGift(platform, uid, JSONObject.class);
+        List<JSONObject> freeGifts = normalizeEventSenders(liveDataService.getFreeGift(platform, uid, JSONObject.class));
+        List<JSONObject> paidGifts = normalizeEventSenders(liveDataService.getPaidGift(platform, uid, JSONObject.class));
+        List<JSONObject> boxes = normalizeEventSenders(liveDataService.getRandomGift(platform, uid, JSONObject.class));
 
         if (CollectionUtils.isEmpty(freeGifts) && CollectionUtils.isEmpty(paidGifts) && CollectionUtils.isEmpty(boxes)) {
             return;
@@ -986,7 +986,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> superChats = liveDataService.getSuperChat(platform, uid, JSONObject.class);
+        List<JSONObject> superChats = normalizeEventSenders(liveDataService.getSuperChat(platform, uid, JSONObject.class));
         if (CollectionUtils.isEmpty(superChats)) {
             return;
         }
@@ -1048,7 +1048,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> guards = liveDataService.getMemberShip(platform, uid, JSONObject.class);
+        List<JSONObject> guards = normalizeEventSenders(liveDataService.getMemberShip(platform, uid, JSONObject.class));
         if (CollectionUtils.isEmpty(guards)) {
             return;
         }
@@ -1177,7 +1177,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> enters = liveDataService.getEnterRoom(platform, uid, JSONObject.class);
+        List<JSONObject> enters = normalizeEventSenders(liveDataService.getEnterRoom(platform, uid, JSONObject.class));
         if (CollectionUtils.isEmpty(enters)) {
             return;
         }
@@ -1222,7 +1222,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> likes = liveDataService.getLike(platform, uid, JSONObject.class);
+        List<JSONObject> likes = normalizeEventSenders(liveDataService.getLike(platform, uid, JSONObject.class));
         if (CollectionUtils.isEmpty(likes)) {
             return;
         }
@@ -1284,7 +1284,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> shares = liveDataService.getShare(platform, uid, JSONObject.class);
+        List<JSONObject> shares = normalizeEventSenders(liveDataService.getShare(platform, uid, JSONObject.class));
         if (CollectionUtils.isEmpty(shares)) {
             return;
         }
@@ -1328,6 +1328,32 @@ public class BilibiliLiveReportPainter {
         TextWithStyle text = new TextWithStyle("Designed by starbot-bilibili-plugin v" + currentPackage.getImplementationVersion(), CommonPainter.TEXT_FONT_SIZE, COLOR_PINK);
 
         this.painter.drawCopyright(List.of(List.of(text)), List.of(), MARGIN);
+    }
+
+    /**
+     * Core persists the complete sender object; historical report data stores only its UID.
+     * Create a compatibility view without mutating LiveDataService's cached event objects.
+     */
+    private List<JSONObject> normalizeEventSenders(List<JSONObject> events) {
+        if (CollectionUtils.isEmpty(events)) {
+            return events == null ? List.of() : events;
+        }
+        return events.stream().map(event -> {
+            Object sender = event.get("sender");
+            String senderUid = null;
+            if (sender instanceof JSONObject object) {
+                senderUid = object.getString("uid");
+            } else if (sender instanceof Map<?, ?> map) {
+                Object uid = map.get("uid");
+                senderUid = uid == null ? null : String.valueOf(uid);
+            }
+            if (StringUtil.isBlank(senderUid)) {
+                return event;
+            }
+            JSONObject compatible = new JSONObject(event);
+            compatible.put("sender", senderUid);
+            return compatible;
+        }).toList();
     }
 
     /**
