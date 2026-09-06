@@ -138,6 +138,8 @@ starbot:
         - all
       console-deduplicate: true
       console-deduplicate-seconds: 300
+      # Keep duplicate suppression active while hiding its NOTICE/SUMMARY messages when false.
+      deduplicate-notices: false
       # File selectors also accept values such as live:DANMU_MSG or dynamic:DYNAMIC_TYPE_AV.
       file-categories:
         - all
@@ -147,6 +149,8 @@ starbot:
       # Disable only for compatibility diagnostics with legacy callers.
       wbi-encoded-query: true
     live-report:
+      # legacy keeps the current renderer; upstream enables the merged upstream Java renderer.
+      painter: legacy
       recovery:
         enabled: true
         same-session-tolerance: 10m
