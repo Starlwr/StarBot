@@ -46,9 +46,9 @@ public class BilibiliNetworkLogger {
             LOG.warn("Bilibili DEBUG 网络日志已启用敏感数据原样输出；Cookie、Token 和刷新凭据可被用于重放，请限制日志访问范围");
         }
         if (network.isHttpLogEnabled() || network.isWebsocketLogEnabled()) {
-            LOG.info("Bilibili DEBUG 控制台采集日志配置: categories={}, deduplicate={}, deduplicateSeconds={}, availableCategories={}",
+            LOG.info("Bilibili DEBUG 控制台采集日志配置: categories={}, deduplicate={}, deduplicateSeconds={}, deduplicateNotices={}, availableCategories={}",
                     network.getConsoleCategories(), network.isConsoleDeduplicate(),
-                    duplicateWindowSeconds(), AVAILABLE_CATEGORIES);
+                    duplicateWindowSeconds(), network.isDeduplicateNotices(), AVAILABLE_CATEGORIES);
         }
     }
 
@@ -144,10 +144,18 @@ public class BilibiliNetworkLogger {
 
         switch (decision.action()) {
             case FULL -> logger.debug(renderedMessage);
-            case NOTICE -> logger.debug("DEBUG category={} 日志内容未变化；接下来 {} 秒内相同内容将静默抑制, fingerprint={}",
-                    category, duplicateWindowSeconds(), decision.fingerprint().substring(0, 12));
-            case SUMMARY -> logger.debug("DEBUG category={} 日志内容仍未变化；过去 {} 秒已抑制 {} 条重复日志, fingerprint={}",
-                    category, duplicateWindowSeconds(), decision.suppressed(), decision.fingerprint().substring(0, 12));
+            case NOTICE -> {
+                if (network.isDeduplicateNotices()) {
+                    logger.debug("DEBUG category={} 日志内容未变化；接下来 {} 秒内相同内容将静默抑制, fingerprint={}",
+                            category, duplicateWindowSeconds(), decision.fingerprint().substring(0, 12));
+                }
+            }
+            case SUMMARY -> {
+                if (network.isDeduplicateNotices()) {
+                    logger.debug("DEBUG category={} 日志内容仍未变化；过去 {} 秒已抑制 {} 条重复日志, fingerprint={}",
+                            category, duplicateWindowSeconds(), decision.suppressed(), decision.fingerprint().substring(0, 12));
+                }
+            }
             case SUPPRESS -> { }
         }
     }

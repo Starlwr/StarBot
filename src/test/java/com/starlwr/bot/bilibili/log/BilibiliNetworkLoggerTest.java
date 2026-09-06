@@ -58,6 +58,7 @@ class BilibiliNetworkLoggerTest {
     @Test
     void duplicateDebugPayloadPrintsOneChangeNoticeThenSuppresses() {
         StarBotBilibiliProperties properties = properties(false, 16_384);
+        properties.getNetwork().setDeduplicateNotices(true);
 
         List<String> messages = captureAll(properties, logger -> {
             logger.httpRequest("bilibili-api#1", "GET", "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all", Map.of(), null);
@@ -68,6 +69,20 @@ class BilibiliNetworkLoggerTest {
         assertEquals(2, messages.size());
         assertTrue(messages.get(0).contains("category=dynamic"));
         assertTrue(messages.get(1).contains("日志内容未变化"));
+    }
+
+    @Test
+    void duplicateNoticesAreSilentByDefaultWithoutDisablingSuppression() {
+        StarBotBilibiliProperties properties = properties(false, 16_384);
+
+        List<String> messages = captureAll(properties, logger -> {
+            logger.httpRequest("bilibili-api#1", "GET", "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all", Map.of(), null);
+            logger.httpRequest("bilibili-api#1", "GET", "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all", Map.of(), null);
+            logger.httpRequest("bilibili-api#1", "GET", "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all", Map.of(), null);
+        });
+
+        assertEquals(1, messages.size());
+        assertTrue(messages.get(0).contains("category=dynamic"));
     }
 
     private StarBotBilibiliProperties properties(boolean includeSensitive, int maxBodyLength) {

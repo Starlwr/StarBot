@@ -21,6 +21,7 @@ class BilibiliDebugFileLoggerTest {
         StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
         properties.getNetwork().setFileDeduplicate(true);
         properties.getNetwork().setFileDeduplicateSeconds(900);
+        properties.getNetwork().setDeduplicateNotices(true);
 
         List<String> messages = capture("DynamicLogger", logger -> {
             logger.dynamic("DYNAMIC_TYPE_AV", "123", "{\"id\":\"123\"}");
@@ -31,6 +32,21 @@ class BilibiliDebugFileLoggerTest {
         assertEquals(2, messages.size());
         assertTrue(messages.get(0).contains("category=dynamic type=DYNAMIC_TYPE_AV dynamicId=123 payload="));
         assertTrue(messages.get(1).contains("status=UNCHANGED windowSeconds=900"));
+    }
+
+    @Test
+    void duplicateNoticesAreSilentInDebugFilesByDefault() {
+        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        properties.getNetwork().setFileDeduplicate(true);
+
+        List<String> messages = capture("LiveMessageLogger", logger -> {
+            logger.live("ONLINE_RANK_V3", 100L, "rank");
+            logger.live("ONLINE_RANK_V3", 100L, "rank");
+            logger.live("ONLINE_RANK_V3", 100L, "rank");
+        }, properties);
+
+        assertEquals(1, messages.size());
+        assertTrue(messages.get(0).contains("payload=rank"));
     }
 
     @Test

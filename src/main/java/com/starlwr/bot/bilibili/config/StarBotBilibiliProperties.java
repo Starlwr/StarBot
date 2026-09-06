@@ -2,6 +2,7 @@ package com.starlwr.bot.bilibili.config;
 
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;
+import lombok.AccessLevel;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
@@ -33,6 +34,22 @@ public class StarBotBilibiliProperties {
 
     @Getter
     private final Dynamic dynamic = new Dynamic();
+
+    @Getter
+    @Setter
+    public static class LiveReport {
+        /** Report renderer: legacy keeps the current Kotlin renderer; upstream uses the Java renderer. */
+        private String painter = "legacy";
+
+        public String getPainter() { return painter; }
+        public void setPainter(String value) { painter = value; }
+    }
+
+    @Getter(AccessLevel.NONE)
+    private final LiveReport liveReport = new LiveReport();
+
+    public LiveReport getLiveReport() { return liveReport; }
+
 
     /**
      * 线程相关
@@ -130,6 +147,9 @@ public class StarBotBilibiliProperties {
 
         /** Duplicate suppression window in seconds. */
         private long consoleDeduplicateSeconds = 300;
+
+        /** Emit NOTICE/SUMMARY messages for suppressed duplicates. */
+        private boolean deduplicateNotices = false;
 
         /** Raw debug file categories. Supports all, dynamic, live, and category:type selectors. */
         private Set<String> fileCategories = new LinkedHashSet<>(List.of("all"));

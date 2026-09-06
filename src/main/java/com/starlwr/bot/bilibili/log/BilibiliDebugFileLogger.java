@@ -26,8 +26,9 @@ public class BilibiliDebugFileLogger {
     @PostConstruct
     public void reportConfiguration() {
         StarBotBilibiliProperties.Network network = properties.getNetwork();
-        LOG.info("Bilibili DEBUG 文件采集日志配置: categories={}, deduplicate={}, deduplicateSeconds={}",
-                network.getFileCategories(), network.isFileDeduplicate(), fileWindowSeconds());
+        LOG.info("Bilibili DEBUG 文件采集日志配置: categories={}, deduplicate={}, deduplicateSeconds={}, deduplicateNotices={}",
+                network.getFileCategories(), network.isFileDeduplicate(), fileWindowSeconds(),
+                network.isDeduplicateNotices());
     }
 
     public void dynamic(String type, String dynamicId, Object payload) {
@@ -57,10 +58,18 @@ public class BilibiliDebugFileLogger {
         switch (decision.action()) {
             case FULL -> logger.debug("category={} type={} {}={} payload={}",
                     category, safeType, identityName, identity, body);
-            case NOTICE -> logger.debug("category={} type={} {}={} status=UNCHANGED windowSeconds={} fingerprint={}",
-                    category, safeType, identityName, identity, fileWindowSeconds(), fingerprint);
-            case SUMMARY -> logger.debug("category={} type={} {}={} status=STILL_UNCHANGED windowSeconds={} suppressed={} fingerprint={}",
-                    category, safeType, identityName, identity, fileWindowSeconds(), decision.suppressed(), fingerprint);
+            case NOTICE -> {
+                if (network.isDeduplicateNotices()) {
+                    logger.debug("category={} type={} {}={} status=UNCHANGED windowSeconds={} fingerprint={}",
+                            category, safeType, identityName, identity, fileWindowSeconds(), fingerprint);
+                }
+            }
+            case SUMMARY -> {
+                if (network.isDeduplicateNotices()) {
+                    logger.debug("category={} type={} {}={} status=STILL_UNCHANGED windowSeconds={} suppressed={} fingerprint={}",
+                            category, safeType, identityName, identity, fileWindowSeconds(), decision.suppressed(), fingerprint);
+                }
+            }
             case SUPPRESS -> { }
         }
     }
