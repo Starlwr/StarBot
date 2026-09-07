@@ -101,13 +101,34 @@ public class BilibiliWordCloudUtil {
      * 分词
      *
      * @param text 待分词文本
-     * @return 去除停用词后的分词结果
+     * @return 去除停用词及不完整字符后的分词结果
      */
     public List<SegToken> segment(String text) {
         List<SegToken> tokens = segmenter.process(text, JiebaSegmenter.SegMode.SEARCH);
-        if (stopWords.isEmpty()) {
-            return tokens;
+        return tokens.stream()
+                .filter(token -> stopWords.isEmpty() || !stopWords.contains(token.word))
+                .filter(token -> isValidUtf8(token.word))
+                .toList();
+    }
+
+    /**
+     * 判断分词结果是否为完整的 UTF-8 字符序列，用于排除被分词工具切分出的不完整 emoji
+     *
+     * @param word 分词结果
+     * @return 是否为完整的 UTF-8 字符序列
+     */
+    private boolean isValidUtf8(String word) {
+        for (int i = 0; i < word.length(); i++) {
+            char c = word.charAt(i);
+            if (Character.isHighSurrogate(c)) {
+                if (i + 1 >= word.length() || !Character.isLowSurrogate(word.charAt(i + 1))) {
+                    return false;
+                }
+                i++;
+            } else if (Character.isLowSurrogate(c)) {
+                return false;
+            }
         }
-        return tokens.stream().filter(token -> !stopWords.contains(token.word)).toList();
+        return true;
     }
 }
