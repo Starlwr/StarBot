@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import time
 import typing
 from asyncio import AbstractEventLoop
@@ -16,6 +17,7 @@ from ..painter.DynamicPicGenerator import DynamicPicGenerator
 from ..utils import config, redis
 from ..utils.network import request
 from ..utils.utils import get_credential, timestamp_format, get_unames_and_faces_by_uids
+from ..utils.gift_pb2 import SendGiftV2
 
 if typing.TYPE_CHECKING:
     from .sender import Bot
@@ -315,6 +317,49 @@ class Up(BaseModel):
             "box", "gift", "box_ranking", "box_profit_ranking", "gift_ranking",
             "box_profit_diagram", "box_diagram", "gift_diagram"
         ]
+
+        if not config.get("ONLY_HANDLE_NECESSARY_EVENT") or self.__any_live_report_item_enabled(gift_items):
+            @self.__room.on("SEND_GIFT_V2")
+            async def on_gift_v2(event):
+                """
+                礼物事件
+                """
+                # logger.info(f"{self.uname} (SEND_GIFT_V2): {event}")
+                try:
+                    pb = event.get('data', {}).get('data', {}).get("pb", "")
+                    rawData = base64.b64decode(pb)
+                    v = SendGiftV2()
+                    v.ParseFromString(rawData)
+                    for gift in v.gifts:
+                        base = {
+                            "giftId": gift.gift_id,
+                            "giftName": gift.gift_name,
+                            "uid": v.sender.uid,
+                            "num": gift.num,
+                            "total_coin": gift.total_coin,
+                            "discount_price": gift.discount_price,
+                            'blind_gift': None
+                        }
+                        if v.HasField("blind"):
+                            base['blind_gift'] = {
+                                "original_gift_id": v.blind.original_gift_id,
+                                "original_gift_name": v.blind.original_gift_name,
+                                "blind_price": v.blind.blind_price,
+                            }
+                        newEvent = {
+                            'room_display_id': event.get("room_display_id", ),
+                            'room_real_id': event.get("room_real_id", ),
+                            'data': {
+                                "data": base,
+                                "cmd": 'SEND_GIFT',
+                            },
+                            'type': 'SEND_GIFT',
+                        }
+                        self.dispatch('SEND_GIFT', newEvent)
+
+                except Exception as ex:
+                    logger.exception("SEND_GIFT_V2异常", ex)
+
         if not config.get("ONLY_HANDLE_NECESSARY_EVENT") or self.__any_live_report_item_enabled(gift_items):
             @self.__room.on("SEND_GIFT")
             async def on_gift(event):
