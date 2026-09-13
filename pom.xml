@@ -14,7 +14,7 @@
     <artifactId>starbot-bilibili</artifactId>
     <version>1.0.0-beta</version>
     <name>StarBotBilibili</name>
-    <description>StarBot For Bilibili</description>
+    <description>Bilibili For StarBot</description>
     <url>https://bot.starlwr.com</url>
 
     <developers>
@@ -72,6 +72,11 @@
             <groupId>org.brotli</groupId>
             <artifactId>dec</artifactId>
             <version>0.1.2</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>4.36.1</version>
         </dependency>
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>

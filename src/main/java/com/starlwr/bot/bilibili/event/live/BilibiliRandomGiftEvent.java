@@ -17,6 +17,7 @@ import java.time.Instant;
  * <h4>触发条件：</h4>
  * <ul>
  *     <li>SEND_GIFT（投喂礼物）</li>
+ *     <li>SEND_GIFT_V2（新版投喂礼物）</li>
  * </ul>
  * <h4>示例：</h4>
  * <ol>

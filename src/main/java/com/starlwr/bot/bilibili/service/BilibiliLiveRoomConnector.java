@@ -572,10 +572,8 @@ public class BilibiliLiveRoomConnector {
                             JSONObject data = unpackedData.getJSONObject("data");
 
                             if (dataPackType == DataPackType.NOTICE.getCode()) {
-                                Optional<StarBotBaseLiveEvent> optionalEvent = connector.eventParser.parse(data, up);
-                                if (optionalEvent.isPresent()) {
-                                    StarBotBaseLiveEvent event = optionalEvent.get();
-
+                                List<StarBotBaseLiveEvent> events = connector.eventParser.parseEvents(data, up);
+                                for (StarBotBaseLiveEvent event : events) {
                                     if (connector.properties.getLive().isAutoDetectLiveRoomRisk()) {
                                         if (event instanceof BilibiliDanmuEvent danmuEvent) {
                                             connector.latestDanmus.add(new DanmuDTO(danmuEvent.getSender().getUid(), danmuEvent.getContent(), danmuEvent.getTimestamp() / 1000));

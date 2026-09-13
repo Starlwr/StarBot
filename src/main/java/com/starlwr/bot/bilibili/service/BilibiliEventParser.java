@@ -7,6 +7,7 @@ import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.bilibili.event.live.*;
 import com.starlwr.bot.bilibili.model.*;
+import com.starlwr.bot.bilibili.protobuf.SendGiftV2;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.model.GiftInfo;
@@ -20,8 +21,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,12 +44,13 @@ public class BilibiliEventParser {
 
     private final BilibiliGiftService giftService;
 
-    private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, StarBotBaseLiveEvent>> parsers = Map.of(
+    private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, List<StarBotBaseLiveEvent>>> parsers = Map.of(
             "LIVE", BilibiliEventParser.this::parseLiveOnData,
             "PREPARING", BilibiliEventParser.this::parseLiveOffData,
             "INTERACT_WORD", BilibiliEventParser.this::parseOperationData,
             "DANMU_MSG", BilibiliEventParser.this::parseMessageData,
             "SEND_GIFT", BilibiliEventParser.this::parseGiftData,
+            "SEND_GIFT_V2", BilibiliEventParser.this::parseGiftDataV2,
             "SUPER_CHAT_MESSAGE", BilibiliEventParser.this::parseSuperChatData,
             "USER_TOAST_MSG", BilibiliEventParser.this::parseGuardData,
             "LIKE_INFO_V3_CLICK", BilibiliEventParser.this::parseLikeData,
@@ -61,63 +65,66 @@ public class BilibiliEventParser {
     }
 
     /**
-     * 将直播间收到的原始消息转换为事件
+     * 将直播间收到的原始消息转换为事件列表
+     *
      * @param data 原始消息
-     * @return 解析成功返回事件，否则返回 null
+     * @param source 主播信息
+     * @return 解析出的事件列表
      */
-    public Optional<StarBotBaseLiveEvent> parse(JSONObject data, LiveStreamerInfo source) {
+    List<StarBotBaseLiveEvent> parseEvents(JSONObject data, LiveStreamerInfo source) {
         String type = data.getString("cmd");
         if (properties.getDebug().isLiveRoomRawMessageLog()) {
             liveMessageLogger.debug("{}: {} -> {}", type, source.getRoomId(), data.toJSONString());
         }
 
-        if (parsers.containsKey(type)) {
-            try {
-                return Optional.ofNullable(parsers.get(type).apply(data, source));
-            } catch (Exception e) {
-                log.error("处理直播间 {} 的 {} 类型消息异常: {}", source.getRoomId(), type, data.toJSONString(), e);
+        try {
+            BiFunction<JSONObject, LiveStreamerInfo, List<StarBotBaseLiveEvent>> parser = parsers.get(type);
+            if (parser != null) {
+                return parser.apply(data, source);
             }
+        } catch (Exception e) {
+            log.error("处理直播间 {} 的 {} 类型消息异常: {}", source.getRoomId(), type, data.toJSONString(), e);
         }
 
-        return Optional.empty();
+        return List.of();
     }
 
     /**
      * 解析原始直播间开播数据（LIVE）
      * @param data 原始直播间开播数据
      * @param source 主播信息
-     * @return 事件
+     * @return 事件列表
      */
-    private StarBotBaseLiveEvent parseLiveOnData(JSONObject data, LiveStreamerInfo source) {
+    private List<StarBotBaseLiveEvent> parseLiveOnData(JSONObject data, LiveStreamerInfo source) {
         Long liveTime = data.getLong("live_time");
 
         if (liveTime != null) {
             Instant timestamp = Instant.ofEpochSecond(liveTime);
-            return new BilibiliLiveOnEvent(source, timestamp);
+            return List.of(new BilibiliLiveOnEvent(source, timestamp));
         }
 
-        return null;
+        return List.of();
     }
 
     /**
      * 解析原始直播间下播数据（PREPARING）
      * @param data 原始直播间下播数据
      * @param source 主播信息
-     * @return 事件
+     * @return 事件列表
      */
-    private StarBotBaseLiveEvent parseLiveOffData(JSONObject data, LiveStreamerInfo source) {
+    private List<StarBotBaseLiveEvent> parseLiveOffData(JSONObject data, LiveStreamerInfo source) {
         Instant timestamp = Instant.ofEpochMilli(data.getLong("send_time"));
 
-        return new BilibiliLiveOffEvent(source, timestamp);
+        return List.of(new BilibiliLiveOffEvent(source, timestamp));
     }
 
     /**
      * 解析原始直播间操作数据（INTERACT_WORD）
      * @param data 原始直播间操作数据
      * @param source 主播信息
-     * @return 事件
+     * @return 事件列表
      */
-    private StarBotBaseLiveEvent parseOperationData(JSONObject data, LiveStreamerInfo source) {
+    private List<StarBotBaseLiveEvent> parseOperationData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONObject metaData = data.getJSONObject("data");
@@ -166,17 +173,17 @@ public class BilibiliEventParser {
                         .filter(s -> !s.isBlank())
                         .orElse(null);
 
-                return new BilibiliEnterRoomEvent(source, sender, fromPromotion, promotionSource, timestamp);
+                return List.of(new BilibiliEnterRoomEvent(source, sender, fromPromotion, promotionSource, timestamp));
             }
             case 2 -> {
-                return new BilibiliFollowEvent(source, sender, timestamp);
+                return List.of(new BilibiliFollowEvent(source, sender, timestamp));
             }
             case 3 -> {
-                return new BilibiliShareEvent(source, sender, timestamp);
+                return List.of(new BilibiliShareEvent(source, sender, timestamp));
             }
             default -> {
                 log.warn("未处理的直播间操作消息类型: {}, 内容: {}", msgType, data.toJSONString());
-                return null;
+                return List.of();
             }
         }
     }
@@ -185,9 +192,9 @@ public class BilibiliEventParser {
      * 解析原始直播间消息数据（DANMU_MSG）
      * @param data 原始直播间消息数据
      * @param source 主播信息
-     * @return 事件
+     * @return 事件列表
      */
-    private StarBotBaseLiveEvent parseMessageData(JSONObject data, LiveStreamerInfo source) {
+    private List<StarBotBaseLiveEvent> parseMessageData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONArray info = data.getJSONArray("info");
@@ -273,10 +280,10 @@ public class BilibiliEventParser {
                     emojis.add(emoji);
                 }
 
-                return new BilibiliDanmuEvent(source, sender, reply, content, contentText, emojis, timestamp);
+                return List.of(new BilibiliDanmuEvent(source, sender, reply, content, contentText, emojis, timestamp));
             }
 
-            return new BilibiliDanmuEvent(source, sender, reply, content, timestamp);
+            return List.of(new BilibiliDanmuEvent(source, sender, reply, content, timestamp));
         } else {
             JSONObject emojiInfo = primaryInfo.getJSONObject(13);
             String emojiId = emojiInfo.getString("emoticon_unique");
@@ -286,7 +293,7 @@ public class BilibiliEventParser {
             Integer emojiHeight = emojiInfo.getInteger("height");
             BilibiliEmojiInfo emoji = new BilibiliEmojiInfo(emojiId, emojiName, emojiUrl, emojiWidth, emojiHeight);
 
-            return new BilibiliEmojiEvent(source, sender, emoji, timestamp);
+            return List.of(new BilibiliEmojiEvent(source, sender, emoji, timestamp));
         }
     }
 
@@ -294,9 +301,9 @@ public class BilibiliEventParser {
      * 解析原始直播间礼物数据（SEND_GIFT）
      * @param data 原始直播间礼物数据
      * @param source 主播信息
-     * @return 事件
+     * @return 事件列表
      */
-    private StarBotBaseLiveEvent parseGiftData(JSONObject data, LiveStreamerInfo source) {
+    private List<StarBotBaseLiveEvent> parseGiftData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONObject metaData = data.getJSONObject("data");
@@ -341,27 +348,95 @@ public class BilibiliEventParser {
 
         String coinType = metaData.getString("coin_type");
         JSONObject randomGiftInfo = metaData.getJSONObject("blind_gift");
-        if ("silver".equals(coinType)) {
-            return new BilibiliFreeGiftEvent(source, sender, gift, timestamp);
-        } else if ("gold".equals(coinType)) {
-            if (randomGiftInfo == null) {
-                return new BilibiliPaidGiftEvent(source, sender, gift, timestamp);
-            } else {
-                Long randomGiftId = randomGiftInfo.getLong("original_gift_id");
-                String randomGiftName = randomGiftInfo.getString("original_gift_name");
-                double randomGiftPrice = MathUtil.divide(randomGiftInfo.getInteger("original_gift_price"), 1000.0);
-                String randomGiftUrl = null;
-                if (completeEvent) {
-                    randomGiftUrl = giftService.getGiftInfo(randomGiftId).map(Gift::getUrl).orElse(null);
-                }
-                GiftInfo randomGift = new GiftInfo(randomGiftId, randomGiftName, randomGiftPrice, giftCount, randomGiftUrl);
-
-                return new BilibiliRandomGiftEvent(source, sender, randomGift, gift, timestamp);
+        GiftInfo randomGift = null;
+        if ("gold".equals(coinType) && randomGiftInfo != null) {
+            Long randomGiftId = randomGiftInfo.getLong("original_gift_id");
+            String randomGiftName = randomGiftInfo.getString("original_gift_name");
+            double randomGiftPrice = MathUtil.divide(randomGiftInfo.getInteger("original_gift_price"), 1000.0);
+            String randomGiftUrl = null;
+            if (completeEvent) {
+                randomGiftUrl = giftService.getGiftInfo(randomGiftId).map(Gift::getUrl).orElse(null);
             }
+            randomGift = new GiftInfo(randomGiftId, randomGiftName, randomGiftPrice, giftCount, randomGiftUrl);
+        }
+
+        if ("silver".equals(coinType)) {
+            return List.of(new BilibiliFreeGiftEvent(source, sender, gift, timestamp));
+        }
+        if ("gold".equals(coinType)) {
+            return List.of(randomGift == null
+                    ? new BilibiliPaidGiftEvent(source, sender, gift, timestamp)
+                    : new BilibiliRandomGiftEvent(source, sender, randomGift, gift, timestamp));
         }
 
         log.warn("未处理的直播间礼物消息, 内容: {}", data.toJSONString());
-        return null;
+        return List.of();
+    }
+
+    /**
+     * 解析原始新版直播间礼物数据（SEND_GIFT_V2）
+     * @param data 原始新版直播间礼物数据
+     * @param source 主播信息
+     * @return 事件列表
+     */
+    private List<StarBotBaseLiveEvent> parseGiftDataV2(JSONObject data, LiveStreamerInfo source) {
+        boolean completeEvent = properties.getLive().isCompleteEvent();
+
+        JSONObject metaData = data.getJSONObject("data");
+        String encodedPayload = metaData.getString("pb");
+
+        SendGiftV2 payload;
+        try {
+            payload = SendGiftV2.parseFrom(Base64.getDecoder().decode(encodedPayload));
+        } catch (IOException | IllegalArgumentException e) {
+            log.error("解析直播间 {} 的 SEND_GIFT_V2 消息异常, 内容: {}", source.getRoomId(), data.toJSONString(), e);
+            return List.of();
+        }
+
+        SendGiftV2.Medal medal = payload.getSenderInfo().getMedal();
+
+        FansMedal fansMedal = null;
+        if (medal.isPresent()) {
+            if (completeEvent) {
+                String fansMedalUname = completeUname(medal.getRuid(), source).orElse(null);
+                Long fansMedalRoomId = completeRoomId(medal.getRuid(), source).orElse(null);
+                String fansMedalFace = completeFace(medal.getRuid(), source).orElse(null);
+                fansMedal = new FansMedal(medal.getRuid(), fansMedalUname, fansMedalRoomId, fansMedalFace, medal.getName(), medal.getLevel(), medal.isLighted());
+            } else {
+                fansMedal = new FansMedal(medal.getRuid(), null, null, medal.getName(), medal.getLevel(), medal.isLighted());
+            }
+        }
+
+        Guard guard = payload.getGuardLevel() == 0 ? null : new Guard(payload.getGuardLevel(), medal.getGuardIcon());
+        Integer honorLevel = payload.getWealthInfo().getLevel();
+        BilibiliUserInfo sender = new BilibiliUserInfo(payload.getUid(), payload.getUname(), payload.getFace(), fansMedal, guard, honorLevel);
+
+        SendGiftV2.BlindGift blindGift = payload.getBlindGift();
+        List<StarBotBaseLiveEvent> events = new ArrayList<>(payload.getGifts().size());
+        for (SendGiftV2.GiftItem item : payload.getGifts()) {
+            Instant timestamp = Instant.ofEpochSecond(item.getTimestamp());
+            GiftInfo gift = new GiftInfo(item.getId(), item.getName(), MathUtil.divide(item.getDiscountPrice(), 1000.0), item.getCount(), item.getImageUrl());
+
+            GiftInfo randomGift = null;
+            if (blindGift.isPresent()) {
+                String randomGiftUrl = null;
+                if (completeEvent) {
+                    randomGiftUrl = giftService.getGiftInfo(blindGift.getId()).map(Gift::getUrl).orElse(null);
+                }
+                randomGift = new GiftInfo(blindGift.getId(), blindGift.getName(), MathUtil.divide(blindGift.getPrice(), 1000.0), item.getCount(), randomGiftUrl);
+            }
+
+            if ("silver".equals(item.getCoinType())) {
+                events.add(new BilibiliFreeGiftEvent(source, sender, gift, timestamp));
+            } else if ("gold".equals(item.getCoinType())) {
+                events.add(randomGift == null
+                        ? new BilibiliPaidGiftEvent(source, sender, gift, timestamp)
+                        : new BilibiliRandomGiftEvent(source, sender, randomGift, gift, timestamp));
+            } else {
+                log.warn("未处理的直播间礼物消息, 内容: {}", data.toJSONString());
+            }
+        }
+        return events;
     }
 
     /**
@@ -370,7 +445,7 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 事件
      */
-    private StarBotBaseLiveEvent parseSuperChatData(JSONObject data, LiveStreamerInfo source) {
+    private List<StarBotBaseLiveEvent> parseSuperChatData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONObject metaData = data.getJSONObject("data");
@@ -410,7 +485,7 @@ public class BilibiliEventParser {
 
         Instant timestamp = Instant.ofEpochMilli(data.getLong("send_time"));
 
-        return new BilibiliSuperChatEvent(source, sender, content, value, timestamp);
+        return List.of(new BilibiliSuperChatEvent(source, sender, content, value, timestamp));
     }
 
     /**
@@ -419,7 +494,7 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 事件
      */
-    private StarBotBaseLiveEvent parseGuardData(JSONObject data, LiveStreamerInfo source) {
+    private List<StarBotBaseLiveEvent> parseGuardData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONObject metaData = data.getJSONObject("data");
@@ -452,17 +527,17 @@ public class BilibiliEventParser {
 
         switch (guardLevel) {
             case 1 -> {
-                return new BilibiliGovernorEvent(source, sender, operateType, price, count, unit, timestamp);
+                return List.of(new BilibiliGovernorEvent(source, sender, operateType, price, count, unit, timestamp));
             }
             case 2 -> {
-                return new BilibiliCommanderEvent(source, sender, operateType, price, count, unit, timestamp);
+                return List.of(new BilibiliCommanderEvent(source, sender, operateType, price, count, unit, timestamp));
             }
             case 3 -> {
-                return new BilibiliCaptainEvent(source, sender, operateType, price, count, unit, timestamp);
+                return List.of(new BilibiliCaptainEvent(source, sender, operateType, price, count, unit, timestamp));
             }
             default -> {
                 log.warn("未处理的直播间大航海消息类型: {}, 内容: {}", guardLevel, data.toJSONString());
-                return null;
+                return List.of();
             }
         }
     }
@@ -473,7 +548,7 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 事件
      */
-    private StarBotBaseLiveEvent parseLikeData(JSONObject data, LiveStreamerInfo source) {
+    private List<StarBotBaseLiveEvent> parseLikeData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONObject metaData = data.getJSONObject("data");
@@ -507,7 +582,7 @@ public class BilibiliEventParser {
 
         BilibiliUserInfo sender = new BilibiliUserInfo(senderUid, senderUname, senderFace, fansMedal, guard, null);
 
-        return new BilibiliLikeEvent(source, sender);
+        return List.of(new BilibiliLikeEvent(source, sender));
     }
 
     /**
@@ -516,10 +591,10 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 事件
      */
-    private StarBotBaseLiveEvent parseLikeUpdateData(JSONObject data, LiveStreamerInfo source) {
+    private List<StarBotBaseLiveEvent> parseLikeUpdateData(JSONObject data, LiveStreamerInfo source) {
         Integer count = data.getJSONObject("data").getInteger("click_count");
 
-        return new BilibiliLikeUpdateEvent(source, count);
+        return List.of(new BilibiliLikeUpdateEvent(source, count));
     }
 
     /**
