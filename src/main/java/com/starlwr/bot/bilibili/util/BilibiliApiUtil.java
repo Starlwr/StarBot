@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.classify.BinaryExceptionClassifier;
 import org.springframework.data.util.Pair;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -45,9 +46,12 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * API 请求工具类
@@ -60,6 +64,8 @@ public class BilibiliApiUtil {
     private final HttpUtil http;
 
     private final RetryTemplate retryTemplate = new RetryTemplate();
+
+    private final BinaryExceptionClassifier retryableExceptionClassifier = new BinaryExceptionClassifier(List.of(NetworkException.class, SocketException.class, SocketTimeoutException.class));
 
     private WebSign sign;
 
@@ -77,12 +83,9 @@ public class BilibiliApiUtil {
 
     @PostConstruct
     public void init() {
-        Map<Class<? extends Throwable>, Boolean> retryableExceptions = new HashMap<>();
-        retryableExceptions.put(NetworkException.class, true);
-        retryableExceptions.put(SocketException.class, true);
-        retryableExceptions.put(SocketTimeoutException.class, true);
+        retryableExceptionClassifier.setTraverseCauses(true);
 
-        SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy(properties.getNetwork().getApiRetryMaxTimes(), retryableExceptions, true);
+        SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy(properties.getNetwork().getApiRetryMaxTimes(), retryableExceptionClassifier);
         retryTemplate.setRetryPolicy(retryPolicy);
 
         FixedBackOffPolicy backOffPolicy = new FixedBackOffPolicy();
@@ -166,52 +169,165 @@ public class BilibiliApiUtil {
      * @param params 请求参数
      * @param type 返回类型，JSONObject 或 JSONArray
      * @return 请求结果
+     * @param <T> 返回值类型
      */
     public <T> T requestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params, Class<T> type) {
-        return (T) retryTemplate.execute(retryContext -> {
-            JSONObject result;
+        return executeWithRetry(() -> doRequestBilibiliApi(url, method, headers, params, type));
+    }
 
-            if ("GET".equalsIgnoreCase(method)) {
-                result = http.getJson(url, headers);
-            } else if ("POST".equalsIgnoreCase(method)) {
-                result = http.postJsonAsForm(url, headers, params);
-            } else {
-                throw new IllegalArgumentException("不支持的请求方法: " + method);
+    /**
+     * 使用默认 bilibili 请求头异步 GET 请求 bilibili API
+     * @param url URL
+     * @return 异步请求结果
+     */
+    public CompletableFuture<JSONObject> asyncRequestBilibiliApi(String url) {
+        return asyncRequestBilibiliApi(url, "GET", getBilibiliHeaders(), new HashMap<>(), JSONObject.class);
+    }
+
+    /**
+     * 异步请求 bilibili API
+     * @param url URL
+     * @param method 请求方法，GET 或 POST
+     * @param headers 请求头
+     * @param params 请求参数
+     * @param type 返回类型，JSONObject 或 JSONArray
+     * @return 异步请求结果
+     * @param <T> 返回值类型
+     */
+    public <T> CompletableFuture<T> asyncRequestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params, Class<T> type) {
+        return executeAsyncWithRetry(() -> doAsyncRequestBilibiliApi(url, method, headers, params, type), 1);
+    }
+
+    /**
+     * 执行带重试的同步请求
+     * @param request 请求方法
+     * @return 请求结果
+     * @param <T> 返回值类型
+     */
+    private <T> T executeWithRetry(Supplier<T> request) {
+        return retryTemplate.execute(retryContext -> request.get());
+    }
+
+    /**
+     * 执行带重试的异步请求
+     * @param request 异步请求方法
+     * @param attempts 当前请求次数
+     * @return 异步请求结果
+     * @param <T> 返回值类型
+     */
+    private <T> CompletableFuture<T> executeAsyncWithRetry(Supplier<CompletableFuture<T>> request, int attempts) {
+        return request.get().exceptionallyCompose(exception -> {
+            Throwable cause = exception instanceof CompletionException && exception.getCause() != null
+                    ? exception.getCause()
+                    : exception;
+            if (attempts >= properties.getNetwork().getApiRetryMaxTimes() || !retryableExceptionClassifier.classify(cause)) {
+                return CompletableFuture.failedFuture(cause);
             }
 
-            if (!result.containsKey("code")) {
-                throw new RequestFailedException("API 返回数据未含 code 字段: " + result);
-            }
-            Integer code = result.getInteger("code");
-            if (code != 0) {
-                // 4101130: 请求数据发生错误，请刷新或稍后重试, 4101131: 加载错误，请稍后再试, 4101132: 加载错误，请稍后再试, 22015: 您的账号异常，请稍后再试, 1024: timeout
-                if (code == 4101130 || code == 4101131 || code == 4101132 || code == 22015 || code == 1024) {
-                    throw new NetworkException(code);
-                }
-                String message = result.containsKey("message") ? result.getString("message") : "接口未返回错误信息";
-                throw new ResponseCodeException(code, message);
-            }
-
-            if (result.containsKey("data")) {
-                if (type == JSONArray.class) {
-                    return result.getJSONArray("data");
-                } else if (type == JSONObject.class) {
-                    return result.getJSONObject("data");
-                } else {
-                    throw new IllegalArgumentException("返回类型参数只能为 JSONObject 或 JSONArray");
-                }
-            } else if (result.containsKey("result")) {
-                if (type == JSONArray.class) {
-                    return result.getJSONArray("result");
-                } else if (type == JSONObject.class) {
-                    return result.getJSONObject("result");
-                } else {
-                    throw new IllegalArgumentException("返回类型参数只能为 JSONObject 或 JSONArray");
-                }
-            } else {
-                throw new RequestFailedException("API 返回数据未含 data 或 result 字段: " + result);
-            }
+            return waitForRetryInterval().thenCompose(ignored -> executeAsyncWithRetry(request, attempts + 1));
         });
+    }
+
+    /**
+     * 等待接口请求重试间隔
+     * @return 重试间隔结束后完成的 Future
+     */
+    private CompletableFuture<Void> waitForRetryInterval() {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        CompletableFuture.delayedExecutor(properties.getNetwork().getApiRetryInterval(), TimeUnit.MILLISECONDS, Runnable::run)
+                .execute(() -> future.complete(null));
+        return future;
+    }
+
+    /**
+     * 执行单次同步 bilibili API 请求
+     * @param url URL
+     * @param method 请求方法，GET 或 POST
+     * @param headers 请求头
+     * @param params 请求参数
+     * @param type 返回类型，JSONObject 或 JSONArray
+     * @return 请求结果
+     * @param <T> 返回值类型
+     */
+    private <T> T doRequestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params, Class<T> type) {
+        JSONObject result;
+
+        if ("GET".equalsIgnoreCase(method)) {
+            result = http.getJson(url, headers);
+        } else if ("POST".equalsIgnoreCase(method)) {
+            result = http.postJsonAsForm(url, headers, params);
+        } else {
+            throw new IllegalArgumentException("不支持的请求方法: " + method);
+        }
+
+        return parseBilibiliApiResponse(result, type);
+    }
+
+    /**
+     * 执行单次异步 bilibili API 请求
+     * @param url URL
+     * @param method 请求方法，GET 或 POST
+     * @param headers 请求头
+     * @param params 请求参数
+     * @param type 返回类型，JSONObject 或 JSONArray
+     * @return 异步请求结果
+     * @param <T> 返回值类型
+     */
+    private <T> CompletableFuture<T> doAsyncRequestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params, Class<T> type) {
+        CompletableFuture<JSONObject> result;
+
+        if ("GET".equalsIgnoreCase(method)) {
+            result = http.asyncGetJson(url, headers);
+        } else if ("POST".equalsIgnoreCase(method)) {
+            result = http.asyncPostJsonAsForm(url, headers, params);
+        } else {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("不支持的请求方法: " + method));
+        }
+
+        return result.thenApply(response -> parseBilibiliApiResponse(response, type));
+    }
+
+    /**
+     * 解析 bilibili API 返回数据
+     * @param result API 原始返回数据
+     * @param type 返回类型，JSONObject 或 JSONArray
+     * @return 解析后的请求结果
+     * @param <T> 返回值类型
+     */
+    private <T> T parseBilibiliApiResponse(JSONObject result, Class<T> type) {
+        if (!result.containsKey("code")) {
+            throw new RequestFailedException("API 返回数据未含 code 字段: " + result);
+        }
+
+        Integer code = result.getInteger("code");
+        if (code != 0) {
+            // 4101130: 请求数据发生错误，请刷新或稍后重试, 4101131: 加载错误，请稍后再试, 4101132: 加载错误，请稍后再试, 22015: 您的账号异常，请稍后再试, 1024: timeout
+            if (code == 4101130 || code == 4101131 || code == 4101132 || code == 22015 || code == 1024) {
+                throw new NetworkException(code);
+            }
+            String message = result.containsKey("message") ? result.getString("message") : "接口未返回错误信息";
+            throw new ResponseCodeException(code, message);
+        }
+
+        if (result.containsKey("data")) {
+            if (type == JSONArray.class) {
+                return type.cast(result.getJSONArray("data"));
+            } else if (type == JSONObject.class) {
+                return type.cast(result.getJSONObject("data"));
+            } else {
+                throw new IllegalArgumentException("返回类型参数只能为 JSONObject 或 JSONArray");
+            }
+        } else if (result.containsKey("result")) {
+            if (type == JSONArray.class) {
+                return type.cast(result.getJSONArray("result"));
+            } else if (type == JSONObject.class) {
+                return type.cast(result.getJSONObject("result"));
+            } else {
+                throw new IllegalArgumentException("返回类型参数只能为 JSONObject 或 JSONArray");
+            }
+        } else {
+            throw new RequestFailedException("API 返回数据未含 data 或 result 字段: " + result);
+        }
     }
 
     /**
@@ -541,9 +657,15 @@ public class BilibiliApiUtil {
     public void liveRoomHeartbeat(@NonNull Long roomId) {
         String api = "https://live-trace.bilibili.com/xlive/rdata-interface/v1/heartbeat/webHeartBeat?pf=web&hb=";
         String hbParam = Base64.getEncoder().encodeToString(("60|" + roomId + "|1|0").getBytes(StandardCharsets.UTF_8));
-        http.asyncGet(api + hbParam, getBilibiliHeaders()).whenComplete((response, exception) -> {
+        asyncRequestBilibiliApi(api + hbParam).whenComplete((response, exception) -> {
             if (exception != null) {
-                log.error("直播间 {} 发送 Web 心跳包异常, 偶然出现此异常可忽略", roomId, exception);
+                boolean isTimeoutException = Stream.iterate(exception, Objects::nonNull, Throwable::getCause)
+                        .anyMatch(throwable -> throwable instanceof TimeoutException || throwable instanceof SocketTimeoutException);
+                if (isTimeoutException) {
+                    log.warn("直播间 {} 发送 Web 心跳包超时", roomId);
+                } else {
+                    log.error("直播间 {} 发送 Web 心跳包异常", roomId, exception);
+                }
             }
         });
     }
