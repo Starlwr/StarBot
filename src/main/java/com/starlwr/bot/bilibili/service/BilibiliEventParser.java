@@ -7,6 +7,7 @@ import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.bilibili.event.live.*;
 import com.starlwr.bot.bilibili.model.*;
+import com.starlwr.bot.bilibili.protobuf.InteractWordV2;
 import com.starlwr.bot.bilibili.protobuf.SendGiftV2;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
@@ -44,17 +45,18 @@ public class BilibiliEventParser {
 
     private final BilibiliGiftService giftService;
 
-    private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, List<StarBotBaseLiveEvent>>> parsers = Map.of(
-            "LIVE", BilibiliEventParser.this::parseLiveOnData,
-            "PREPARING", BilibiliEventParser.this::parseLiveOffData,
-            "INTERACT_WORD", BilibiliEventParser.this::parseOperationData,
-            "DANMU_MSG", BilibiliEventParser.this::parseMessageData,
-            "SEND_GIFT", BilibiliEventParser.this::parseGiftData,
-            "SEND_GIFT_V2", BilibiliEventParser.this::parseGiftDataV2,
-            "SUPER_CHAT_MESSAGE", BilibiliEventParser.this::parseSuperChatData,
-            "USER_TOAST_MSG", BilibiliEventParser.this::parseGuardData,
-            "LIKE_INFO_V3_CLICK", BilibiliEventParser.this::parseLikeData,
-            "LIKE_INFO_V3_UPDATE", BilibiliEventParser.this::parseLikeUpdateData
+    private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, List<StarBotBaseLiveEvent>>> parsers = Map.ofEntries(
+            Map.entry("LIVE", BilibiliEventParser.this::parseLiveOnData),
+            Map.entry("PREPARING", BilibiliEventParser.this::parseLiveOffData),
+            Map.entry("INTERACT_WORD", BilibiliEventParser.this::parseOperationData),
+            Map.entry("INTERACT_WORD_V2", BilibiliEventParser.this::parseOperationDataV2),
+            Map.entry("DANMU_MSG", BilibiliEventParser.this::parseMessageData),
+            Map.entry("SEND_GIFT", BilibiliEventParser.this::parseGiftData),
+            Map.entry("SEND_GIFT_V2", BilibiliEventParser.this::parseGiftDataV2),
+            Map.entry("SUPER_CHAT_MESSAGE", BilibiliEventParser.this::parseSuperChatData),
+            Map.entry("USER_TOAST_MSG", BilibiliEventParser.this::parseGuardData),
+            Map.entry("LIKE_INFO_V3_CLICK", BilibiliEventParser.this::parseLikeData),
+            Map.entry("LIKE_INFO_V3_UPDATE", BilibiliEventParser.this::parseLikeUpdateData)
     );
 
     @Autowired
@@ -164,16 +166,79 @@ public class BilibiliEventParser {
         BilibiliUserInfo sender = new BilibiliUserInfo(senderUid, senderUname, senderFace, fansMedal, guard, honorLevel);
 
         Instant timestamp = Instant.ofEpochSecond(metaData.getLong("timestamp"));
-
-        Integer msgType = metaData.getInteger("msg_type");
+        int msgType = metaData.getInteger("msg_type");
         switch (msgType) {
             case 1 -> {
                 boolean fromPromotion = metaData.getInteger("is_spread") == 1;
-                String promotionSource = Optional.of(metaData.getString("spread_desc"))
-                        .filter(s -> !s.isBlank())
-                        .orElse(null);
-
+                String promotionSource = metaData.getString("spread_desc");
+                if (promotionSource != null && promotionSource.isBlank()) {
+                    promotionSource = null;
+                }
                 return List.of(new BilibiliEnterRoomEvent(source, sender, fromPromotion, promotionSource, timestamp));
+            }
+            case 2 -> {
+                return List.of(new BilibiliFollowEvent(source, sender, timestamp));
+            }
+            case 3 -> {
+                return List.of(new BilibiliShareEvent(source, sender, timestamp));
+            }
+            default -> {
+                log.warn("未处理的直播间操作消息类型: {}, 内容: {}", msgType, data.toJSONString());
+                return List.of();
+            }
+        }
+    }
+
+    /**
+     * 解析原始新版直播间操作数据（INTERACT_WORD_V2）
+     * @param data 原始新版直播间操作数据
+     * @param source 主播信息
+     * @return 事件列表
+     */
+    private List<StarBotBaseLiveEvent> parseOperationDataV2(JSONObject data, LiveStreamerInfo source) {
+        JSONObject metaData = data.getJSONObject("data");
+        String encodedPayload = metaData.getString("pb");
+
+        InteractWordV2 payload;
+        try {
+            payload = InteractWordV2.parseFrom(Base64.getDecoder().decode(encodedPayload));
+        } catch (IOException | IllegalArgumentException e) {
+            log.error("解析直播间 {} 的 INTERACT_WORD_V2 消息异常, 内容: {}", source.getRoomId(), data.toJSONString(), e);
+            return List.of();
+        }
+
+        boolean completeEvent = properties.getLive().isCompleteEvent();
+        InteractWordV2.UserInfo userInfo = payload.getUserInfo();
+
+        long senderUid = payload.getUid();
+        String senderUname = payload.getUname();
+        String senderFace = userInfo.getBase().getFace();
+
+        FansMedal fansMedal = null;
+        InteractWordV2.FansMedalInfo medalInfo = payload.getFansMedal();
+        if (medalInfo.isPresent()) {
+            if (completeEvent) {
+                String fansMedalUname = completeUname(medalInfo.getTargetId(), source).orElse(null);
+                Long fansMedalRoomId = completeRoomId(medalInfo.getTargetId(), source).orElse(null);
+                String fansMedalFace = completeFace(medalInfo.getTargetId(), source).orElse(null);
+                fansMedal = new FansMedal(medalInfo.getTargetId(), fansMedalUname, fansMedalRoomId, fansMedalFace, medalInfo.getName(), medalInfo.getLevel(), medalInfo.isLighted());
+            } else {
+                fansMedal = new FansMedal(medalInfo.getTargetId(), null, null, medalInfo.getName(), medalInfo.getLevel(), medalInfo.isLighted());
+            }
+        }
+
+        Guard guard = payload.getPrivilegeType() == 0 ? null : new Guard(payload.getPrivilegeType());
+
+        BilibiliUserInfo sender = new BilibiliUserInfo(senderUid, senderUname, senderFace, fansMedal, guard, userInfo.getWealthLevel());
+        Instant timestamp = Instant.ofEpochSecond(payload.getTimestamp());
+        int msgType = payload.getMsgType();
+        switch (msgType) {
+            case 1 -> {
+                String promotionSource = payload.getSpreadDesc();
+                if (promotionSource != null && promotionSource.isBlank()) {
+                    promotionSource = null;
+                }
+                return List.of(new BilibiliEnterRoomEvent(source, sender, payload.isSpread(), promotionSource, timestamp));
             }
             case 2 -> {
                 return List.of(new BilibiliFollowEvent(source, sender, timestamp));

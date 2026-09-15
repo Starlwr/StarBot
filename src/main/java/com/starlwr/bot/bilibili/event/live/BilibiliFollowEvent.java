@@ -16,6 +16,7 @@ import java.time.Instant;
  * <h4>触发条件：</h4>
  * <ul>
  *     <li>INTERACT_WORD（进房、关注、分享）</li>
+ *     <li>INTERACT_WORD_V2（新版进房、关注、分享）</li>
  * </ul>
  * <h4>示例：</h4>
  * <ol>
