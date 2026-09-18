@@ -5,6 +5,8 @@ import com.starlwr.bot.bilibili.model.BilibiliLiveReportConfig
 
 data class LiveReportTargetConfig(
     val enabled: Boolean = true,
+    /** Renderer for this target: legacy or upstream. Null/blank falls back to application config. */
+    val painter: String? = null,
     val output: String = "image",
     val textFallback: Boolean = true,
     val onlyWhenNonEmpty: Boolean = false,
@@ -28,9 +30,14 @@ data class LiveReportTargetConfig(
     fun top(name: String) = rankings[name]?.coerceIn(0, 20) ?: 0
     fun chart(name: String) = charts[name] == true
 
+    fun usesUpstreamPainter(defaultPainter: String) =
+        (painter?.takeIf { it.isNotBlank() } ?: defaultPainter).equals("upstream", true)
+
     /** Convert the modern session configuration to the merged upstream renderer's module model. */
     fun toUpstreamConfig(): BilibiliLiveReportConfig = BilibiliLiveReportConfig().apply {
         setEnableBasicInfo(true)
+        setShowLiveArea(true)
+        setShowLiveTitle(true)
         setShowLiveTime(section("time"))
         setEnableChangeInfo(section("fans") || section("fans_medal") || section("guard"))
         setShowFansChange(section("fans"))
@@ -68,11 +75,26 @@ data class LiveReportTargetConfig(
         setShowSuperChatInteractionChart(chart("sc"))
         setEnableGuardAnalysis(section("guard"))
         setShowGuardDetails(section("guard") && amount("guard"))
+        setShowGuardList(section("guard_list"))
+        setEnableEnterRoomAnalysis(section("enter_room"))
+        setShowEnterRoomDetails(section("enter_room"))
+        setShowEnterRoomGrowthChart(chart("enter_room"))
+        setShowEnterRoomInteractionChart(chart("enter_room"))
+        setEnableLikeAnalysis(section("like"))
+        setShowLikeDetails(section("like"))
+        setLikeRankingLimit(top("like"))
+        setShowLikeGrowthChart(chart("like"))
+        setShowLikeInteractionChart(chart("like"))
+        setEnableShareAnalysis(section("share"))
+        setShowShareDetails(section("share"))
+        setShowShareGrowthChart(chart("share"))
+        setShowShareInteractionChart(chart("share"))
         setSequence(getSequence().filter { it != "basicInfo" })
     }
     companion object {
         val DEFAULT_SECTIONS = mapOf("time" to true, "danmu" to true, "box" to true,
-            "gift" to true, "sc" to true, "guard" to true, "fans" to false, "fans_medal" to false)
+            "gift" to true, "sc" to true, "guard" to true, "fans" to false, "fans_medal" to false,
+            "guard_list" to false, "enter_room" to false, "like" to false, "share" to false)
         val DEFAULT_AMOUNTS = mapOf("box" to true, "gift" to true, "sc" to true, "guard" to true)
         fun from(params: JSONObject?): LiveReportTargetConfig {
             if (params == null) return LiveReportTargetConfig()
@@ -86,6 +108,10 @@ data class LiveReportTargetConfig(
                     "box" -> module("enableBoxAnalysis") ?: default
                     "gift" -> module("enableGiftAnalysis") ?: default
                     "sc" -> module("enableSuperChatAnalysis") ?: default
+                    "guard_list" -> module("showGuardList") ?: default
+                    "enter_room" -> module("enableEnterRoomAnalysis") ?: default
+                    "like" -> module("enableLikeAnalysis") ?: default
+                    "share" -> module("enableShareAnalysis") ?: default
                     else -> default
                 }
             }
@@ -100,15 +126,17 @@ data class LiveReportTargetConfig(
                     else -> default
                 }
             }
-            val rankings = ReportMetric.entries.associate { metric ->
-                val key = metric.name.lowercase(); val node = rankingsJson?.getJSONObject(key)
+            val rankingKeys = ReportMetric.entries.map { it.name.lowercase() } + "like"
+            val rankings = rankingKeys.associateWith { key ->
+                val node = rankingsJson?.getJSONObject(key)
                 val moduleLimit = modulesJson?.getIntValue("${key}RankingLimit")
-                key to if (node?.getBooleanValue("enabled") == true) node.getIntValue("top", 3).coerceIn(1, 20)
+                if (node?.getBooleanValue("enabled") == true) node.getIntValue("top", 3).coerceIn(1, 20)
                 else moduleLimit?.coerceIn(0, 20) ?: 0
             }
             val chartsJson = params.getJSONObject("charts")
             val charts = (ReportMetric.entries.map { it.name.lowercase() } +
-                listOf("box_profit", "danmu_type", "danmu_sender", "gift_type", "box_profit_distribution", "box_gift_distribution"))
+                listOf("box_profit", "danmu_type", "danmu_sender", "gift_type", "box_profit_distribution", "box_gift_distribution",
+                    "enter_room", "like", "share"))
                 .associate { key ->
                     val current = chartsJson?.getJSONObject(key)?.getBooleanValue("enabled")
                     val upstream = when (key) {
@@ -122,6 +150,9 @@ data class LiveReportTargetConfig(
                         "gift" -> module("showGiftGrowthChart") == true || module("showGiftInteractionChart") == true
                         "gift_type" -> module("showGiftTypeDistributionChart")
                         "sc" -> module("showSuperChatGrowthChart") == true || module("showSuperChatInteractionChart") == true
+                        "enter_room" -> module("showEnterRoomGrowthChart") == true || module("showEnterRoomInteractionChart") == true
+                        "like" -> module("showLikeGrowthChart") == true || module("showLikeInteractionChart") == true
+                        "share" -> module("showShareGrowthChart") == true || module("showShareInteractionChart") == true
                         else -> null
                     }
                     key to (current ?: upstream ?: false)
@@ -129,7 +160,8 @@ data class LiveReportTargetConfig(
             val cloud = params.getJSONObject("word_cloud")
             val upstreamCloud = module("showDanmuWordCloud") == true
             return LiveReportTargetConfig(
-                enabled = params.getBooleanValue("enabled", true), output = params.getString("output") ?: "image",
+                enabled = params.getBooleanValue("enabled", true), painter = params.getString("painter"),
+                output = params.getString("output") ?: "image",
                 textFallback = params.getBooleanValue("text_fallback", true),
                 onlyWhenNonEmpty = params.getBooleanValue("only_when_non_empty", false),
                 atAll = params.getBooleanValue("at_all", false), sections = sections, amounts = amounts,

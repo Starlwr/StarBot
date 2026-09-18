@@ -327,6 +327,10 @@ public class BilibiliLiveReportConfig {
     public void setEnableBasicInfo(boolean value) { enableBasicInfo = value; }
     public boolean isShowLiveTime() { return showLiveTime; }
     public void setShowLiveTime(boolean value) { showLiveTime = value; }
+    public boolean isShowLiveArea() { return showLiveArea; }
+    public void setShowLiveArea(boolean value) { showLiveArea = value; }
+    public boolean isShowLiveTitle() { return showLiveTitle; }
+    public void setShowLiveTitle(boolean value) { showLiveTitle = value; }
     public boolean isEnableChangeInfo() { return enableChangeInfo; }
     public void setEnableChangeInfo(boolean value) { enableChangeInfo = value; }
     public boolean isShowFansChange() { return showFansChange; }
@@ -399,4 +403,32 @@ public class BilibiliLiveReportConfig {
     public void setEnableGuardAnalysis(boolean value) { enableGuardAnalysis = value; }
     public boolean isShowGuardDetails() { return showGuardDetails; }
     public void setShowGuardDetails(boolean value) { showGuardDetails = value; }
+    public boolean isShowGuardList() { return showGuardList; }
+    public void setShowGuardList(boolean value) { showGuardList = value; }
+    public boolean isEnableEnterRoomAnalysis() { return enableEnterRoomAnalysis; }
+    public void setEnableEnterRoomAnalysis(boolean value) { enableEnterRoomAnalysis = value; }
+    public boolean isShowEnterRoomDetails() { return showEnterRoomDetails; }
+    public void setShowEnterRoomDetails(boolean value) { showEnterRoomDetails = value; }
+    public boolean isShowEnterRoomGrowthChart() { return showEnterRoomGrowthChart; }
+    public void setShowEnterRoomGrowthChart(boolean value) { showEnterRoomGrowthChart = value; }
+    public boolean isShowEnterRoomInteractionChart() { return showEnterRoomInteractionChart; }
+    public void setShowEnterRoomInteractionChart(boolean value) { showEnterRoomInteractionChart = value; }
+    public boolean isEnableLikeAnalysis() { return enableLikeAnalysis; }
+    public void setEnableLikeAnalysis(boolean value) { enableLikeAnalysis = value; }
+    public boolean isShowLikeDetails() { return showLikeDetails; }
+    public void setShowLikeDetails(boolean value) { showLikeDetails = value; }
+    public int getLikeRankingLimit() { return likeRankingLimit; }
+    public void setLikeRankingLimit(int value) { likeRankingLimit = value; }
+    public boolean isShowLikeGrowthChart() { return showLikeGrowthChart; }
+    public void setShowLikeGrowthChart(boolean value) { showLikeGrowthChart = value; }
+    public boolean isShowLikeInteractionChart() { return showLikeInteractionChart; }
+    public void setShowLikeInteractionChart(boolean value) { showLikeInteractionChart = value; }
+    public boolean isEnableShareAnalysis() { return enableShareAnalysis; }
+    public void setEnableShareAnalysis(boolean value) { enableShareAnalysis = value; }
+    public boolean isShowShareDetails() { return showShareDetails; }
+    public void setShowShareDetails(boolean value) { showShareDetails = value; }
+    public boolean isShowShareGrowthChart() { return showShareGrowthChart; }
+    public void setShowShareGrowthChart(boolean value) { showShareGrowthChart = value; }
+    public boolean isShowShareInteractionChart() { return showShareInteractionChart; }
+    public void setShowShareInteractionChart(boolean value) { showShareInteractionChart = value; }
 }
