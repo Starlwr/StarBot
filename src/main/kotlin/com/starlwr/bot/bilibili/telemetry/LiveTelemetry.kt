@@ -121,7 +121,6 @@ class WebLogSession(
                 applyResponse(send("https://data.bilivideo.com/log/web/te9Kl", includeCsn = false))
                 qid++
                 applyResponse(send("https://data.bilivideo.com/log/web/te9Kl", includeCsn = true))
-                qid++
             }
             if (result.isSuccess) {
                 failures = 0

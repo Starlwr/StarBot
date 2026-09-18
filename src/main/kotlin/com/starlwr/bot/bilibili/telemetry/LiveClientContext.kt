@@ -38,6 +38,7 @@ class PlayUrlProvider(
 ) {
     private val cache = ConcurrentHashMap<Long, PlayUrlLease>()
     private val inFlight = ConcurrentHashMap<Long, CompletableFuture<PlayUrlLease>>()
+    private val lineIndex = ConcurrentHashMap<Long, Int>()
 
     fun current(roomId: Long): PlayUrlLease? = cache[roomId]?.takeUnless { it.needsRefresh() }
 
@@ -73,21 +74,27 @@ class PlayUrlProvider(
         val playurl = data.getJSONObject("playurl_info")?.getJSONObject("playurl")
             ?: error("getRoomPlayInfo omitted playurl")
         val streams = playurl.getJSONArray("stream") ?: error("getRoomPlayInfo omitted streams")
-        var selected: String? = null
-        outer@ for (stream in streams.toList(com.alibaba.fastjson2.JSONObject::class.java)) {
+        val candidates = mutableListOf<String>()
+        for (stream in streams.toList(com.alibaba.fastjson2.JSONObject::class.java)) {
             for (format in stream.getJSONArray("format").orEmpty().filterIsInstance<com.alibaba.fastjson2.JSONObject>()) {
                 for (codec in format.getJSONArray("codec").orEmpty().filterIsInstance<com.alibaba.fastjson2.JSONObject>()) {
                     val base = codec.getString("base_url") ?: continue
                     val infos = codec.getJSONArray("url_info") ?: continue
-                    val info = infos.getJSONObject(0) ?: continue
-                    selected = info.getString("host").orEmpty() + base + info.getString("extra").orEmpty()
-                    if (selected!!.startsWith("https://")) break@outer
+                    for (info in infos.toList(com.alibaba.fastjson2.JSONObject::class.java)) {
+                        val candidate = info.getString("host").orEmpty() + base + info.getString("extra").orEmpty()
+                        if (candidate.startsWith("https://")) candidates += candidate
+                    }
                 }
             }
         }
-        val url = selected ?: error("getRoomPlayInfo contained no playable URL")
+        require(candidates.isNotEmpty()) { "getRoomPlayInfo contained no playable URL" }
+        val index = lineIndex.compute(roomId) { _, old -> ((old ?: -1) + 1) % candidates.size } ?: 0
+        val url = candidates[index]
         val now = Instant.now()
-        val expiry = parseExpiry(url)?.takeIf { it > now.epochSecond + 60 } ?: now.epochSecond + 300
+        val serverTtl = playurl.getLongValue("stream_ttl", data.getLongValue("stream_ttl", 0L))
+        val expiry = parseExpiry(url)?.takeIf { it > now.epochSecond + 60 }
+            ?: serverTtl.takeIf { it > 1 }?.let { now.epochSecond + it }
+            ?: now.epochSecond + 1800
         return PlayUrlLease(
             roomId = data.getLongValue("room_id", roomId), anchorUid = data.getLongValue("uid"),
             areaId = data.getLongValue("area_id"), parentAreaId = data.getLongValue("parent_area_id"),

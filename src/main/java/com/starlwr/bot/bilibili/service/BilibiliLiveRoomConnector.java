@@ -830,9 +830,7 @@ public class BilibiliLiveRoomConnector {
                                 if (!connector.acknowledgeMessage(data, context)) {
                                     continue;
                                 }
-                                Optional<StarBotBaseLiveEvent> optionalEvent = connector.eventParser.parse(data, up);
-                                if (optionalEvent.isPresent()) {
-                                    StarBotBaseLiveEvent event = optionalEvent.get();
+                                for (StarBotBaseLiveEvent event : connector.eventParser.parseMany(data, up)) {
 
                                     if (connector.properties.getLive().isAutoDetectLiveRoomRisk()) {
                                         if (event instanceof BilibiliDanmuEvent danmuEvent) {
