@@ -15,7 +15,7 @@ import java.time.Instant;
  * <h3>Bilibili 开通总督事件</h3>
  * <h4>触发条件：</h4>
  * <ul>
- *     <li>USER_TOAST_MSG（开通舰长、提督、总督）</li>
+ *     <li>USER_TOAST_MSG_V2（开通舰长、提督、总督）</li>
  * </ul>
  * <h4>示例：</h4>
  * <p>参见 {@link BilibiliCaptainEvent}</p>
