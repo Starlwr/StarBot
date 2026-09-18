@@ -54,7 +54,7 @@ public class BilibiliEventParser {
             Map.entry("SEND_GIFT", BilibiliEventParser.this::parseGiftData),
             Map.entry("SEND_GIFT_V2", BilibiliEventParser.this::parseGiftDataV2),
             Map.entry("SUPER_CHAT_MESSAGE", BilibiliEventParser.this::parseSuperChatData),
-            Map.entry("USER_TOAST_MSG", BilibiliEventParser.this::parseGuardData),
+            Map.entry("USER_TOAST_MSG_V2", BilibiliEventParser.this::parseGuardDataV2),
             Map.entry("LIKE_INFO_V3_CLICK", BilibiliEventParser.this::parseLikeData),
             Map.entry("LIKE_INFO_V3_UPDATE", BilibiliEventParser.this::parseLikeUpdateData)
     );
@@ -554,41 +554,45 @@ public class BilibiliEventParser {
     }
 
     /**
-     * 解析原始直播间大航海数据（USER_TOAST_MSG）
+     * 解析原始直播间大航海数据（USER_TOAST_MSG_V2）
      * @param data 原始直播间大航海数据
      * @param source 主播信息
      * @return 事件
      */
-    private List<StarBotBaseLiveEvent> parseGuardData(JSONObject data, LiveStreamerInfo source) {
+    private List<StarBotBaseLiveEvent> parseGuardDataV2(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONObject metaData = data.getJSONObject("data");
 
-        Long senderUid = metaData.getLong("uid");
-        String senderUname = metaData.getString("username");
+        JSONObject senderInfo = metaData.getJSONObject("sender_uinfo");
+        JSONObject senderBaseInfo = senderInfo.getJSONObject("base");
+        Long senderUid = senderInfo.getLong("uid");
+        String senderUname = senderBaseInfo.getString("name");
         String senderFace = null;
         if (completeEvent) {
             senderFace = completeFace(senderUid, source).orElse(null);
         }
 
-        Integer guardLevel = metaData.getInteger("guard_level");
+        JSONObject guardInfo = metaData.getJSONObject("guard_info");
+        Integer guardLevel = guardInfo.getInteger("guard_level");
         String guardIcon = null;
         if (completeEvent) {
-            guardIcon = giftService.getGuardIcon(metaData.getString("role_name")).orElse(null);
+            guardIcon = giftService.getGuardIcon(guardInfo.getString("role_name")).orElse(null);
         }
         Guard guard = new Guard(guardLevel, guardIcon);
 
         BilibiliUserInfo sender = new BilibiliUserInfo(senderUid, senderUname, senderFace, null, guard, null);
 
-        GuardOperateType operateType = GuardOperateType.of(metaData.getInteger("op_type"));
+        GuardOperateType operateType = GuardOperateType.of(guardInfo.getInteger("op_type"));
 
-        double price = MathUtil.divide(metaData.getInteger("price"), 1000.0);
+        JSONObject payInfo = metaData.getJSONObject("pay_info");
+        double price = MathUtil.divide(payInfo.getInteger("price"), 1000.0);
 
-        Integer count = metaData.getInteger("num");
+        Integer count = payInfo.getInteger("num");
 
-        String unit = metaData.getString("unit");
+        String unit = payInfo.getString("unit");
 
-        Instant timestamp = Instant.ofEpochSecond(metaData.getLong("start_time"));
+        Instant timestamp = Instant.ofEpochSecond(guardInfo.getLong("start_time"));
 
         switch (guardLevel) {
             case 1 -> {

@@ -3,7 +3,9 @@ package com.starlwr.bot.bilibili.service;
 import com.alibaba.fastjson2.JSONObject;
 import com.google.protobuf.CodedOutputStream;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.bilibili.enums.GuardType;
+import com.starlwr.bot.bilibili.event.live.BilibiliCaptainEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliEnterRoomEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliFollowEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliFreeGiftEvent;
@@ -21,6 +23,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -28,29 +31,35 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Bilibili 直播事件解析器测试
  * <p>
  * 通过手动构造 INTERACT_WORD_V2 与 SEND_GIFT_V2 protobuf 数据验证字段解析与事件转换，
- * 同时使用真实数据覆盖进场、关注、分享、付费礼物、免费礼物和一条消息包含多个盲盒结果的场景。
+ * 同时使用真实数据覆盖进房、关注、分享、付费礼物、免费礼物和一条消息包含多个盲盒结果的场景。
  * BilibiliApiUtil 与 BilibiliGiftService 使用 Mockito mock，避免测试依赖网络请求
  */
 class BilibiliEventParserTest {
     /**
-     * 真实进场数据，来自 INTERACT_WORD_V2.log
+     * 真实进房数据
      */
     private static final String REAL_INTERACT_ENTER = "CNXghQYSCVBORVVNQTM3MyIBASgBMPS/7Ao4zu3k1AZA6q34s4Y0YgB4h+WknpP98OgYmgEAsgFkCNXghQYSVwoJUE5FVU1BMzczEkpodHRwczovL2kwLmhkc2xiLmNvbS9iZnMvZmFjZS80NjJlZTMzYjFmYzVmOWE1NTEyYmQ0NzRlODg1NTczYWRmN2E5NzE2LmpwZyICCAoyALoBAMIBAA==";
 
     /**
-     * 真实关注数据，来自 INTERACT_WORD_V2.log
+     * 真实关注数据
      */
     private static final String REAL_INTERACT_FOLLOW = "CP36uwoSD+i9r+ezluWwj+m8oOmFsSIBASgCMPS/7Ao4x+/k1AZA4caHtIY0SgBiAHjdzKe+r4Tx6BiaAQCyAdMBCP36uwoSyQEKD+i9r+ezluWwj+m8oOmFsRJKaHR0cHM6Ly9pMS5oZHNsYi5jb20vYmZzL2ZhY2UvNDVlZjQ0MmFhOTYxNTk2NmFhNDg1Y2Q2N2ZhZTdiYjViMTA2MjYxMC5qcGcyXQoP6L2v57OW5bCP6byg6YWxEkpodHRwczovL2kxLmhkc2xiLmNvbS9iZnMvZmFjZS80NWVmNDQyYWE5NjE1OTY2YWE0ODVjZDY3ZmFlN2JiNWIxMDYyNjEwLmpwZzoLIP///////////wEyALoBAA==";
 
     /**
-     * 真实分享数据，来自用户提供的 INTERACT_WORD_V2 数据
+     * 真实分享数据
      */
     private static final String REAL_INTERACT_SHARE = "CJ3N6wwSCW1pa3VmaWxjayICAwEoAzDwxdkOOLL/484GQKHWmMPXM0oxCOeVgKuwraYGEBUaCeWBmueMq+eahCDLqGkoy6hpMJK7ygI4y6hpQAFg8MXZDmjsE2IAeKbf5aPU38DSGJoBALIBrgIInc3rDBK9AQoJbWlrdWZpbGNrEkpodHRwczovL2kyLmhkc2xiLmNvbS9iZnMvZmFjZS82YTBkZDM2YmE3ZmExOGU4NGM2NTI3Yzg3YmViYTAyYTVkMmRlM2Y5LmpwZzJXCgltaWt1ZmlsY2sSSmh0dHBzOi8vaTIuaGRzbGIuY29tL2Jmcy9mYWNlLzZhMGRkMzZiYTdmYTE4ZTg0YzY1MjdjODdiZWJhMDJhNWQyZGUzZjkuanBnOgsg////////////ARplCgnlgZrnjKvnmoQQFRjLqGkgkrvKAijLqGkwy6hpSAFQ55WAq7CtpgZg7BN6CSMzRkI0RjY5OYIBCSMzRkI0RjY5OYoBCSMzRkI0RjY5OZIBByNGRkZGRkaaAQkjM0ZCNEY2RTYyALoBAA==";
+
+    /**
+     * 真实续费舰长数据
+     */
+    private static final String REAL_GUARD = "{\"cmd\":\"USER_TOAST_MSG_V2\",\"data\":{\"sender_uinfo\":{\"uid\":404239497,\"base\":{\"name\":\"洛洛溪水宝宝\",\"face\":\"\"}},\"receiver_uinfo\":{\"uid\":426636991,\"base\":{\"name\":\"羊羊提不起劲\",\"face\":\"https://i1.hdslb.com/bfs/face/8a28edbea7311013cae61b228bc5795e9670c939.jpg\"}},\"guard_info\":{\"guard_level\":3,\"role_name\":\"舰长\",\"room_guard_count\":24,\"op_type\":2,\"start_time\":1789456843,\"end_time\":1789456843},\"pay_info\":{\"payflow_id\":\"2609151520110632194971554\",\"price\":168000,\"num\":1,\"unit\":\"月\"},\"gift_info\":{\"gift_id\":10003},\"effect_info\":{\"effect_id\":397,\"room_effect_id\":590,\"face_effect_id\":44,\"room_gift_effect_id\":0,\"room_group_effect_id\":1337,\"ship_effect_id\":590},\"toast_msg\":\"<%洛洛溪水宝宝%> 在主播羊羊提不起劲的直播间续费了舰长，今天是TA陪伴主播的第30天\",\"option\":{\"anchor_show\":true,\"user_show\":true,\"is_group\":0,\"is_show\":0,\"source\":0,\"svga_block\":0,\"color\":\"#00D1F1\"}}}";
 
     /**
      * 真实付费礼物数据
@@ -264,6 +273,54 @@ class BilibiliEventParserTest {
         assertTrue(sender.getFansMedal().getIsLighted());
         assertNull(sender.getGuard());
         assertEquals(1_775_828_914_000L, event.getTimestamp());
+    }
+
+    /**
+     * 测试解析真实续费舰长数据
+     */
+    @Test
+    void parsesRealGuard() {
+        List<StarBotBaseLiveEvent> events = parser.parseEvents(JSONObject.parseObject(REAL_GUARD), source);
+
+        assertEquals(1, events.size());
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class, events.get(0));
+        assertEquals(GuardType.Captain, event.getType());
+        assertEquals(GuardOperateType.RENEWAL, event.getOperateType());
+        assertEquals(168.0, event.getPrice());
+        assertEquals(1, event.getCount());
+        assertEquals("月", event.getUnit());
+        assertEquals(1_789_456_843_000L, event.getTimestamp());
+
+        BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, event.getSender());
+        assertEquals(404239497L, sender.getUid());
+        assertEquals("洛洛溪水宝宝", sender.getUname());
+        assertNull(sender.getFace());
+        assertEquals(GuardType.Captain, sender.getGuard().getGuardType());
+        assertNull(sender.getGuard().getIcon());
+        assertNull(sender.getFansMedal());
+        assertNull(sender.getHonorLevel());
+    }
+
+    /**
+     * 测试开启事件信息自动补全后补充大航海用户头像和图标
+     */
+    @Test
+    void completesRealGuardUserInfoWhenEnabled() {
+        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        properties.getLive().setCompleteEvent(true);
+        BilibiliApiUtil bilibili = mock(BilibiliApiUtil.class);
+        BilibiliGiftService giftService = mock(BilibiliGiftService.class);
+        when(bilibili.getFaceByUid(404239497L)).thenReturn(Optional.of("https://example.com/sender-face.png"));
+        when(giftService.getGuardIcon("舰长")).thenReturn(Optional.of("https://example.com/guard-icon.png"));
+        parser = new BilibiliEventParser(properties, bilibili, giftService);
+
+        List<StarBotBaseLiveEvent> events = parser.parseEvents(JSONObject.parseObject(REAL_GUARD), source);
+
+        assertEquals(1, events.size());
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class, events.get(0));
+        BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, event.getSender());
+        assertEquals("https://example.com/sender-face.png", sender.getFace());
+        assertEquals("https://example.com/guard-icon.png", sender.getGuard().getIcon());
     }
 
     /**
