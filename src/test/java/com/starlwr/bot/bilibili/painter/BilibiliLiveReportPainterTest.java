@@ -354,6 +354,8 @@ public class BilibiliLiveReportPainterTest {
         config.setEnableGuardAnalysis(true);
         config.setShowGuardDetails(true);
         config.setShowGuardList(true);
+        config.setShowGuardOperateTypeMonthDistributionChart(true);
+        config.setShowGuardOperateTypeUserDistributionChart(true);
 
         // 进房分析模块
         config.setEnableEnterRoomAnalysis(true);

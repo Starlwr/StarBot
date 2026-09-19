@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.painter;
 import com.alibaba.fastjson2.JSONObject;
 import com.huaban.analysis.jieba.SegToken;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.bilibili.enums.GuardType;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportConfig;
 import com.starlwr.bot.bilibili.model.Room;
@@ -84,6 +85,10 @@ public class BilibiliLiveReportPainter {
     private final Color COLOR_GUARD_COMMANDER = new Color(255, 0, 255);
 
     private final Color COLOR_GUARD_CAPTAIN = new Color(0, 191, 255);
+
+    private final Color COLOR_GUARD_ACTIVATION = new Color(229, 72, 77);
+
+    private final Color COLOR_GUARD_RENEWAL = new Color(22, 119, 255);
 
     private final Color COLOR_PINK = new Color(251, 114, 153);
 
@@ -1062,23 +1067,65 @@ public class BilibiliLiveReportPainter {
         long governorMonths = grouped.getOrDefault(GuardType.Governor, List.of()).stream().mapToLong(json -> json.getLongValue("count")).sum();
 
         if (config.isShowGuardDetails()) {
-            List<TextWithStyle> tips = new ArrayList<>();
-            if (captainMonths > 0) {
-                tips.add(new TextWithStyle("舰长 × " + captainMonths, CommonPainter.TEXT_FONT_SIZE, COLOR_GUARD_CAPTAIN));
+            long captainUsers = grouped.getOrDefault(GuardType.Captain, List.of()).stream().map(json -> json.getString("sender")).filter(StringUtil::isNotBlank).distinct().count();
+            long commanderUsers = grouped.getOrDefault(GuardType.Commander, List.of()).stream().map(json -> json.getString("sender")).filter(StringUtil::isNotBlank).distinct().count();
+            long governorUsers = grouped.getOrDefault(GuardType.Governor, List.of()).stream().map(json -> json.getString("sender")).filter(StringUtil::isNotBlank).distinct().count();
+            int detailFontSize = CommonPainter.TIP_FONT_SIZE;
+            int valueFontSize = 18;
+            int labelValueGap = 6;
+            String[] labels = {"舰长 ×", "提督 ×", "总督 ×"};
+            long[] months = {captainMonths, commanderMonths, governorMonths};
+            long[] users = {captainUsers, commanderUsers, governorUsers};
+            Color[] colors = {COLOR_GUARD_CAPTAIN, COLOR_GUARD_COMMANDER, COLOR_GUARD_GOVERNOR};
+            String separator = " / ";
+            Pair<Integer, Integer> separatorSize = this.painter.getStringWidthAndHeight(separator, detailFontSize);
+            int[] labelWidths = new int[labels.length];
+            int[] labelHeights = new int[labels.length];
+            int[] monthWidths = new int[labels.length];
+            int[] monthHeights = new int[labels.length];
+            int[] userWidths = new int[labels.length];
+            int[] userHeights = new int[labels.length];
+            int[] valueWidths = new int[labels.length];
+            int[] groupWidths = new int[labels.length];
+            int detailWidth = separatorSize.getFirst() * (labels.length - 1);
+            int detailHeight = 0;
+            for (int i = 0; i < labels.length; i++) {
+                Pair<Integer, Integer> labelSize = this.painter.getStringWidthAndHeight(labels[i], detailFontSize);
+                Pair<Integer, Integer> monthSize = this.painter.getStringWidthAndHeight(months[i] + " 月", valueFontSize);
+                Pair<Integer, Integer> userSize = this.painter.getStringWidthAndHeight(users[i] + " 人", valueFontSize);
+                labelWidths[i] = labelSize.getFirst();
+                labelHeights[i] = labelSize.getSecond();
+                monthWidths[i] = monthSize.getFirst();
+                monthHeights[i] = monthSize.getSecond();
+                userWidths[i] = userSize.getFirst();
+                userHeights[i] = userSize.getSecond();
+                valueWidths[i] = Math.max(monthWidths[i], userWidths[i]);
+                groupWidths[i] = labelWidths[i] + labelValueGap + valueWidths[i];
+                detailWidth += groupWidths[i];
+                detailHeight = Math.max(detailHeight, Math.max(labelHeights[i], monthHeights[i] + userHeights[i]));
             }
-            if (commanderMonths > 0) {
-                if (!CollectionUtils.isEmpty(tips)) {
-                    tips.add(new TextWithStyle(" / ", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
+
+            int titleY = this.painter.getY();
+            int titleHeight = this.painter.getStringWidthAndHeight("大航海分析", CommonPainter.CHAPTER_FONT_SIZE).getSecond() + 16;
+            drawTitle("大航海分析");
+            int detailX = this.painter.getWidth() - MARGIN * 2 - detailWidth;
+            int detailY = titleY + (titleHeight - detailHeight) / 2;
+            for (int i = 0; i < labels.length; i++) {
+                int labelY = detailY + (detailHeight - labelHeights[i]) / 2;
+                this.painter.drawTextWithStyle(List.of(new TextWithStyle(labels[i], detailFontSize, colors[i])), new Point(detailX, labelY));
+
+                int valueX = detailX + labelWidths[i] + labelValueGap;
+                int valueY = detailY + (detailHeight - monthHeights[i] - userHeights[i]) / 2;
+                this.painter.drawTextWithStyle(List.of(new TextWithStyle(months[i] + " 月", valueFontSize, colors[i])), new Point(valueX + (valueWidths[i] - monthWidths[i]) / 2, valueY));
+                this.painter.drawTextWithStyle(List.of(new TextWithStyle(users[i] + " 人", valueFontSize, colors[i])), new Point(valueX + (valueWidths[i] - userWidths[i]) / 2, valueY + monthHeights[i]));
+
+                detailX += groupWidths[i];
+                if (i < labels.length - 1) {
+                    int separatorY = detailY + (detailHeight - separatorSize.getSecond()) / 2;
+                    this.painter.drawTextWithStyle(List.of(new TextWithStyle(separator, detailFontSize, COLOR_DEEP_PURPLE)), new Point(detailX, separatorY));
+                    detailX += separatorSize.getFirst();
                 }
-                tips.add(new TextWithStyle("提督 × " + commanderMonths, CommonPainter.TEXT_FONT_SIZE, COLOR_GUARD_COMMANDER));
             }
-            if (governorMonths > 0) {
-                if (!CollectionUtils.isEmpty(tips)) {
-                    tips.add(new TextWithStyle(" / ", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
-                }
-                tips.add(new TextWithStyle("总督 × " + governorMonths, CommonPainter.TEXT_FONT_SIZE, COLOR_GUARD_GOVERNOR));
-            }
-            drawTitle("大航海分析", tips);
         } else {
             drawTitle("大航海分析");
         }
@@ -1090,6 +1137,10 @@ public class BilibiliLiveReportPainter {
             int faceSize = 100;
             int iconSize = 150;
             int textSize = 20;
+            int badgeTextSize = 16;
+            int badgeHorizontalPadding = 8;
+            int badgeVerticalPadding = 4;
+            int badgeGap = 6;
             int lineCount = 3;
 
             // 各类型图标
@@ -1149,16 +1200,85 @@ public class BilibiliLiveReportPainter {
                         if (userInfo != null) {
                             String uname = StringUtil.getOmitString(userInfo.getUname(), 8);
                             String countText = guard.getIntValue("count") + " 月";
+                            String operateType = guard.getString("operateType");
+                            String badgeText;
+                            Color badgeColor;
+                            if (GuardOperateType.ACTIVATION.name().equals(operateType)) {
+                                badgeText = GuardOperateType.ACTIVATION.getName();
+                                badgeColor = COLOR_GUARD_ACTIVATION;
+                            } else if (GuardOperateType.RENEWAL.name().equals(operateType)) {
+                                badgeText = GuardOperateType.RENEWAL.getName();
+                                badgeColor = COLOR_GUARD_RENEWAL;
+                            } else {
+                                badgeText = GuardOperateType.UNKNOWN.getName();
+                                badgeColor = Color.GRAY;
+                            }
                             Pair<Integer, Integer> unameSize = this.painter.getStringWidthAndHeight(uname, textSize);
                             Pair<Integer, Integer> countSize = this.painter.getStringWidthAndHeight(countText, textSize);
+                            Pair<Integer, Integer> badgeTextBounds = this.painter.getStringWidthAndHeight(badgeText, badgeTextSize);
+                            int badgeWidth = badgeTextBounds.getFirst() + badgeHorizontalPadding * 2;
+                            int badgeHeight = badgeTextBounds.getSecond() + badgeVerticalPadding * 2;
+                            int infoWidth = badgeWidth + badgeGap + countSize.getFirst();
                             int textY = y + iconSize + 10;
                             this.painter.drawTextWithStyle(List.of(new TextWithStyle(uname, textSize, color)), new Point(x + (iconSize - unameSize.getFirst()) / 2, textY));
-                            this.painter.drawTextWithStyle(List.of(new TextWithStyle(countText, textSize, Color.BLACK)), new Point(x + (iconSize - countSize.getFirst()) / 2, textY + textSize + 6));
+                            int infoX = x + (iconSize - infoWidth) / 2;
+                            int infoY = textY + unameSize.getSecond() + 10;
+                            this.painter.drawRoundedRectangle(infoX, infoY, badgeWidth, badgeHeight, badgeHeight, badgeColor);
+                            this.painter.drawTextWithStyle(List.of(new TextWithStyle(badgeText, badgeTextSize, Color.WHITE)), new Point(infoX + badgeHorizontalPadding, infoY + badgeVerticalPadding));
+                            this.painter.drawTextWithStyle(List.of(new TextWithStyle(countText, textSize, Color.BLACK)), new Point(infoX + badgeWidth + badgeGap, infoY + (badgeHeight - countSize.getSecond()) / 2));
                         }
                     }
-                    this.painter.setPos(MARGIN, y + iconSize + textSize * 2 + 20 + this.painter.getRowSpace());
+                    this.painter.setPos(MARGIN, y + iconSize + textSize * 2 + 44 + this.painter.getRowSpace());
                 }
             }
+        }
+
+        // 大航海开通类型分布图（按月统计）
+        if (config.isShowGuardOperateTypeMonthDistributionChart()) {
+            long activationMonths = guards.stream()
+                    .filter(json -> GuardOperateType.ACTIVATION.name().equals(json.getString("operateType")))
+                    .mapToLong(json -> json.getLongValue("count"))
+                    .sum();
+            long renewalMonths = guards.stream()
+                    .filter(json -> GuardOperateType.RENEWAL.name().equals(json.getString("operateType")))
+                    .mapToLong(json -> json.getLongValue("count"))
+                    .sum();
+
+            List<ChartPainter.DistributionSlice> slices = new ArrayList<>();
+            if (activationMonths > 0) {
+                slices.add(new ChartPainter.DistributionSlice(GuardOperateType.ACTIVATION.getName(), activationMonths));
+            }
+            if (renewalMonths > 0) {
+                slices.add(new ChartPainter.DistributionSlice(GuardOperateType.RENEWAL.getName(), renewalMonths));
+            }
+
+            drawSection("开通类型分布图 (按月统计)");
+            ChartPainter.renderDistributionChart(slices, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
+        }
+
+        // 大航海开通类型分布图（按人数统计）
+        if (config.isShowGuardOperateTypeUserDistributionChart()) {
+            long activationUsers = guards.stream()
+                    .filter(json -> GuardOperateType.ACTIVATION.name().equals(json.getString("operateType")))
+                    .map(json -> json.getString("sender"))
+                    .distinct()
+                    .count();
+            long renewalUsers = guards.stream()
+                    .filter(json -> GuardOperateType.RENEWAL.name().equals(json.getString("operateType")))
+                    .map(json -> json.getString("sender"))
+                    .distinct()
+                    .count();
+
+            List<ChartPainter.DistributionSlice> slices = new ArrayList<>();
+            if (activationUsers > 0) {
+                slices.add(new ChartPainter.DistributionSlice(GuardOperateType.ACTIVATION.getName(), activationUsers));
+            }
+            if (renewalUsers > 0) {
+                slices.add(new ChartPainter.DistributionSlice(GuardOperateType.RENEWAL.getName(), renewalUsers));
+            }
+
+            drawSection("开通类型分布图 (按人数统计)");
+            ChartPainter.renderDistributionChart(slices, CHART_WIDTH, font).ifPresent(this.painter::drawImage);
         }
 
         this.painter.setPos(MARGIN, this.painter.getY() + 25);

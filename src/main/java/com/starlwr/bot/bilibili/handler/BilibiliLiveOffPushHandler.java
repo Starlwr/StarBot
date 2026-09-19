@@ -99,6 +99,8 @@ import java.util.concurrent.TimeUnit;
  *             "enableGuardAnalysis": true,
  *             "showGuardDetails": true,
  *             "showGuardList": true,
+ *             "showGuardOperateTypeMonthDistributionChart": true,
+ *             "showGuardOperateTypeUserDistributionChart": true,
  *             "enableEnterRoomAnalysis": true,
  *             "showEnterRoomDetails": true,
  *             "showEnterRoomGrowthChart": true,
@@ -295,6 +297,8 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
         modules.put("enableGuardAnalysis", true);
         modules.put("showGuardDetails", true);
         modules.put("showGuardList", true);
+        modules.put("showGuardOperateTypeMonthDistributionChart", true);
+        modules.put("showGuardOperateTypeUserDistributionChart", true);
         modules.put("enableEnterRoomAnalysis", true);
         modules.put("showEnterRoomDetails", true);
         modules.put("showEnterRoomGrowthChart", true);

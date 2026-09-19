@@ -239,7 +239,7 @@ public class BilibiliLiveReportConfig {
     private boolean enableGuardAnalysis;
 
     /**
-     * 是否展示本场直播开通大航海数
+     * 是否展示本场直播开通大航海月数、开通大航海人数
      */
     private boolean showGuardDetails;
 
@@ -247,6 +247,16 @@ public class BilibiliLiveReportConfig {
      * 是否展示本场直播开通大航海观众列表
      */
     private boolean showGuardList;
+
+    /**
+     * 是否展示本场直播大航海开通类型分布图（按月统计）
+     */
+    private boolean showGuardOperateTypeMonthDistributionChart;
+
+    /**
+     * 是否展示本场直播大航海开通类型分布图（按人数统计）
+     */
+    private boolean showGuardOperateTypeUserDistributionChart;
 
     // ================ 进房分析 ================
 
