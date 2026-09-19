@@ -53,7 +53,7 @@ import static org.mockito.Mockito.when;
  * 保证生成的直播报告图片与生产环境绘制行为一致。
  * <p>
  * 覆盖：基础信息、数据变动（diff 三态）、弹幕分析（排行榜/曲线/分布/词云）、盲盒分析、礼物分析、
- * SC（醒目留言）分析、大航海分析、进房分析、点赞分析、分享分析全部模块；报告图片输出至 TestLiveReport 目录，
+ * SC（醒目留言）分析、大航海分析、进房分析全部模块；报告图片输出至 TestLiveReport 目录，
  * 并验证词云分词调试文件（WordCloudDebug 目录）的生成与清理
  */
 public class BilibiliLiveReportPainterTest {
@@ -163,11 +163,6 @@ public class BilibiliLiveReportPainterTest {
         userInfos.put(70001L, new UserInfo(70001L, "进房常客", "https://example.com/face27.jpg"));
         userInfos.put(70002L, new UserInfo(70002L, "路过观众", "https://example.com/face28.jpg"));
         userInfos.put(70003L, new UserInfo(70003L, "串门者", "https://example.com/face29.jpg"));
-        userInfos.put(80001L, new UserInfo(80001L, "点赞狂魔", "https://example.com/face30.jpg"));
-        userInfos.put(80002L, new UserInfo(80002L, "点赞粉丝", "https://example.com/face31.jpg"));
-        userInfos.put(80003L, new UserInfo(80003L, "路过点赞", "https://example.com/face32.jpg"));
-        userInfos.put(90001L, new UserInfo(90001L, "分享达人", "https://example.com/face33.jpg"));
-        userInfos.put(90002L, new UserInfo(90002L, "热心观众", "https://example.com/face34.jpg"));
         when(bilibili.getUserInfoByUids(anySet())).thenReturn(userInfos);
         Room room = new Room(UID, "测试主播", ROOM_ID, "https://example.com/face.jpg", 1,
                 1784617225000L, "今晚测试直播标题", "https://example.com/cover.jpg", "虚拟主播", "综合");
@@ -198,8 +193,6 @@ public class BilibiliLiveReportPainterTest {
         when(liveDataService.getSuperChat(eq(PLATFORM), eq(UID), eq(JSONObject.class))).thenReturn(createSuperChats());
         when(liveDataService.getMemberShip(eq(PLATFORM), eq(UID), eq(JSONObject.class))).thenReturn(createGuards());
         when(liveDataService.getEnterRoom(eq(PLATFORM), eq(UID), eq(JSONObject.class))).thenReturn(createEnterRooms());
-        when(liveDataService.getLike(eq(PLATFORM), eq(UID), eq(JSONObject.class))).thenReturn(createLikes());
-        when(liveDataService.getShare(eq(PLATFORM), eq(UID), eq(JSONObject.class))).thenReturn(createShares());
 
         // ================ 生成图片 ================
 
@@ -305,7 +298,7 @@ public class BilibiliLiveReportPainterTest {
         BilibiliLiveReportConfig config = new BilibiliLiveReportConfig();
 
         // 模块顺序
-        config.setSequence(new ArrayList<>(List.of("changeInfo", "danmuAnalysis", "boxAnalysis", "giftAnalysis", "superChatAnalysis", "guardAnalysis", "enterRoomAnalysis", "likeAnalysis", "shareAnalysis")));
+        config.setSequence(new ArrayList<>(List.of("changeInfo", "danmuAnalysis", "boxAnalysis", "giftAnalysis", "superChatAnalysis", "guardAnalysis", "enterRoomAnalysis")));
 
         // 基础信息模块
         config.setEnableBasicInfo(true);
@@ -367,19 +360,6 @@ public class BilibiliLiveReportPainterTest {
         config.setShowEnterRoomDetails(true);
         config.setShowEnterRoomGrowthChart(true);
         config.setShowEnterRoomInteractionChart(true);
-
-        // 点赞分析模块
-        config.setEnableLikeAnalysis(true);
-        config.setShowLikeDetails(true);
-        config.setLikeRankingLimit(5);
-        config.setShowLikeGrowthChart(true);
-        config.setShowLikeInteractionChart(true);
-
-        // 分享分析模块
-        config.setEnableShareAnalysis(true);
-        config.setShowShareDetails(true);
-        config.setShowShareGrowthChart(true);
-        config.setShowShareInteractionChart(true);
 
         return config;
     }
@@ -681,55 +661,4 @@ public class BilibiliLiveReportPainterTest {
         return enter;
     }
 
-    /**
-     * 构造点赞数据
-     * 点赞狂魔 3 次、点赞粉丝 1 次、路过点赞 1 次，合计 5 次 / 3 人，排行榜 3 > 1 > 1；
-     * 时间跨度 1~5 分钟满足曲线图至少一分钟的校验
-     */
-    private List<JSONObject> createLikes() {
-        List<JSONObject> list = new ArrayList<>();
-        long start = 1784617225000L;
-        int index = 1;
-        list.add(createLike(start + index++ * 60_000L, 80001L));
-        list.add(createLike(start + index++ * 60_000L, 80002L));
-        list.add(createLike(start + index++ * 60_000L, 80001L));
-        list.add(createLike(start + index++ * 60_000L, 80003L));
-        list.add(createLike(start + index++ * 60_000L, 80001L));
-        return list;
-    }
-
-    /**
-     * 构造一条点赞记录
-     */
-    private JSONObject createLike(long timestamp, long sender) {
-        JSONObject like = new JSONObject();
-        like.put("timestamp", timestamp);
-        like.put("sender", String.valueOf(sender));
-        return like;
-    }
-
-    /**
-     * 构造分享数据
-     * 分享达人 2 次、热心观众 1 次，合计 3 次 / 2 人；
-     * 时间跨度 1~3 分钟满足曲线图至少一分钟的校验
-     */
-    private List<JSONObject> createShares() {
-        List<JSONObject> list = new ArrayList<>();
-        long start = 1784617225000L;
-        int index = 1;
-        list.add(createShare(start + index++ * 60_000L, 90001L));
-        list.add(createShare(start + index++ * 60_000L, 90002L));
-        list.add(createShare(start + index++ * 60_000L, 90001L));
-        return list;
-    }
-
-    /**
-     * 构造一条分享记录
-     */
-    private JSONObject createShare(long timestamp, long sender) {
-        JSONObject share = new JSONObject();
-        share.put("timestamp", timestamp);
-        share.put("sender", String.valueOf(sender));
-        return share;
-    }
 }

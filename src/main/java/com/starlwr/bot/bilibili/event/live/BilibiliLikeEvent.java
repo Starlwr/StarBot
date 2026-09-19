@@ -29,7 +29,7 @@ import java.time.Instant;
  *     </li>
  * </ol>
  * <h4>备注：</h4>
- * <p>无荣耀等级信息，无时间戳信息</p>
+ * <p>无点赞次数信息，无荣耀等级信息，无时间戳信息</p>
  */
 @Getter
 @Setter

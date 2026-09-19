@@ -97,9 +97,7 @@ public class BilibiliLiveReportPainter {
             "giftAnalysis", this::drawGiftAnalysis,
             "superChatAnalysis", this::drawSuperChatAnalysis,
             "guardAnalysis", this::drawGuardAnalysis,
-            "enterRoomAnalysis", this::drawEnterRoomAnalysis,
-            "likeAnalysis", this::drawLikeAnalysis,
-            "shareAnalysis", this::drawShareAnalysis
+            "enterRoomAnalysis", this::drawEnterRoomAnalysis
     );
 
     public BilibiliLiveReportPainter(StarBotBilibiliProperties properties, FontUtil fontUtil, BilibiliApiUtil bilibili, StarBotCommonPainterFactory factory, LiveDataService liveDataService, BilibiliWordCloudUtil wordCloudUtil, Up up, BilibiliLiveReportConfig config) {
@@ -1204,113 +1202,6 @@ public class BilibiliLiveReportPainter {
             // 进房互动曲线图
             if (config.isShowEnterRoomInteractionChart()) {
                 drawSection("进房互动曲线图");
-                drawLineChart(samples, false);
-            }
-        }
-
-        this.painter.setPos(MARGIN, this.painter.getY() + 25);
-    }
-
-    /**
-     * 绘制点赞分析模块
-     */
-    private void drawLikeAnalysis() {
-        if (!config.isEnableLikeAnalysis()) {
-            return;
-        }
-
-        String platform = LivePlatform.BILIBILI.getName();
-        Long uid = up.getUid();
-
-        List<JSONObject> likes = liveDataService.getLike(platform, uid, JSONObject.class);
-        if (CollectionUtils.isEmpty(likes)) {
-            return;
-        }
-
-        if (config.isShowLikeDetails()) {
-            long senderCount = likes.stream().map(json -> json.getLong("sender")).distinct().count();
-            String tip = likes.size() + " 次 / " + senderCount + " 人";
-            drawTitle("点赞分析", tip);
-        } else {
-            drawTitle("点赞分析");
-        }
-
-        // 按发送者分组统计点赞数
-        Map<String, Long> countBySender = likes.stream().collect(Collectors.groupingBy(json -> json.getString("sender"), Collectors.counting()));
-        List<Map.Entry<String, Double>> sorted = countBySender.entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .map(entry -> Map.entry(entry.getKey(), (double) entry.getValue()))
-                .toList();
-
-        // 按需批量获取发送者用户信息
-        Map<Long, UserInfo> userInfos = config.getLikeRankingLimit() > 0
-                ? bilibili.getUserInfoByUids(countBySender.keySet().stream().map(Long::valueOf).collect(Collectors.toSet()))
-                : Map.of();
-
-        // 点赞排行榜
-        if (config.getLikeRankingLimit() > 0) {
-            drawSenderRankingChart("点赞排行榜", sorted, config.getLikeRankingLimit(), userInfos);
-        }
-
-        if (config.isShowLikeGrowthChart() || config.isShowLikeInteractionChart()) {
-            List<ChartPainter.LinePoint> samples = likes.stream()
-                    .map(json -> new ChartPainter.LinePoint(json.getLongValue("timestamp"), 1))
-                    .toList();
-
-            // 点赞累计曲线图
-            if (config.isShowLikeGrowthChart()) {
-                drawSection("点赞累计曲线图");
-                drawLineChart(samples, true);
-            }
-
-            // 点赞互动曲线图
-            if (config.isShowLikeInteractionChart()) {
-                drawSection("点赞互动曲线图");
-                drawLineChart(samples, false);
-            }
-        }
-
-        this.painter.setPos(MARGIN, this.painter.getY() + 25);
-    }
-
-    /**
-     * 绘制分享分析模块
-     */
-    private void drawShareAnalysis() {
-        if (!config.isEnableShareAnalysis()) {
-            return;
-        }
-
-        String platform = LivePlatform.BILIBILI.getName();
-        Long uid = up.getUid();
-
-        List<JSONObject> shares = liveDataService.getShare(platform, uid, JSONObject.class);
-        if (CollectionUtils.isEmpty(shares)) {
-            return;
-        }
-
-        if (config.isShowShareDetails()) {
-            long senderCount = shares.stream().map(json -> json.getLong("sender")).distinct().count();
-            String tip = shares.size() + " 次 / " + senderCount + " 人";
-            drawTitle("分享分析", tip);
-        } else {
-            drawTitle("分享分析");
-        }
-
-        if (config.isShowShareGrowthChart() || config.isShowShareInteractionChart()) {
-            List<ChartPainter.LinePoint> samples = shares.stream()
-                    .map(json -> new ChartPainter.LinePoint(json.getLongValue("timestamp"), 1))
-                    .toList();
-
-            // 分享累计曲线图
-            if (config.isShowShareGrowthChart()) {
-                drawSection("分享累计曲线图");
-                drawLineChart(samples, true);
-            }
-
-            // 分享互动曲线图
-            if (config.isShowShareInteractionChart()) {
-                drawSection("分享互动曲线图");
                 drawLineChart(samples, false);
             }
         }
