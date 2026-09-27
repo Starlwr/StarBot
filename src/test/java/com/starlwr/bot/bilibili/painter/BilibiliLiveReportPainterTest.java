@@ -85,6 +85,8 @@ public class BilibiliLiveReportPainterTest {
 
     private static FontUtil fontUtil;
 
+    private static StarBotCoreProperties coreProperties;
+
     /**
      * 初始化测试绘图环境
      * <p>
@@ -95,7 +97,7 @@ public class BilibiliLiveReportPainterTest {
     @BeforeAll
     public static void setUp() {
         // 真实绘图器：真实 FontUtil + CommonPainter，仅 mock BuildProperties
-        StarBotCoreProperties coreProperties = new StarBotCoreProperties();
+        coreProperties = new StarBotCoreProperties();
         coreProperties.getPaint().setFonts(List.of("微软雅黑", "宋体", "Segoe UI Emoji", "Segoe UI Symbol", "Arial"));
         fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
         fontUtil.init();
@@ -199,14 +201,14 @@ public class BilibiliLiveReportPainterTest {
         Up up = new Up(UID, "测试主播", ROOM_ID, "https://example.com/face.jpg");
         BilibiliLiveReportConfig config = createTestConfig();
 
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
-        properties.getLive().setWordCloudLimit(100);
-        properties.getDebug().setWordCloudDebug(true);
+        StarBotBilibiliProperties bilibiliProperties = new StarBotBilibiliProperties();
+        bilibiliProperties.getLive().setWordCloudLimit(100);
+        bilibiliProperties.getDebug().setWordCloudDebug(true);
 
         BilibiliWordCloudUtil wordCloudUtil = new BilibiliWordCloudUtil();
         wordCloudUtil.init();
         BilibiliLiveReportPainter painter = new BilibiliLiveReportPainter(
-                properties, fontUtil, bilibili, factory, liveDataService, wordCloudUtil, up, config);
+                coreProperties, bilibiliProperties, fontUtil, bilibili, factory, liveDataService, wordCloudUtil, up, config);
 
         Optional<String> result;
         if (SAVE_IMAGE) {

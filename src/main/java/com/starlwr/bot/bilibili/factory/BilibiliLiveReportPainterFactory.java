@@ -6,6 +6,7 @@ import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.painter.BilibiliLiveReportPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.bilibili.util.BilibiliWordCloudUtil;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
@@ -17,7 +18,9 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 @StarBotComponent
 public class BilibiliLiveReportPainterFactory {
-    private final StarBotBilibiliProperties properties;
+    private final StarBotCoreProperties coreProperties;
+
+    private final StarBotBilibiliProperties bilibiliProperties;
 
     private final FontUtil fontUtil;
 
@@ -30,8 +33,9 @@ public class BilibiliLiveReportPainterFactory {
     private final BilibiliWordCloudUtil wordCloudUtil;
 
     @Autowired
-    public BilibiliLiveReportPainterFactory(StarBotBilibiliProperties properties, FontUtil fontUtil, BilibiliApiUtil bilibili, StarBotCommonPainterFactory factory, LiveDataService liveDataService, BilibiliWordCloudUtil wordCloudUtil) {
-        this.properties = properties;
+    public BilibiliLiveReportPainterFactory(StarBotCoreProperties coreProperties, StarBotBilibiliProperties bilibiliProperties, FontUtil fontUtil, BilibiliApiUtil bilibili, StarBotCommonPainterFactory factory, LiveDataService liveDataService, BilibiliWordCloudUtil wordCloudUtil) {
+        this.coreProperties = coreProperties;
+        this.bilibiliProperties = bilibiliProperties;
         this.fontUtil = fontUtil;
         this.bilibili = bilibili;
         this.factory = factory;
@@ -46,6 +50,6 @@ public class BilibiliLiveReportPainterFactory {
      * @return 直播报告绘图器
      */
     public BilibiliLiveReportPainter create(Up up, BilibiliLiveReportConfig config) {
-        return new BilibiliLiveReportPainter(properties, fontUtil, bilibili, factory, liveDataService, wordCloudUtil, up, config);
+        return new BilibiliLiveReportPainter(coreProperties, bilibiliProperties, fontUtil, bilibili, factory, liveDataService, wordCloudUtil, up, config);
     }
 }

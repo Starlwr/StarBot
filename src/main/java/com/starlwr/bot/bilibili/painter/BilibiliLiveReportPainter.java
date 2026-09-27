@@ -10,6 +10,7 @@ import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.bilibili.util.BilibiliWordCloudUtil;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.model.TextWithStyle;
@@ -50,7 +51,9 @@ import java.util.stream.Stream;
  */
 @Slf4j
 public class BilibiliLiveReportPainter {
-    private final StarBotBilibiliProperties properties;
+    private final StarBotCoreProperties coreProperties;
+
+    private final StarBotBilibiliProperties bilibiliProperties;
 
     private final BilibiliApiUtil bilibili;
 
@@ -105,8 +108,9 @@ public class BilibiliLiveReportPainter {
             "enterRoomAnalysis", this::drawEnterRoomAnalysis
     );
 
-    public BilibiliLiveReportPainter(StarBotBilibiliProperties properties, FontUtil fontUtil, BilibiliApiUtil bilibili, StarBotCommonPainterFactory factory, LiveDataService liveDataService, BilibiliWordCloudUtil wordCloudUtil, Up up, BilibiliLiveReportConfig config) {
-        this.properties = properties;
+    public BilibiliLiveReportPainter(StarBotCoreProperties coreProperties, StarBotBilibiliProperties bilibiliProperties, FontUtil fontUtil, BilibiliApiUtil bilibili, StarBotCommonPainterFactory factory, LiveDataService liveDataService, BilibiliWordCloudUtil wordCloudUtil, Up up, BilibiliLiveReportConfig config) {
+        this.coreProperties = coreProperties;
+        this.bilibiliProperties = bilibiliProperties;
         this.bilibili = bilibili;
         this.liveDataService = liveDataService;
         this.wordCloudUtil = wordCloudUtil;
@@ -168,7 +172,7 @@ public class BilibiliLiveReportPainter {
      * 绘制 StarBot Logo
      */
     private void drawLogo() {
-        if (properties.getDynamic().isDrawLogo()) {
+        if (coreProperties.getPaint().isDrawLogo()) {
             try {
                 BufferedImage logo = ImageIO.read(resourceLoader.getResource("classpath:logo.png").getInputStream());
                 this.painter.drawImage(logo, new Point(200, 55)).setPos(MARGIN, 275);
@@ -619,10 +623,10 @@ public class BilibiliLiveReportPainter {
         // 弹幕词云
         if (config.isShowDanmuWordCloud()) {
             drawSection("弹幕词云");
-            int wordCloudLimit = properties.getLive().getWordCloudLimit();
+            int wordCloudLimit = bilibiliProperties.getLive().getWordCloudLimit();
             if (wordCloudLimit > 0) {
                 Map<String, Long> frequency = new HashMap<>();
-                boolean debugEnabled = properties.getDebug().isWordCloudDebug();
+                boolean debugEnabled = bilibiliProperties.getDebug().isWordCloudDebug();
                 StringBuilder debug = new StringBuilder();
                 long danmuCount = 0;
                 long totalTokens = 0;

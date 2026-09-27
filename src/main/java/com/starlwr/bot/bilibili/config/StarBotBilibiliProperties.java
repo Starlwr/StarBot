@@ -195,11 +195,6 @@ public class StarBotBilibiliProperties {
         private int apiRequestInterval = 10;
 
         /**
-         * 是否绘制 StarBot logo
-         */
-        private boolean drawLogo = true;
-
-        /**
          * 是否自动保存绘制的动态图片
          */
         private boolean autoSaveImage = false;

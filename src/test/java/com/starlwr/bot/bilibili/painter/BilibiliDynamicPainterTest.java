@@ -1,7 +1,6 @@
 package com.starlwr.bot.bilibili.painter;
 
 import com.alibaba.fastjson2.JSON;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.factory.BilibiliDynamicPainterFactory;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
@@ -3413,10 +3412,6 @@ public class BilibiliDynamicPainterTest {
             new DynamicTestData("WORD", WORD_JSON)
     );
 
-    private static StarBotBilibiliProperties properties;
-
-    private static BilibiliApiUtil bilibili;
-
     private static BilibiliDynamicPainterFactory factory;
 
     /**
@@ -3427,16 +3422,14 @@ public class BilibiliDynamicPainterTest {
      */
     @BeforeAll
     public static void setUp() {
-        StarBotCoreProperties coreProperties = new StarBotCoreProperties();
-        coreProperties.getPaint().setFonts(List.of("微软雅黑", "宋体", "Segoe UI Emoji", "Segoe UI Symbol", "Arial"));
-        FontUtil fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getPaint().setFonts(List.of("微软雅黑", "宋体", "Segoe UI Emoji", "Segoe UI Symbol", "Arial"));
+        FontUtil fontUtil = new FontUtil(new DefaultResourceLoader(), properties);
         fontUtil.init();
 
-        StarBotCommonPainterFactory commonFactory = new StarBotCommonPainterFactory(mock(BuildProperties.class), coreProperties, fontUtil);
+        StarBotCommonPainterFactory commonFactory = new StarBotCommonPainterFactory(mock(BuildProperties.class), properties, fontUtil);
 
-        properties = new StarBotBilibiliProperties();
-
-        bilibili = mock(BilibiliApiUtil.class);
+        BilibiliApiUtil bilibili = mock(BilibiliApiUtil.class);
         when(bilibili.getBilibiliImage(anyString())).thenAnswer(invocation -> Optional.of(createPlaceholderImage()));
         when(bilibili.asyncGetBilibiliImages(anyList())).thenAnswer(invocation -> {
             List<String> urls = invocation.getArgument(0);

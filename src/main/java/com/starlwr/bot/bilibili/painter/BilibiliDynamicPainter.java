@@ -3,9 +3,9 @@ package com.starlwr.bot.bilibili.painter;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.painter.CommonPainter;
@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 public class BilibiliDynamicPainter {
-    private final StarBotBilibiliProperties properties;
+    private final StarBotCoreProperties properties;
 
     private final FontUtil fontUtil;
 
@@ -68,7 +68,7 @@ public class BilibiliDynamicPainter {
 
     private final Color COLOR_LIGHT_BLUE = new Color(0, 174, 236);
 
-    public BilibiliDynamicPainter(StarBotBilibiliProperties properties, FontUtil fontUtil, BilibiliApiUtil bilibili, StarBotCommonPainterFactory factory, Dynamic dynamic) {
+    public BilibiliDynamicPainter(StarBotCoreProperties properties, FontUtil fontUtil, BilibiliApiUtil bilibili, StarBotCommonPainterFactory factory, Dynamic dynamic) {
         this.properties = properties;
         this.fontUtil = fontUtil;
         this.bilibili = bilibili;
@@ -122,7 +122,7 @@ public class BilibiliDynamicPainter {
      * 绘制 StarBot Logo
      */
     private void drawLogo() {
-        if (properties.getDynamic().isDrawLogo()) {
+        if (properties.getPaint().isDrawLogo()) {
             try {
                 BufferedImage logo = ImageIO.read(resourceLoader.getResource("classpath:logo.png").getInputStream());
                 this.painter.drawImage(logo, new Point(200, 55)).setPos(175, 300);
@@ -687,17 +687,6 @@ public class BilibiliDynamicPainter {
         return getOmitTextImage(content, width, height, null, null);
     }
 
-    /**
-     * 获取自动省略的文字图片
-     * @param content 文字
-     * @param width 图片宽度
-     * @param height 图片高度，会自动扩展
-     * @param size 字体大小
-     * @return 图片
-     */
-    private BufferedImage getOmitTextImage(String content, int width, int height, @Nullable Integer size) {
-        return getOmitTextImage(content, width, height, size, null);
-    }
 
     /**
      * 获取自动省略的文字图片

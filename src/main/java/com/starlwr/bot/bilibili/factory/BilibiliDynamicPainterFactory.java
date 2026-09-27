@@ -1,9 +1,9 @@
 package com.starlwr.bot.bilibili.factory;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.FontUtil;
@@ -14,7 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 @StarBotComponent
 public class BilibiliDynamicPainterFactory {
-    private final StarBotBilibiliProperties properties;
+    private final StarBotCoreProperties properties;
 
     private final FontUtil fontUtil;
 
@@ -23,7 +23,7 @@ public class BilibiliDynamicPainterFactory {
     private final StarBotCommonPainterFactory factory;
 
     @Autowired
-    public BilibiliDynamicPainterFactory(StarBotBilibiliProperties properties, FontUtil fontUtil, BilibiliApiUtil bilibili, StarBotCommonPainterFactory factory) {
+    public BilibiliDynamicPainterFactory(StarBotCoreProperties properties, FontUtil fontUtil, BilibiliApiUtil bilibili, StarBotCommonPainterFactory factory) {
         this.properties = properties;
         this.fontUtil = fontUtil;
         this.bilibili = bilibili;
