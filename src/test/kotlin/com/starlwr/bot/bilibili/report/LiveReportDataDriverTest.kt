@@ -11,6 +11,22 @@ class LiveReportDataDriverTest {
     private val delta = ReportDelta(ReportMetric.BOX, 2, 30.0, 5.0,
         ReportUserDelta("9", "sender", count = 2, value = 30.0, profit = 5.0), 65_432, label = "gift")
 
+    @Test fun `buffer restores durable dedup once for a resumed active session`() {
+        val url = "jdbc:sqlite:${temp.resolve("buffer-reopen.db")}"
+        fun open(): BufferedLiveReportDataDriver {
+            val delegate = JdbcLiveReportDataDriver("sqlite", url).also { it.initialize() }
+            return BufferedLiveReportDataDriver(delegate, flushMillis = 60_000)
+        }
+        open().use { driver -> driver.createOrResume(session); assertTrue(driver.apply(session, "same", delta)) }
+        open().use { driver ->
+            driver.createOrResume(session)
+            assertFalse(driver.apply(session, "same", delta))
+            assertEquals(2L, driver.snapshot(session.sessionId)!!.counts["box"])
+            assertTrue(driver.apply(session, "new", delta))
+            assertEquals(4L, driver.complete(session.sessionId, 2000)!!.counts["box"])
+        }
+    }
+
     @Test fun `memory driver is idempotent`() {
         val driver = InMemoryLiveReportDataDriver(); driver.initialize(); driver.createOrResume(session)
         assertTrue(driver.apply(session, "same", delta)); assertFalse(driver.apply(session, "same", delta))
