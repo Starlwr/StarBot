@@ -4,6 +4,7 @@ import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.service.BilibiliDynamicService;
 import com.starlwr.bot.bilibili.service.BilibiliLiveRoomService;
+import com.starlwr.bot.bilibili.report.LiveReportDemandService;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceAddEvent;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
@@ -28,13 +29,16 @@ public class BilibiliDataSourceEventListener {
 
     private final BilibiliDynamicService dynamicService;
 
+    private final LiveReportDemandService reportDemandService;
+
     private boolean loadCompleted = false;
 
     @Autowired
-    public BilibiliDataSourceEventListener(StarBotBilibiliProperties properties, BilibiliLiveRoomService liveRoomService, BilibiliDynamicService dynamicService) {
+    public BilibiliDataSourceEventListener(StarBotBilibiliProperties properties, BilibiliLiveRoomService liveRoomService, BilibiliDynamicService dynamicService, LiveReportDemandService reportDemandService) {
         this.properties = properties;
         this.liveRoomService = liveRoomService;
         this.dynamicService = dynamicService;
+        this.reportDemandService = reportDemandService;
     }
 
     /**
@@ -78,6 +82,9 @@ public class BilibiliDataSourceEventListener {
         if (!LivePlatform.BILIBILI.getName().equals(user.getPlatform())) {
             return;
         }
+
+        reportDemandService.deactivate(user.getUid());
+        dynamicService.deactivate(user.getUid());
 
         if (!properties.getLive().isEnableConnectLiveRoom()) {
             return;

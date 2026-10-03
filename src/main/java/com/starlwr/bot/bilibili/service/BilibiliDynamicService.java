@@ -117,6 +117,13 @@ public class BilibiliDynamicService {
         autoFollowQueue.add(up);
     }
 
+    /** Release mutable follow-up state when a datasource user is removed. */
+    public void deactivate(Long uid) {
+        if (uid == null) return;
+        autoFollowQueue.removeIf(up -> uid.equals(up.getUid()));
+        alreadyFollowUps.removeIf(up -> uid.equals(up.getUid()));
+    }
+
     /**
      * 启动动态推送服务
      */
