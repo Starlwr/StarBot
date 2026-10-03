@@ -97,12 +97,11 @@ class CdpConnection(private val socket: WebSocket) : AutoCloseable {
         if (params != null) request["params"] = params
         val future = CompletableFuture<JSONObject>()
         pending[id] = future
-        socket.sendText(request.toJSONString(), true).join()
         val response = try {
+            socket.sendText(request.toJSONString(), true).join()
             future.get(timeoutSeconds, TimeUnit.SECONDS)
-        } catch (error: Exception) {
-            pending.remove(id)
-            throw error
+        } finally {
+            pending.remove(id, future)
         }
         response.getJSONObject("error")?.let { error("CDP $method failed: ${it.toJSONString()}") }
         return response.getJSONObject("result") ?: JSONObject()
