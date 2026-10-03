@@ -11,38 +11,61 @@ class RedisLiveReportDataDriver(uri: String, private val prefix: String = "starb
     private val client = RedisClient.create(uri)
     private val connection = client.connect()
     private val redis get() = connection.sync()
-    override fun initialize() { check(redis.ping() == "PONG") { "Redis is unavailable" } }
+    @Synchronized override fun initialize() { check(redis.ping() == "PONG") { "Redis is unavailable" } }
 
-    override fun createOrResume(session: ReportSession): LiveReportSnapshot {
+    @Synchronized override fun createOrResume(session: ReportSession): LiveReportSnapshot {
         val key = sessionKey(session.sessionId)
         redis.setnx(key, encode(session.snapshot()))
-        redis.expire(key, SESSION_TTL_SECONDS)
-        redis.sadd(openKey(), session.sessionId)
-        return decode(redis.get(key))
+        val snapshot = decode(redis.get(key))
+        val ttl = if (snapshot.endedAt == null) SESSION_TTL_SECONDS else HISTORY_TTL_SECONDS
+        redis.expire(key, ttl); redis.expire(eventKey(session.sessionId), ttl)
+        if (snapshot.endedAt == null) redis.sadd(openKey(), session.sessionId) else redis.srem(openKey(), session.sessionId)
+        return snapshot
     }
 
-    override fun apply(session: ReportSession, eventId: String, delta: ReportDelta): Boolean {
+    @Synchronized override fun apply(session: ReportSession, eventId: String, delta: ReportDelta): Boolean =
+        applyBatch(listOf(ReportEventWrite(session, eventId, delta))).single()
+
+    @Synchronized override fun applyBatch(events: List<ReportEventWrite>): List<Boolean> {
+        val accepted = MutableList(events.size) { false }
+        events.withIndex().groupBy { it.value.session.sessionId }.forEach { (_, group) ->
+            val results = applySessionBatch(group.map { it.value })
+            group.forEachIndexed { offset, entry -> accepted[entry.index] = results[offset] }
+        }
+        return accepted
+    }
+
+    private fun applySessionBatch(events: List<ReportEventWrite>): List<Boolean> {
+        val session = events.first().session
+        val key = sessionKey(session.sessionId); val eventKey = eventKey(session.sessionId)
         repeat(32) {
-            val snapshotKey = sessionKey(session.sessionId)
-            val expected = redis.get(snapshotKey) ?: encode(session.snapshot())
-            val next = decode(expected).also { it.apply(delta) }
-            val result = try { redis.eval<Long>(APPLY_LUA, ScriptOutputType.INTEGER,
-                arrayOf(snapshotKey, eventKey(session.sessionId)), expected, encode(next), eventId, SESSION_TTL_SECONDS.toString()) }
+            val expected = redis.get(key) ?: encode(session.snapshot())
+            val existing = redis.smismember(eventKey, *events.map { it.eventId }.toTypedArray())
+            val seen = HashSet<String>()
+            val accepted = events.indices.map { !existing[it] && seen.add(events[it].eventId) }
+            if (accepted.none { it }) return accepted
+            val next = decode(expected)
+            val ids = ArrayList<String>()
+            events.forEachIndexed { index, event -> if (accepted[index]) { next.apply(event.delta); ids.add(event.eventId) } }
+            val ttl = if (next.endedAt == null) SESSION_TTL_SECONDS else HISTORY_TTL_SECONDS
+            val result = try { redis.eval<Long>(APPLY_BATCH_LUA, ScriptOutputType.INTEGER,
+                arrayOf(key, eventKey), *listOf(expected, encode(next), ttl.toString()).plus(ids).toTypedArray()) }
             catch (e: io.lettuce.core.RedisCommandExecutionException) {
                 if (e.message?.contains("scripting support disabled", true) == true)
-                    return applyWithoutLua(session, eventId, delta) else throw e
+                    return applyBatchWithoutLua(events) else throw e
             }
-            when (result) { 1L -> return true; 0L -> return false }
+            if (result == 1L) return accepted
         }
         error("Concurrent report update retry limit exceeded for ${session.sessionId}")
     }
 
-    override fun snapshot(sessionId: String): LiveReportSnapshot? = redis.get(sessionKey(sessionId))?.let(::decode)
-    override fun openSessions(): List<LiveReportSnapshot> {
+    @Synchronized override fun snapshot(sessionId: String): LiveReportSnapshot? = redis.get(sessionKey(sessionId))?.let(::decode)
+    @Synchronized override fun committedEventIds(sessionId: String): Set<String> = redis.smembers(eventKey(sessionId))
+    @Synchronized override fun openSessions(): List<LiveReportSnapshot> {
         rebuildOpenIndexIfNeeded()
         return redis.smembers(openKey()).mapNotNull { id -> snapshot(id)?.takeIf { it.endedAt == null } }
     }
-    override fun updateLifecycle(sessionId: String, update: SessionLifecycleUpdate): LiveReportSnapshot? {
+    @Synchronized override fun updateLifecycle(sessionId: String, update: SessionLifecycleUpdate): LiveReportSnapshot? {
         repeat(32) {
             val key = sessionKey(sessionId); val expected = redis.get(key) ?: return null
             val next = decode(expected).also { it.updateLifecycle(update) }; val encoded = encode(next)
@@ -57,7 +80,7 @@ class RedisLiveReportDataDriver(uri: String, private val prefix: String = "starb
         }
         error("Concurrent report lifecycle update retry limit exceeded for $sessionId")
     }
-    override fun complete(sessionId: String, endedAt: Long, disposition: ReportCloseDisposition, reason: String?): LiveReportSnapshot? {
+    @Synchronized override fun complete(sessionId: String, endedAt: Long, disposition: ReportCloseDisposition, reason: String?): LiveReportSnapshot? {
         repeat(32) {
             val key = sessionKey(sessionId); val expected = redis.get(key) ?: return null
             val next = decode(expected).also {
@@ -66,7 +89,7 @@ class RedisLiveReportDataDriver(uri: String, private val prefix: String = "starb
                 if (disposition == ReportCloseDisposition.ABNORMAL) it.reportEligible = false
             }; val encoded = encode(next)
             val changed = try { redis.eval<Long>(COMPLETE_LUA, ScriptOutputType.INTEGER,
-                arrayOf(key, recentKey(next.uid), openKey()), expected, encoded, sessionId,
+                arrayOf(key, recentKey(next.uid), openKey(), eventKey(sessionId)), expected, encoded, sessionId,
                 next.startedAt.toString(), HISTORY_TTL_SECONDS.toString()) }
             catch (e: io.lettuce.core.RedisCommandExecutionException) {
                 if (e.message?.contains("scripting support disabled", true) == true)
@@ -76,20 +99,32 @@ class RedisLiveReportDataDriver(uri: String, private val prefix: String = "starb
         }
         error("Concurrent report completion retry limit exceeded for $sessionId")
     }
-    override fun recent(uid: Long, limit: Int): List<LiveReportSnapshot> = redis.zrevrange(recentKey(uid), 0, limit.coerceIn(1, 100).toLong() - 1)
+    @Synchronized override fun recent(uid: Long, limit: Int): List<LiveReportSnapshot> = redis.zrevrange(recentKey(uid), 0, limit.coerceIn(1, 100).toLong() - 1)
         .mapNotNull { snapshot(it) }
-    override fun health() = runCatching { redis.ping() }.fold({ DriverHealth(it == "PONG") }, { DriverHealth(false, it.message ?: "redis error") })
-    override fun close() { connection.close(); client.shutdown() }
+    @Synchronized override fun health() = runCatching { redis.ping() }.fold({ DriverHealth(it == "PONG") }, { DriverHealth(false, it.message ?: "redis error") })
+    @Synchronized override fun close() { connection.close(); client.shutdown() }
 
-    @Synchronized private fun applyWithoutLua(session: ReportSession, eventId: String, delta: ReportDelta): Boolean {
+    private fun applyBatchWithoutLua(events: List<ReportEventWrite>): List<Boolean> {
+        val session = events.first().session
+        val key = sessionKey(session.sessionId); val eventKey = eventKey(session.sessionId)
         repeat(32) {
-            val key = sessionKey(session.sessionId); val events = eventKey(session.sessionId)
-            redis.watch(key, events)
-            if (redis.sismember(events, eventId)) { redis.unwatch(); return false }
-            val current = redis.get(key)?.let(::decode) ?: session.snapshot(); current.apply(delta)
-            redis.multi(); redis.setex(key, SESSION_TTL_SECONDS, encode(current)); redis.sadd(events, eventId)
-            redis.expire(events, SESSION_TTL_SECONDS)
-            if (!redis.exec().wasDiscarded()) return true
+            redis.watch(key, eventKey)
+            try {
+                val current = redis.get(key)?.let(::decode) ?: session.snapshot()
+                val existing = redis.smismember(eventKey, *events.map { it.eventId }.toTypedArray())
+                val seen = HashSet<String>()
+                val accepted = events.indices.map { !existing[it] && seen.add(events[it].eventId) }
+                if (accepted.none { it }) { redis.unwatch(); return accepted }
+                val ids = ArrayList<String>()
+                events.forEachIndexed { index, event -> if (accepted[index]) { current.apply(event.delta); ids.add(event.eventId) } }
+                val encoded = encode(current)
+                val ttl = if (current.endedAt == null) SESSION_TTL_SECONDS else HISTORY_TTL_SECONDS
+                redis.multi(); redis.setex(key, ttl, encoded); redis.sadd(eventKey, *ids.toTypedArray())
+                redis.expire(eventKey, ttl)
+                if (!redis.exec().wasDiscarded()) return accepted
+            } catch (e: Exception) {
+                runCatching { redis.discard() }; runCatching { redis.unwatch() }; throw e
+            }
         }
         error("Concurrent report update retry limit exceeded for ${session.sessionId}")
     }
@@ -104,6 +139,7 @@ class RedisLiveReportDataDriver(uri: String, private val prefix: String = "starb
             redis.multi(); redis.setex(key, HISTORY_TTL_SECONDS, encode(current))
             redis.zadd(recentKey(current.uid), current.startedAt.toDouble(), sessionId)
             redis.srem(openKey(), sessionId)
+            redis.expire(eventKey(sessionId), HISTORY_TTL_SECONDS)
             if (!redis.exec().wasDiscarded()) return current
         }
         error("Concurrent report completion retry limit exceeded for $sessionId")
@@ -143,16 +179,20 @@ class RedisLiveReportDataDriver(uri: String, private val prefix: String = "starb
     companion object {
         private const val SESSION_TTL_SECONDS = 7 * 24 * 3600L
         private const val HISTORY_TTL_SECONDS = 365 * 24 * 3600L
-        private const val APPLY_LUA = """
-            if redis.call('SISMEMBER', KEYS[2], ARGV[3]) == 1 then return 0 end
+        private const val APPLY_BATCH_LUA = """
             local current = redis.call('GET', KEYS[1])
             if current and current ~= ARGV[1] then return -1 end
-            redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[4])
-            redis.call('SADD', KEYS[2], ARGV[3]); redis.call('EXPIRE', KEYS[2], ARGV[4]); return 1
+            for i = 4, #ARGV do
+                if redis.call('SISMEMBER', KEYS[2], ARGV[i]) == 1 then return -1 end
+            end
+            redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+            for i = 4, #ARGV do redis.call('SADD', KEYS[2], ARGV[i]) end
+            redis.call('EXPIRE', KEYS[2], ARGV[3]); return 1
         """
         private const val COMPLETE_LUA = """
             if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
             redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[5])
+            redis.call('EXPIRE', KEYS[4], ARGV[5])
             redis.call('ZADD', KEYS[2], ARGV[4], ARGV[3]); redis.call('SREM', KEYS[3], ARGV[3]); return 1
         """
         private const val UPDATE_LUA = """

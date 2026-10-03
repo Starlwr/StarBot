@@ -41,23 +41,43 @@ class JdbcLiveReportDataDriver(
         load(c, session.sessionId, true) ?: session.snapshot().also { save(c, it) }
     }
 
-    override fun apply(session: ReportSession, eventId: String, delta: ReportDelta): Boolean = transaction { c ->
-        val inserted = try {
-            c.prepareStatement("INSERT INTO starbot_report_event(session_id,event_id,created_at) VALUES(?,?,?)").use {
-                it.setString(1, session.sessionId); it.setString(2, eventId); it.setLong(3, System.currentTimeMillis()); it.executeUpdate() == 1
+    override fun apply(session: ReportSession, eventId: String, delta: ReportDelta): Boolean =
+        applyBatch(listOf(ReportEventWrite(session, eventId, delta))).single()
+
+    override fun applyBatch(events: List<ReportEventWrite>): List<Boolean> {
+        if (events.isEmpty()) return emptyList()
+        return transaction { c ->
+            val accepted = MutableList(events.size) { false }
+            c.prepareStatement("INSERT INTO starbot_report_event(session_id,event_id,created_at) VALUES(?,?,?)").use { insert ->
+                // Stable lock order for transactions containing multiple sessions.
+                events.withIndex().groupBy { it.value.session.sessionId }.toSortedMap().forEach { (id, writes) ->
+                    val snapshot = load(c, id, true) ?: writes.first().value.session.snapshot()
+                    var changed = false
+                    writes.forEach { (index, event) ->
+                        val inserted = try {
+                            insert.setString(1, id); insert.setString(2, event.eventId)
+                            insert.setLong(3, System.currentTimeMillis()); insert.executeUpdate() == 1
+                        } catch (_: java.sql.SQLIntegrityConstraintViolationException) { false }
+                        catch (e: java.sql.SQLException) {
+                            if (e.sqlState?.startsWith("23") == true || (!mysql && e.errorCode == 19)) false else throw e
+                        }
+                        if (inserted) { snapshot.apply(event.delta); changed = true; accepted[index] = true }
+                    }
+                    // One decode and snapshot write per session per transaction, not per event.
+                    if (changed) save(c, snapshot)
+                }
             }
-        } catch (_: java.sql.SQLIntegrityConstraintViolationException) { false }
-          catch (e: java.sql.SQLException) {
-              if (e.sqlState?.startsWith("23") == true || (!mysql && e.errorCode == 19)) false else throw e
-          }
-        if (inserted) {
-            val snap = load(c, session.sessionId, true) ?: session.snapshot()
-            snap.apply(delta); save(c, snap)
+            accepted
         }
-        inserted
     }
 
     override fun snapshot(sessionId: String): LiveReportSnapshot? = connection().use { load(it, sessionId, false)?.copySafe() }
+    override fun committedEventIds(sessionId: String): Set<String> = connection().use { c ->
+        c.prepareStatement("SELECT event_id FROM starbot_report_event WHERE session_id=?").use { p ->
+            p.setString(1, sessionId)
+            p.executeQuery().use { rs -> buildSet { while (rs.next()) add(rs.getString(1)) } }
+        }
+    }
     override fun openSessions(): List<LiveReportSnapshot> = connection().use { c ->
         c.prepareStatement("SELECT payload FROM starbot_report_session WHERE ended_at IS NULL ORDER BY started_at").use { p ->
             p.executeQuery().use { rs -> buildList { while (rs.next()) add(decode(rs.getString(1)).copySafe()) } }
