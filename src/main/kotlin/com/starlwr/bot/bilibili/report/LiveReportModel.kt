@@ -1,6 +1,5 @@
 package com.starlwr.bot.bilibili.report
 
-import com.alibaba.fastjson2.JSON
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
@@ -122,7 +121,7 @@ data class LiveReportSnapshot(
     fun reportStartedAt(): Long = if (baselineType == ReportBaselineType.PARTIAL)
         collectionStartedAt.takeIf { it > 0 } ?: startedAt else startedAt
 
-    fun updateLifecycle(update: SessionLifecycleUpdate) {
+    @Synchronized fun updateLifecycle(update: SessionLifecycleUpdate) {
         update.lifecycleState?.let { lifecycleState = it }
         update.recoveryStatus?.let { recoveryStatus = it }
         update.baselineType?.let { baselineType = it }
@@ -139,7 +138,14 @@ data class LiveReportSnapshot(
         }
     }
 
-    fun copySafe(): LiveReportSnapshot = JSON.parseObject(JSON.toJSONString(this), LiveReportSnapshot::class.java)
+    @Synchronized fun copySafe(): LiveReportSnapshot = copy(
+        counts = ConcurrentHashMap(counts), values = ConcurrentHashMap(values), profits = ConcurrentHashMap(profits),
+        users = ConcurrentHashMap(users.mapValues { (_, entries) -> ConcurrentHashMap(entries.mapValues { it.value.copy() }) }),
+        buckets = ConcurrentHashMap(buckets.mapValues { ConcurrentHashMap(it.value) }),
+        labels = ConcurrentHashMap(labels.mapValues { ConcurrentHashMap(it.value) }),
+        metadata = ConcurrentHashMap(metadata),
+        danmuTexts = java.util.Collections.synchronizedList(synchronized(danmuTexts) { danmuTexts.toMutableList() }),
+    )
     companion object { const val CURRENT_SCHEMA = 3 }
 }
 

@@ -81,8 +81,7 @@ class LiveReportSessionManager(
     fun interactionSession(event: StarBotExternalBaseEvent): ReportSession {
         val uid = event.source.uid ?: 0
         active[uid]?.let { current ->
-            val snapshot = driver.snapshot(current.sessionId)
-            if (snapshot?.lifecycleState == ReportLifecycleState.PENDING_CLOSE) {
+            if (driver.lifecycleState(current.sessionId) == ReportLifecycleState.PENDING_CLOSE) {
                 val resumed = driver.updateLifecycle(current.sessionId, SessionLifecycleUpdate(
                     lifecycleState = ReportLifecycleState.ACTIVE, recoveryStatus = ReportRecoveryStatus.RECOVERED,
                     lastRecoveredAt = event.timestamp, lastRecoveryReason = "realtime_interaction",
