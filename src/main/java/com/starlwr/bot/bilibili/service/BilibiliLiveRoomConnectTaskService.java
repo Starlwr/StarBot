@@ -9,11 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.*;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
@@ -27,11 +24,14 @@ import java.util.concurrent.atomic.AtomicLong;
 @StarBotComponent
 public class BilibiliLiveRoomConnectTaskService {
     private final StarBotBilibiliProperties properties;
-    private final ScheduledExecutorService scheduler;
-    private final Map<BilibiliLiveRoomConnector, ScheduledFuture<?>> pending = new ConcurrentHashMap<>();
-    private final Set<BilibiliLiveRoomConnector> deferred = ConcurrentHashMap.newKeySet();
+    private final ScheduledThreadPoolExecutor scheduler;
+    // Identity matters when an old connector and its replacement have the same UID.
+    private final Map<BilibiliLiveRoomConnector, PendingConnection> pending = new IdentityHashMap<>();
+    private final Set<BilibiliLiveRoomConnector> deferred = Collections.newSetFromMap(new IdentityHashMap<>());
     private final AtomicLong nextConnectionSlotMillis = new AtomicLong();
     private volatile boolean started;
+
+    private static final class PendingConnection { private ScheduledFuture<?> future; }
 
     public BilibiliLiveRoomConnectTaskService(StarBotBilibiliProperties properties) {
         this.properties = properties;
@@ -40,12 +40,13 @@ public class BilibiliLiveRoomConnectTaskService {
             thread.setDaemon(true);
             return thread;
         };
-        this.scheduler = Executors.newScheduledThreadPool(2, factory);
+        this.scheduler = new ScheduledThreadPoolExecutor(2, factory);
+        this.scheduler.setRemoveOnCancelPolicy(true);
     }
 
     @Order(0)
     @EventListener(StarBotDataSourceLoadCompleteEvent.class)
-    public void onStarBotDataSourceLoadCompleteEvent() {
+    public synchronized void onStarBotDataSourceLoadCompleteEvent() {
         if (!properties.getLive().isEnableConnectLiveRoom()) {
             log.warn("未启用直播间连接, 将不会连接到直播间, 数据抓取等服务不可用");
             return;
@@ -61,7 +62,7 @@ public class BilibiliLiveRoomConnectTaskService {
         return schedule(connector, 0);
     }
 
-    public boolean schedule(BilibiliLiveRoomConnector connector, long minimumDelayMillis) {
+    public synchronized boolean schedule(BilibiliLiveRoomConnector connector, long minimumDelayMillis) {
         if (scheduler.isShutdown()) return false;
         if (!started) return deferred.add(connector);
         if (pending.containsKey(connector)) return false;
@@ -71,32 +72,34 @@ public class BilibiliLiveRoomConnectTaskService {
         long slot = nextConnectionSlotMillis.getAndUpdate(previous -> Math.max(previous + interval, earliest + interval));
         long scheduledAt = Math.max(earliest, slot);
         long delay = Math.max(0, scheduledAt - now);
-        ScheduledFuture<?> future = scheduler.schedule(() -> {
-            pending.remove(connector);
+        PendingConnection task = new PendingConnection();
+        task.future = scheduler.schedule(() -> {
+            synchronized (this) {
+                // Registration completes under this same lock before a zero-delay task can run.
+                if (pending.get(connector) != task || scheduler.isShutdown()) return;
+                pending.remove(connector);
+            }
             if (!properties.getLive().isEnableConnectLiveRoom()) return;
             Up up = connector.getUp();
-            log.debug("执行直播间连接任务: uid={}, room={}, pending={}", up.getUid(), up.getRoomIdString(), pending.size());
+            log.debug("执行直播间连接任务: uid={}, room={}, pending={}", up.getUid(), up.getRoomIdString(), pendingCount());
             connector.connect();
         }, delay, TimeUnit.MILLISECONDS);
-        ScheduledFuture<?> raced = pending.putIfAbsent(connector, future);
-        if (raced != null) {
-            future.cancel(false);
-            return false;
-        }
+        pending.put(connector, task);
         return true;
     }
 
-    public boolean remove(BilibiliLiveRoomConnector connector) {
+    public synchronized boolean remove(BilibiliLiveRoomConnector connector) {
         boolean removedDeferred = deferred.remove(connector);
-        ScheduledFuture<?> future = pending.remove(connector);
-        return removedDeferred || future != null && future.cancel(false);
+        PendingConnection task = pending.remove(connector);
+        boolean cancelled = task != null && task.future.cancel(false);
+        return removedDeferred || cancelled;
     }
 
-    public int pendingCount() { return pending.size(); }
+    public synchronized int pendingCount() { return pending.size(); }
 
     @PreDestroy
-    public void close() {
-        pending.values().forEach(future -> future.cancel(false));
+    public synchronized void close() {
+        pending.values().forEach(task -> task.future.cancel(false));
         pending.clear();
         deferred.clear();
         scheduler.shutdownNow();
