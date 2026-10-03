@@ -38,11 +38,11 @@ class BilibiliV2EventParser(
                 source.roomId, decoded.gifts.size)
         }
         val sender = buildGiftSender(decoded, source, completeEvent)
-        return decoded.gifts.mapNotNull { gift ->
+        return decoded.gifts.mapIndexedNotNull { index, gift ->
             if (gift.count <= 0 || gift.count > Int.MAX_VALUE) {
                 log.warn("忽略数量无法表示的 SEND_GIFT_V2 礼物: room={}, giftId={}, count={}",
                     source.roomId, gift.id, gift.count)
-                return@mapNotNull null
+                return@mapIndexedNotNull null
             }
             val count = gift.count.toInt()
             val timestamp = eventTime(gift.timestamp, data)
@@ -53,7 +53,7 @@ class BilibiliV2EventParser(
                 } else null
                 GiftInfo(blind.id, blind.name, coinValue(blind.price), count, image)
             }
-            when (gift.coinType.lowercase()) {
+            val event = when (gift.coinType.lowercase()) {
                 "silver" -> BilibiliFreeGiftEvent(source, sender, giftInfo, timestamp)
                 "gold" -> if (blindInfo == null) {
                     BilibiliPaidGiftEvent(source, sender, giftInfo, timestamp)
@@ -66,6 +66,9 @@ class BilibiliV2EventParser(
                     null
                 }
             }
+            event?.let { com.starlwr.bot.bilibili.report.ReportEventIdentity.bind(it,
+                gift.transactionId.takeIf { tid -> tid.isNotBlank() && tid != "0" }
+                    ?.let { tid -> "SEND_GIFT_V2:$tid:${gift.id}:$index" }) }
         }
     }
 

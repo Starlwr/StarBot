@@ -92,15 +92,15 @@ class LiveReportCollector(
         val metricKey = delta.metric.name.lowercase()
         val adjusted = if (metricKey in demand.charts || (delta.metric == ReportMetric.BOX && "box_profit" in demand.charts)) delta
             else delta.copy(occurredAt = 0)
-        driver.apply(session, eventId(event, delta), adjusted)
+        driver.apply(session, eventId(event), adjusted)
     }
     private fun user(event: StarBotLiveInteractionEvent, count: Long, value: Double = 0.0, profit: Double = 0.0): ReportUserDelta? =
         event.sender?.let { ReportUserDelta((it.uid ?: it.uname.hashCode().toLong()).toString(), it.uname ?: "", it.face, count, value, profit) }
-    private fun eventId(event: StarBotExternalBaseEvent, delta: ReportDelta): String {
-        val raw = listOf(event.platform, event.source.uid, event.source.roomId, event.javaClass.name, event.timestamp,
-            delta.metric, delta.user?.uid, delta.count, delta.value, delta.profit, delta.text, delta.label).joinToString("|")
+    private fun eventId(event: StarBotExternalBaseEvent): String {
+        val raw = com.alibaba.fastjson2.JSON.toJSONString(listOf(event.platform, event.source.uid,
+            event.source.roomId, event.javaClass.name, ReportEventIdentity.id(event)))
         return MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(StandardCharsets.UTF_8))
-            .take(16).joinToString("") { "%02x".format(it) }
+            .joinToString("") { "%02x".format(it) }
     }
 
     private fun eventOrigin(event: StarBotExternalBaseEvent): String = when (event) {

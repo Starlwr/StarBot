@@ -88,7 +88,8 @@ public class BilibiliEventParser {
 
         if (parsers.containsKey(type)) {
             try {
-                return Optional.ofNullable(parsers.get(type).apply(data, source));
+                return Optional.ofNullable(parsers.get(type).apply(data, source))
+                        .map(event -> com.starlwr.bot.bilibili.report.ReportEventIdentity.bindPacket(event, data));
             } catch (Exception e) {
                 log.error("处理直播间 {} 的 {} 类型消息异常: {}", source.getRoomId(), type, data.toJSONString(), e);
             }
