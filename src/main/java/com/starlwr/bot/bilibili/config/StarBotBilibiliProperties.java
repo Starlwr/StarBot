@@ -175,6 +175,17 @@ public class StarBotBilibiliProperties {
          */
         private boolean enableConnectLiveRoom = true;
 
+        /** WebSocket binary message/receive buffer size, in KiB. */
+        private int webSocketBufferSizeInKB = 8192;
+
+        public int getWebSocketBufferSizeBytes() {
+            if (webSocketBufferSizeInKB <= 0 || webSocketBufferSizeInKB > Integer.MAX_VALUE / 1024) {
+                throw new IllegalArgumentException("starbot.bilibili.live.web-socket-buffer-size-in-kb must be between 1 and "
+                        + Integer.MAX_VALUE / 1024);
+            }
+            return webSocketBufferSizeInKB * 1024;
+        }
+
         /**
          * 是否仅连接启用了直播推送的直播间
          */
