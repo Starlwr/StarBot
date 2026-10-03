@@ -17,6 +17,7 @@ import com.starlwr.bot.core.painter.ChartPainter;
 import com.starlwr.bot.core.painter.CommonPainter;
 import com.starlwr.bot.core.painter.WordCloudPainter;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.LiveDataReadSession;
 import com.starlwr.bot.core.util.CollectionUtil;
 import com.starlwr.bot.core.util.FontUtil;
 import com.starlwr.bot.core.util.ImageUtil;
@@ -54,6 +55,8 @@ public class BilibiliLiveReportPainter {
     private final BilibiliApiUtil bilibili;
 
     private final LiveDataService liveDataService;
+
+    private LiveDataReadSession reportSession;
 
     private final BilibiliWordCloudUtil wordCloudUtil;
 
@@ -137,7 +140,8 @@ public class BilibiliLiveReportPainter {
      * @return 直播报告图片的 Base64 字符串
      */
     public Optional<String> paint(String path) {
-        try {
+        try (LiveDataReadSession reading = liveDataService.openReadSession(LivePlatform.BILIBILI.getName(), up.getUid()).orElse(null)) {
+            reportSession = reading;
             drawLogo();
 
             List<String> sequence = new ArrayList<>();
@@ -152,6 +156,8 @@ public class BilibiliLiveReportPainter {
         } catch (Exception e) {
             log.error("绘制 {}(UID: {}, 房间号: {}) 的直播报告图片失败", up.getUname(), up.getUid(), up.getRoomIdString(), e);
             return Optional.empty();
+        } finally {
+            reportSession = null;
         }
 
         if (StringUtil.isBlank(path)) {
@@ -206,8 +212,8 @@ public class BilibiliLiveReportPainter {
 
         // 直播时长
         if (config.isShowLiveTime()) {
-            Optional<Long> optionalStartTime = liveDataService.getLiveStartTime(LivePlatform.BILIBILI.getName(), up.getUid());
-            Optional<Long> optionalEndTime = liveDataService.getLiveEndTime(LivePlatform.BILIBILI.getName(), up.getUid());
+            Optional<Long> optionalStartTime = reportStartTime();
+            Optional<Long> optionalEndTime = reportEndTime();
             String startTime = "?";
             String endTime = "?";
             if (optionalStartTime.isPresent()) {
@@ -422,12 +428,12 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         String uid = String.valueOf(up.getUid());
 
-        Integer beforeFansCount = liveDataService.getCustomObject(Integer.class, platform, "BeforeFansCount", uid).orElse(null);
-        Integer afterFansCount = liveDataService.getCustomObject(Integer.class, platform, "AfterFansCount", uid).orElse(null);
-        Integer beforeFansMedalCount = liveDataService.getCustomObject(Integer.class, platform, "BeforeFansMedalCount", uid).orElse(null);
-        Integer afterFansMedalCount = liveDataService.getCustomObject(Integer.class, platform, "AfterFansMedalCount", uid).orElse(null);
-        Integer beforeGuardCount = liveDataService.getCustomObject(Integer.class, platform, "BeforeGuardCount", uid).orElse(null);
-        Integer afterGuardCount = liveDataService.getCustomObject(Integer.class, platform, "AfterGuardCount", uid).orElse(null);
+        Integer beforeFansCount = reportCount(platform, "BeforeFansCount", uid).orElse(null);
+        Integer afterFansCount = reportCount(platform, "AfterFansCount", uid).orElse(null);
+        Integer beforeFansMedalCount = reportCount(platform, "BeforeFansMedalCount", uid).orElse(null);
+        Integer afterFansMedalCount = reportCount(platform, "AfterFansMedalCount", uid).orElse(null);
+        Integer beforeGuardCount = reportCount(platform, "BeforeGuardCount", uid).orElse(null);
+        Integer afterGuardCount = reportCount(platform, "AfterGuardCount", uid).orElse(null);
 
         if (config.isShowFansChange()) {
             drawChangeLine("粉丝", beforeFansCount, afterFansCount);
@@ -503,8 +509,8 @@ public class BilibiliLiveReportPainter {
      * @return 时间范围，不可用时返回 null，单位：毫秒
      */
     private long[] getLiveRange() {
-        Optional<Long> optionalStartTime = liveDataService.getLiveStartTime(LivePlatform.BILIBILI.getName(), up.getUid());
-        Optional<Long> optionalEndTime = liveDataService.getLiveEndTime(LivePlatform.BILIBILI.getName(), up.getUid());
+        Optional<Long> optionalStartTime = reportStartTime();
+        Optional<Long> optionalEndTime = reportEndTime();
         if (optionalStartTime.isPresent() && optionalEndTime.isPresent() && optionalEndTime.get() > optionalStartTime.get()) {
             return new long[]{optionalStartTime.get(), optionalEndTime.get()};
         }
@@ -533,8 +539,8 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> danmus = normalizeEventSenders(liveDataService.getDanmu(platform, uid, JSONObject.class));
-        List<JSONObject> emojis = normalizeEventSenders(liveDataService.getEmoji(platform, uid, JSONObject.class));
+        List<JSONObject> danmus = normalizeEventSenders(eventView(platform, uid, "Danmu", () -> liveDataService.getDanmu(platform, uid, JSONObject.class)));
+        List<JSONObject> emojis = normalizeEventSenders(eventView(platform, uid, "Emoji", () -> liveDataService.getEmoji(platform, uid, JSONObject.class)));
         List<JSONObject> all = Stream.concat(danmus.stream(), emojis.stream()).toList();
         int count = all.size();
 
@@ -702,7 +708,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> boxes = normalizeEventSenders(liveDataService.getRandomGift(platform, uid, JSONObject.class));
+        List<JSONObject> boxes = normalizeEventSenders(eventView(platform, uid, "RandomGift", () -> liveDataService.getRandomGift(platform, uid, JSONObject.class)));
         if (CollectionUtils.isEmpty(boxes)) {
             return;
         }
@@ -885,9 +891,9 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> freeGifts = normalizeEventSenders(liveDataService.getFreeGift(platform, uid, JSONObject.class));
-        List<JSONObject> paidGifts = normalizeEventSenders(liveDataService.getPaidGift(platform, uid, JSONObject.class));
-        List<JSONObject> boxes = normalizeEventSenders(liveDataService.getRandomGift(platform, uid, JSONObject.class));
+        List<JSONObject> freeGifts = normalizeEventSenders(eventView(platform, uid, "FreeGift", () -> liveDataService.getFreeGift(platform, uid, JSONObject.class)));
+        List<JSONObject> paidGifts = normalizeEventSenders(eventView(platform, uid, "PaidGift", () -> liveDataService.getPaidGift(platform, uid, JSONObject.class)));
+        List<JSONObject> boxes = normalizeEventSenders(eventView(platform, uid, "RandomGift", () -> liveDataService.getRandomGift(platform, uid, JSONObject.class)));
 
         if (CollectionUtils.isEmpty(freeGifts) && CollectionUtils.isEmpty(paidGifts) && CollectionUtils.isEmpty(boxes)) {
             return;
@@ -986,7 +992,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> superChats = normalizeEventSenders(liveDataService.getSuperChat(platform, uid, JSONObject.class));
+        List<JSONObject> superChats = normalizeEventSenders(eventView(platform, uid, "SuperChat", () -> liveDataService.getSuperChat(platform, uid, JSONObject.class)));
         if (CollectionUtils.isEmpty(superChats)) {
             return;
         }
@@ -1048,7 +1054,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> guards = normalizeEventSenders(liveDataService.getMemberShip(platform, uid, JSONObject.class));
+        List<JSONObject> guards = normalizeEventSenders(eventView(platform, uid, "Membership", () -> liveDataService.getMemberShip(platform, uid, JSONObject.class)));
         if (CollectionUtils.isEmpty(guards)) {
             return;
         }
@@ -1177,7 +1183,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> enters = normalizeEventSenders(liveDataService.getEnterRoom(platform, uid, JSONObject.class));
+        List<JSONObject> enters = normalizeEventSenders(eventView(platform, uid, "EnterRoom", () -> liveDataService.getEnterRoom(platform, uid, JSONObject.class)));
         if (CollectionUtils.isEmpty(enters)) {
             return;
         }
@@ -1222,7 +1228,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> likes = normalizeEventSenders(liveDataService.getLike(platform, uid, JSONObject.class));
+        List<JSONObject> likes = normalizeEventSenders(eventView(platform, uid, "Like", () -> liveDataService.getLike(platform, uid, JSONObject.class)));
         if (CollectionUtils.isEmpty(likes)) {
             return;
         }
@@ -1284,7 +1290,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         Long uid = up.getUid();
 
-        List<JSONObject> shares = normalizeEventSenders(liveDataService.getShare(platform, uid, JSONObject.class));
+        List<JSONObject> shares = normalizeEventSenders(eventView(platform, uid, "Share", () -> liveDataService.getShare(platform, uid, JSONObject.class)));
         if (CollectionUtils.isEmpty(shares)) {
             return;
         }
@@ -1354,6 +1360,32 @@ public class BilibiliLiveReportPainter {
             compatible.put("sender", senderUid);
             return compatible;
         }).toList();
+    }
+
+    private List<JSONObject> eventView(String platform, Long uid, String dataKey,
+                                       java.util.function.Supplier<List<JSONObject>> legacy) {
+        List<JSONObject> streamed = new ArrayList<>();
+        if (reportSession != null) {
+            reportSession.forEachEvent(dataKey, streamed::add);
+            return streamed;
+        }
+        liveDataService.forEachEvent(platform, uid, dataKey, streamed::add);
+        return streamed.isEmpty() ? legacy.get() : streamed;
+    }
+
+    private Optional<Long> reportStartTime() {
+        return reportSession == null ? liveDataService.getLiveStartTime(LivePlatform.BILIBILI.getName(), up.getUid())
+                : reportSession.getCustomObject(Long.class, "LiveStartTime", up.getUid().toString());
+    }
+
+    private Optional<Long> reportEndTime() {
+        return reportSession == null ? liveDataService.getLiveEndTime(LivePlatform.BILIBILI.getName(), up.getUid())
+                : reportSession.getCustomObject(Long.class, "LiveEndTime", up.getUid().toString());
+    }
+
+    private Optional<Integer> reportCount(String platform, String dataKey, String uid) {
+        return reportSession == null ? liveDataService.getCustomObject(Integer.class, platform, dataKey, uid)
+                : reportSession.getCustomObject(Integer.class, dataKey, uid);
     }
 
     /**
