@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -20,6 +21,41 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BilibiliNetworkLoggerTest {
     private static final String HTTP_LOGGER = "com.starlwr.bot.bilibili.network.http";
+
+    @Test
+    void disabledOrFilteredWebsocketDiagnosticsNeverMaterializePayloads() {
+        StarBotBilibiliProperties properties = properties(false, 16_384);
+        AtomicInteger materialized = new AtomicInteger();
+        captureAll("com.starlwr.bot.bilibili.network.websocket", properties, logger -> {
+            logger.websocketInLazy("bilibili-live", 1L, "BINARY", 100, materialized::incrementAndGet, false);
+            properties.getNetwork().setWebsocketLogEnabled(true);
+            properties.getNetwork().setConsoleCategories(Set.of("dynamic"));
+            logger.websocketInLazy("bilibili-live", 1L, "BINARY", 100, materialized::incrementAndGet, false);
+            properties.getNetwork().setConsoleCategories(Set.of("all"));
+            properties.getNetwork().setWebsocketHeartbeatLogEnabled(false);
+            logger.websocketInLazy("bilibili-live", 1L, "HEARTBEAT", 100, materialized::incrementAndGet, true);
+        });
+        assertEquals(0, materialized.get());
+    }
+
+    @Test
+    void encodedAuthenticationFramesAreRedactedUnlessSensitiveLoggingIsExplicitlyEnabled() {
+        StarBotBilibiliProperties properties = properties(false, 16_384);
+        properties.getNetwork().setWebsocketLogEnabled(true);
+        properties.getNetwork().setConsoleCategories(Set.of("all"));
+        String encoded = java.util.Base64.getEncoder().encodeToString("replay-secret".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        List<String> messages = captureAll("com.starlwr.bot.bilibili.network.websocket", properties, logger -> {
+            logger.websocketOutLazy("bilibili-live", 1L, "VERIFY", 100,
+                    () -> Map.of("decoded", "key=replay-secret", "frameBase64", encoded), false);
+            properties.getNetwork().setIncludeSensitiveData(true);
+            logger.websocketOutLazy("bilibili-live", 1L, "VERIFY", 100,
+                    () -> Map.of("decoded", "key=replay-secret", "frameBase64", encoded), false);
+        });
+        assertEquals(2, messages.size());
+        assertFalse(messages.get(0).contains("replay-secret"));
+        assertFalse(messages.get(0).contains(encoded));
+        assertTrue(messages.get(1).contains(encoded));
+    }
 
     @Test
     void rawDebugModePreservesReplayDataWithoutTruncation() {
@@ -99,7 +135,11 @@ class BilibiliNetworkLoggerTest {
     }
 
     private List<String> captureAll(StarBotBilibiliProperties properties, Consumer<BilibiliNetworkLogger> action) {
-        Logger logger = (Logger) LoggerFactory.getLogger(HTTP_LOGGER);
+        return captureAll(HTTP_LOGGER, properties, action);
+    }
+
+    private List<String> captureAll(String loggerName, StarBotBilibiliProperties properties, Consumer<BilibiliNetworkLogger> action) {
+        Logger logger = (Logger) LoggerFactory.getLogger(loggerName);
         Level previousLevel = logger.getLevel();
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();

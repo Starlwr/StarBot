@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /** Structured diagnostics for Bilibili HTTP and WebSocket traffic. */
@@ -24,7 +25,7 @@ public class BilibiliNetworkLogger {
             "credential", "dynamic", "live-api", "live-ws", "heartbeat", "telemetry", "risk",
             "integrity", "image", "onebot", "api", "other");
     private static final Pattern SENSITIVE_KEY = Pattern.compile(
-            "(?i)^(authorization|cookie|set-cookie|sessdata|bili_jct|csrf|refresh_csrf|refresh_token|ac_time_value|access_token|token|key|qrcode_key)$");
+            "(?i)^(authorization|cookie|set-cookie|sessdata|bili_jct|csrf|refresh_csrf|refresh_token|ac_time_value|access_token|token|key|qrcode_key|frameBase64)$");
     private static final Pattern JSON_SECRET = Pattern.compile(
             "(?i)(\\\"(?:authorization|cookie|set-cookie|sessdata|bili_jct|csrf|refresh_csrf|refresh_token|ac_time_value|access_token|token|key|qrcode_key)\\\"\\s*:\\s*\\\")[^\\\"]*(\\\")");
     private static final Pattern PARAM_SECRET = Pattern.compile(
@@ -106,22 +107,31 @@ public class BilibiliNetworkLogger {
     }
 
     public void websocketOut(String channel, Long roomId, String kind, int bytes, Object body, boolean heartbeat) {
-        websocket("OUT", channel, roomId, kind, bytes, body, heartbeat);
+        websocketOutLazy(channel, roomId, kind, bytes, () -> body, heartbeat);
     }
 
     public void websocketIn(String channel, Long roomId, String kind, int bytes, Object body, boolean heartbeat) {
+        websocketInLazy(channel, roomId, kind, bytes, () -> body, heartbeat);
+    }
+
+    public void websocketOutLazy(String channel, Long roomId, String kind, int bytes, Supplier<?> body, boolean heartbeat) {
+        websocket("OUT", channel, roomId, kind, bytes, body, heartbeat);
+    }
+
+    public void websocketInLazy(String channel, Long roomId, String kind, int bytes, Supplier<?> body, boolean heartbeat) {
         websocket("IN ", channel, roomId, kind, bytes, body, heartbeat);
     }
 
     private void websocket(String direction, String channel, Long roomId, String kind,
-                           int bytes, Object body, boolean heartbeat) {
+                           int bytes, Supplier<?> body, boolean heartbeat) {
         StarBotBilibiliProperties.Network network = properties.getNetwork();
         if (!network.isWebsocketLogEnabled() || (heartbeat && !network.isWebsocketHeartbeatLogEnabled())
                 || !WS_LOG.isDebugEnabled()) {
             return;
         }
         String category = classifyWebsocket(channel, heartbeat);
-        String safeBody = formatBody(body);
+        if (!categoryEnabled(category)) return;
+        String safeBody = formatBody(body.get());
         String safeRoom = roomId == null ? "-" : roomId.toString();
         debug(WS_LOG, category,
                 String.join("|", "WS " + direction, channel, safeRoom, kind, String.valueOf(bytes), safeBody),
