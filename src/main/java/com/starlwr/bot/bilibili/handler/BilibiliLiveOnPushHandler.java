@@ -13,8 +13,8 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
-import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
@@ -94,7 +94,7 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
         try {
             Room room = bilibili.getLiveInfoByRoomId(event.getSource().getRoomId());
             title = room.getTitle();
-            if (StringUtil.isNotBlank(room.getCover())) {
+            if (StringUtils.isNotBlank(room.getCover())) {
                 cover = "{image_url=" + room.getCover() + "}";
             }
         } catch (Exception e) {

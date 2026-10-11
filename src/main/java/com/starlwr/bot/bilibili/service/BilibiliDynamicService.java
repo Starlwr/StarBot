@@ -12,9 +12,10 @@ import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadComplete
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.util.CollectionUtil;
 import com.starlwr.bot.core.util.FixedSizeSetQueue;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.SetUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -196,7 +197,7 @@ public class BilibiliDynamicService {
                 }
 
                 try {
-                    if (!autoFollowQueue.isEmpty()) {
+                    if (CollectionUtils.isNotEmpty(autoFollowQueue)) {
                         log.info("即将在 {} 秒后关注下一个 UP 主, 自动关注队列中还剩余 {} 个 UP 主", properties.getDynamic().getAutoFollowInterval(), autoFollowQueue.size());
                     }
                     Thread.sleep(properties.getDynamic().getAutoFollowInterval() * 1000L);
@@ -211,7 +212,7 @@ public class BilibiliDynamicService {
                 .map(Up::new)
                 .toList();
 
-        if (needFollowUps.isEmpty()) {
+        if (CollectionUtils.isEmpty(needFollowUps)) {
             log.info("不存在打开了动态推送但未关注的 UP 主");
             return;
         }
@@ -219,10 +220,9 @@ public class BilibiliDynamicService {
         alreadyFollowUps.addAll(bilibili.getFollowingUps(accountService.getAccountInfo().getUid()));
         alreadyFollowUps.add(accountService.getAccountInfo());
 
-        List<Up> notFollowUps = new ArrayList<>();
-        CollectionUtil.compareCollectionDiff(alreadyFollowUps, needFollowUps, notFollowUps, new ArrayList<>(), new ArrayList<>());
+        List<Up> notFollowUps = new ArrayList<>(SetUtils.difference(new HashSet<>(needFollowUps), new HashSet<>(alreadyFollowUps)));
 
-        if (notFollowUps.isEmpty()) {
+        if (CollectionUtils.isEmpty(notFollowUps)) {
             log.info("不存在打开了动态推送但未关注的 UP 主");
             return;
         }

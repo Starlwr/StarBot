@@ -4,6 +4,7 @@ import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.WireFormat;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -165,7 +166,7 @@ public class SendGiftV2 {
         }
 
         public boolean isPresent() {
-            return !name.isBlank() || price > 0;
+            return StringUtils.isNotBlank(name) || price > 0;
         }
     }
 

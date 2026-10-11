@@ -9,15 +9,16 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.painter.CommonPainter;
-import com.starlwr.bot.core.util.CollectionUtil;
 import com.starlwr.bot.core.util.FontUtil;
 import com.starlwr.bot.core.util.ImageUtil;
-import com.starlwr.bot.core.util.StringUtil;
 import jakarta.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.ListUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.ResourceLoader;
-import org.springframework.data.util.Pair;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -111,7 +112,7 @@ public class BilibiliDynamicPainter {
             return Optional.empty();
         }
 
-        if (StringUtil.isBlank(path)) {
+        if (StringUtils.isBlank(path)) {
             return this.painter.base64();
         } else {
             return this.painter.saveAndGetBase64(path);
@@ -417,7 +418,7 @@ public class BilibiliDynamicPainter {
 
         List<JSONObject> imageDatas = data.getJSONArray("pics").toList(JSONObject.class);
 
-        if (imageDatas.isEmpty()) {
+        if (CollectionUtils.isEmpty(imageDatas)) {
             return;
         }
 
@@ -471,7 +472,7 @@ public class BilibiliDynamicPainter {
                         .collect(Collectors.toList()))
                 .join();
 
-        List<List<BufferedImage>> lines = CollectionUtil.splitCollection(images, lineCount);
+        List<List<BufferedImage>> lines = ListUtils.partition(images, lineCount);
 
         if (isForward) {
             int height = lines.stream().mapToInt(line -> line.get(0).getHeight()).sum() + this.painter.getRowSpace() * lines.size();
@@ -517,13 +518,13 @@ public class BilibiliDynamicPainter {
 
         String buttonText = data.getJSONObject("button").getString("text");
         Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(buttonText);
-        painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getSecond() - 10) / 2, size.getFirst() + 16, size.getSecond() + 10, 10, COLOR_PINK);
-        painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getSecond() - 10) / 2 + 5));
+        painter.drawRoundedRectangle(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getRight() - 10) / 2, size.getLeft() + 16, size.getRight() + 10, 10, COLOR_PINK);
+        painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getRight() - 10) / 2 + 5));
 
         String title = data.getString("title");
         String hint = data.getString("hint_message");
         List<BufferedImage> lineImages = new ArrayList<>();
-        int lineWidth = painter.getWidth() - iconWidth - 25 - size.getFirst() - IMAGE_MARGIN * 8;
+        int lineWidth = painter.getWidth() - iconWidth - 25 - size.getLeft() - IMAGE_MARGIN * 8;
         lineImages.add(getOmitTextImage(title, lineWidth, 40));
 
         CommonPainter currentPainter = factory.create(lineWidth, 40, true);
@@ -638,12 +639,12 @@ public class BilibiliDynamicPainter {
 
             String timeText = data.getString("duration_text");
             Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(timeText);
-            this.painter.drawRoundedRectangle(IMAGE_MARGIN + 13, this.painter.getY() + image.getHeight() - size.getSecond() - 22, size.getFirst() + 16, size.getSecond() + 10, 10, new Color(115, 115, 115, 153));
-            this.painter.drawText(timeText, Color.WHITE, new Point(IMAGE_MARGIN + 21, this.painter.getY() + image.getHeight() - size.getSecond() - 17));
+            this.painter.drawRoundedRectangle(IMAGE_MARGIN + 13, this.painter.getY() + image.getHeight() - size.getRight() - 22, size.getLeft() + 16, size.getRight() + 10, 10, new Color(115, 115, 115, 153));
+            this.painter.drawText(timeText, Color.WHITE, new Point(IMAGE_MARGIN + 21, this.painter.getY() + image.getHeight() - size.getRight() - 17));
 
             JSONObject stat = data.getJSONObject("stat");
             String counts = stat.getString("play") + "观看   " + stat.getString("danmaku") + "弹幕";
-            this.painter.drawText(counts, Color.WHITE, new Point(IMAGE_MARGIN + size.getFirst() + 53, this.painter.getY() + image.getHeight() - size.getSecond() - 17));
+            this.painter.drawText(counts, Color.WHITE, new Point(IMAGE_MARGIN + size.getLeft() + 53, this.painter.getY() + image.getHeight() - size.getRight() - 17));
 
             try {
                 BufferedImage tv = ImageIO.read(resourceLoader.getResource("classpath:images/dynamic/tv.png").getInputStream());
@@ -763,10 +764,10 @@ public class BilibiliDynamicPainter {
 
                 JSONObject badge = common.getJSONObject("badge");
                 String badgeText = badge.getString("text");
-                if (StringUtil.isNotBlank(badgeText)) {
+                if (StringUtils.isNotBlank(badgeText)) {
                     Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(badgeText);
-                    painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getSecond() - 10) / 2, size.getFirst() + 16, size.getSecond() + 10, 10, new Color(Integer.parseInt(badge.getString("bg_color").substring(1), 16)));
-                    painter.drawText(badgeText, new Color(Integer.parseInt(badge.getString("color").substring(1), 16)), new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getSecond() - 10) / 2 + 5));
+                    painter.drawRoundedRectangle(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getRight() - 10) / 2, size.getLeft() + 16, size.getRight() + 10, 10, new Color(Integer.parseInt(badge.getString("bg_color").substring(1), 16)));
+                    painter.drawText(badgeText, new Color(Integer.parseInt(badge.getString("color").substring(1), 16)), new Point(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getRight() - 10) / 2 + 5));
                 }
 
                 BufferedImage image = painter.getImage();
@@ -802,13 +803,13 @@ public class BilibiliDynamicPainter {
 
                 String buttonText = common.getJSONObject("button").getJSONObject("jump_style").getString("text");
                 Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(buttonText);
-                painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getSecond() - 10) / 2, size.getFirst() + 16, size.getSecond() + 10, 10, COLOR_PINK);
-                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getSecond() - 10) / 2 + 5));
+                painter.drawRoundedRectangle(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getRight() - 10) / 2, size.getLeft() + 16, size.getRight() + 10, 10, COLOR_PINK);
+                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getRight() - 10) / 2 + 5));
 
                 String prefix = common.getString("title_prefix");
                 String title = common.getString("title");
                 List<BufferedImage> lineImages = new ArrayList<>();
-                int lineWidth = painter.getWidth() - iconWidth - 25 - size.getFirst() - IMAGE_MARGIN * 8;
+                int lineWidth = painter.getWidth() - iconWidth - 25 - size.getLeft() - IMAGE_MARGIN * 8;
                 CommonPainter currentPainter = factory.create(lineWidth, 40, true);
                 for (int codePoint : prefix.codePoints().toArray()) {
                     Font font = fontUtil.findFontForCharacter(codePoint).deriveFont(Font.BOLD);
@@ -821,7 +822,7 @@ public class BilibiliDynamicPainter {
                 List<Integer> tail = "...".codePoints().boxed().toList();
                 for (int codePoint : title.codePoints().toArray()) {
                     Font font = fontUtil.findFontForCharacter(codePoint);
-                    if (lineImages.isEmpty()) {
+                    if (CollectionUtils.isEmpty(lineImages)) {
                         if (currentPainter.isNeedWrap(codePoint, TEXT_MARGIN, font)) {
                             lineImages.add(currentPainter.getImage());
                             currentPainter = factory.create(lineWidth, 40, true);
@@ -877,18 +878,18 @@ public class BilibiliDynamicPainter {
                     String watchedText = liveInfo.getJSONObject("watched_show").getString("text_large");
                     Pair<Integer, Integer> watchedTextSize = this.painter.getStringWidthAndHeight(watchedText, CommonPainter.TIP_FONT_SIZE);
 
-                    this.painter.drawRectangle(this.painter.getWidth() - IMAGE_MARGIN - 8 - (watchedTextSize.getFirst() + 16) * 2, this.painter.getY() + 8, watchedTextSize.getFirst() + 16, watchedTextSize.getSecond() + 10, new Color(115, 115, 115, 153));
-                    this.painter.drawTip(watchedText, Color.WHITE, new Point(this.painter.getWidth() - IMAGE_MARGIN - (watchedTextSize.getFirst() + 16) * 2, this.painter.getY() + 13));
+                    this.painter.drawRectangle(this.painter.getWidth() - IMAGE_MARGIN - 8 - (watchedTextSize.getLeft() + 16) * 2, this.painter.getY() + 8, watchedTextSize.getLeft() + 16, watchedTextSize.getRight() + 10, new Color(115, 115, 115, 153));
+                    this.painter.drawTip(watchedText, Color.WHITE, new Point(this.painter.getWidth() - IMAGE_MARGIN - (watchedTextSize.getLeft() + 16) * 2, this.painter.getY() + 13));
 
                     String livingText = "直播中";
                     Pair<Integer, Integer> livingTextSize = this.painter.getStringWidthAndHeight(livingText, CommonPainter.TIP_FONT_SIZE);
-                    int offset = ((watchedTextSize.getFirst() + 16) - livingTextSize.getFirst()) / 2;
-                    this.painter.drawRectangle(this.painter.getWidth() - IMAGE_MARGIN - 8 - watchedTextSize.getFirst() - 16, this.painter.getY() + 8, watchedTextSize.getFirst() + 16, watchedTextSize.getSecond() + 10, COLOR_PINK);
-                    this.painter.drawTip(livingText, Color.WHITE, new Point(this.painter.getWidth() - IMAGE_MARGIN - watchedTextSize.getFirst() - 24 + offset, this.painter.getY() + 13));
+                    int offset = ((watchedTextSize.getLeft() + 16) - livingTextSize.getLeft()) / 2;
+                    this.painter.drawRectangle(this.painter.getWidth() - IMAGE_MARGIN - 8 - watchedTextSize.getLeft() - 16, this.painter.getY() + 8, watchedTextSize.getLeft() + 16, watchedTextSize.getRight() + 10, COLOR_PINK);
+                    this.painter.drawTip(livingText, Color.WHITE, new Point(this.painter.getWidth() - IMAGE_MARGIN - watchedTextSize.getLeft() - 24 + offset, this.painter.getY() + 13));
 
                     String areaName = liveInfo.getString("area_name");
                     Pair<Integer, Integer> areaNameSize = this.painter.getStringWidthAndHeight(areaName);
-                    this.painter.drawText(areaName, Color.WHITE, new Point(IMAGE_MARGIN + 16, this.painter.getY() + image.getHeight() - 16 - areaNameSize.getSecond()));
+                    this.painter.drawText(areaName, Color.WHITE, new Point(IMAGE_MARGIN + 16, this.painter.getY() + image.getHeight() - 16 - areaNameSize.getRight()));
 
                     this.painter.setPos(TEXT_MARGIN, this.painter.getY() + height);
                 });
@@ -963,11 +964,11 @@ public class BilibiliDynamicPainter {
         int badgeWidth = 0;
         JSONObject badge = liveInfo.getJSONObject("badge");
         String badgeText = badge.getString("text");
-        if (StringUtil.isNotBlank(badgeText)) {
+        if (StringUtils.isNotBlank(badgeText)) {
             Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(badgeText);
-            badgeWidth = size.getFirst() + 16;
-            painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, IMAGE_MARGIN * 2, badgeWidth, size.getSecond() + 10, 10, new Color(Integer.parseInt(badge.getString("bg_color").substring(1), 16)));
-            painter.drawText(badgeText, new Color(Integer.parseInt(badge.getString("color").substring(1), 16)), new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, IMAGE_MARGIN * 2 + 5));
+            badgeWidth = size.getLeft() + 16;
+            painter.drawRoundedRectangle(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4, IMAGE_MARGIN * 2, badgeWidth, size.getRight() + 10, 10, new Color(Integer.parseInt(badge.getString("bg_color").substring(1), 16)));
+            painter.drawText(badgeText, new Color(Integer.parseInt(badge.getString("color").substring(1), 16)), new Point(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 + 8, IMAGE_MARGIN * 2 + 5));
         }
 
         String title = liveInfo.getString("title");
@@ -978,7 +979,7 @@ public class BilibiliDynamicPainter {
         List<Integer> tail = "...".codePoints().boxed().toList();
         for (int codePoint : title.codePoints().toArray()) {
             Font font = fontUtil.findFontForCharacter(codePoint).deriveFont(30f);
-            if (lineImages.isEmpty()) {
+            if (CollectionUtils.isEmpty(lineImages)) {
                 if (currentPainter.isNeedWrap(codePoint, TEXT_MARGIN, font)) {
                     lineImages.add(currentPainter.getImage());
                     currentPainter = factory.create(lineWidth, 40, true);
@@ -1067,16 +1068,16 @@ public class BilibiliDynamicPainter {
                 Pair<Integer, Integer> titleSize = this.painter.getStringWidthAndHeight(title);
                 Pair<Integer, Integer> desc1Size = this.painter.getStringWidthAndHeight(desc1, 25);
                 Pair<Integer, Integer> desc2Size = this.painter.getStringWidthAndHeight(desc2, 25);
-                int marginY = (200 - titleSize.getSecond() - desc1Size.getSecond() - desc2Size.getSecond() - 30) / 2;
+                int marginY = (200 - titleSize.getRight() - desc1Size.getRight() - desc2Size.getRight() - 30) / 2;
                 painter.drawText(title, new Point(coverWidth + 50, marginY));
-                painter.drawTip(desc1, new Point(coverWidth + 50, marginY + titleSize.getSecond() + 15));
-                painter.drawTip(desc2, new Point(coverWidth + 50, marginY + titleSize.getSecond() + desc1Size.getSecond() + 30));
+                painter.drawTip(desc1, new Point(coverWidth + 50, marginY + titleSize.getRight() + 15));
+                painter.drawTip(desc2, new Point(coverWidth + 50, marginY + titleSize.getRight() + desc1Size.getRight() + 30));
 
                 String buttonText = common.getJSONObject("button").getJSONObject("jump_style").getString("text");
                 Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(buttonText);
 
-                painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getSecond()) / 2, size.getFirst() + 16, size.getSecond() + 10, 10, COLOR_PINK);
-                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getSecond()) / 2 + 5));
+                painter.drawRoundedRectangle(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getRight()) / 2, size.getLeft() + 16, size.getRight() + 10, 10, COLOR_PINK);
+                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getRight()) / 2 + 5));
 
                 if (isForward) {
                     int height = painter.getHeight() + this.painter.getRowSpace();
@@ -1121,25 +1122,25 @@ public class BilibiliDynamicPainter {
                     String brief = item.getString("brief");
                     Pair<Integer, Integer> titleSize = this.painter.getStringWidthAndHeight(title);
                     BufferedImage omitTitleImage = getOmitTextImage(title, WIDTH - coverWidth - 50 - IMAGE_MARGIN * 4, 30);
-                    if (StringUtil.isNotBlank(price)) {
+                    if (StringUtils.isNotBlank(price)) {
                         Pair<Integer, Integer> contentSize = this.painter.getStringWidthAndHeight(price, 25);
-                        int marginY = (200 - titleSize.getSecond() - contentSize.getSecond() - 25) / 2;
+                        int marginY = (200 - titleSize.getRight() - contentSize.getRight() - 25) / 2;
                         painter.drawImage(omitTitleImage, new Point(coverWidth + 50, marginY));
-                        painter.drawTip(price, COLOR_LIGHT_BLUE, new Point(coverWidth + 50, marginY + titleSize.getSecond() + 25));
-                        painter.drawTip("起", new Point(coverWidth + 50 + contentSize.getFirst(), marginY + titleSize.getSecond() + 25));
-                    } else if (StringUtil.isNotBlank(brief)) {
+                        painter.drawTip(price, COLOR_LIGHT_BLUE, new Point(coverWidth + 50, marginY + titleSize.getRight() + 25));
+                        painter.drawTip("起", new Point(coverWidth + 50 + contentSize.getLeft(), marginY + titleSize.getRight() + 25));
+                    } else if (StringUtils.isNotBlank(brief)) {
                         Pair<Integer, Integer> contentSize = this.painter.getStringWidthAndHeight(brief, 25);
-                        int marginY = (200 - titleSize.getSecond() - contentSize.getSecond() - 25) / 2;
+                        int marginY = (200 - titleSize.getRight() - contentSize.getRight() - 25) / 2;
                         painter.drawImage(omitTitleImage, new Point(coverWidth + 50, marginY));
-                        painter.drawTip(brief, new Point(coverWidth + 50, marginY + titleSize.getSecond() + 25));
+                        painter.drawTip(brief, new Point(coverWidth + 50, marginY + titleSize.getRight() + 25));
                     } else {
-                        painter.drawImage(omitTitleImage, new Point(coverWidth + 50, (200 - titleSize.getSecond()) / 2));
+                        painter.drawImage(omitTitleImage, new Point(coverWidth + 50, (200 - titleSize.getRight()) / 2));
                     }
 
                     String buttonText = item.getString("jump_desc") + " >";
                     Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(buttonText);
 
-                    painter.drawText(buttonText, Color.PINK, new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 2, (painter.getHeight() - size.getSecond()) - IMAGE_MARGIN * 2));
+                    painter.drawText(buttonText, Color.PINK, new Point(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 2, (painter.getHeight() - size.getRight()) - IMAGE_MARGIN * 2));
                 } else if (items.size() > 1) {
                     List<String> coverUrls = items.stream()
                             .map(item -> ((JSONObject) item).getString("cover"))
@@ -1194,48 +1195,48 @@ public class BilibiliDynamicPainter {
 
                 String title = info.getString("title");
                 Pair<Integer, Integer> titleSize = this.painter.getStringWidthAndHeight(title);
-                painter.drawText(title, new Point(25, (200 - titleSize.getSecond()) / 2));
+                painter.drawText(title, new Point(25, (200 - titleSize.getRight()) / 2));
 
-                painter.drawRectangle(50 + titleSize.getFirst(), 25, 1, 150, Color.LIGHT_GRAY);
+                painter.drawRectangle(50 + titleSize.getLeft(), 25, 1, 150, Color.LIGHT_GRAY);
 
                 String buttonText = match.getJSONObject("button").getJSONObject("jump_style").getString("text");
                 Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(buttonText);
 
-                painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getSecond()) / 2, size.getFirst() + 16, size.getSecond() + 10, 10, COLOR_PINK);
-                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getSecond()) / 2 + 5));
+                painter.drawRoundedRectangle(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getRight()) / 2, size.getLeft() + 16, size.getRight() + 10, 10, COLOR_PINK);
+                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getRight()) / 2 + 5));
 
-                int leftMargin = 200 + titleSize.getFirst();
-                int rightMargin = painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 - 150;
+                int leftMargin = 200 + titleSize.getLeft();
+                int rightMargin = painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 - 150;
 
                 JSONObject leftTeam = info.getJSONObject("left_team");
                 String leftTeamName = leftTeam.getString("name");
                 Pair<Integer, Integer> leftTeamNameSize = this.painter.getStringWidthAndHeight(leftTeamName);
-                painter.drawText(leftTeamName, new Point(leftMargin, 200 - leftTeamNameSize.getSecond() - 25));
+                painter.drawText(leftTeamName, new Point(leftMargin, 200 - leftTeamNameSize.getRight() - 25));
                 String leftTeamIconUrl = leftTeam.getString("pic");
                 Optional<BufferedImage> optionalLeftTeamIcon = bilibili.getBilibiliImage(leftTeamIconUrl);
                 if (optionalLeftTeamIcon.isPresent()) {
                     BufferedImage leftTeamIcon = ImageUtil.resizeByHeight(optionalLeftTeamIcon.get(), 100);
-                    painter.drawImage(leftTeamIcon, new Point(leftMargin + (leftTeamNameSize.getFirst() - leftTeamIcon.getWidth()) / 2, 25));
+                    painter.drawImage(leftTeamIcon, new Point(leftMargin + (leftTeamNameSize.getLeft() - leftTeamIcon.getWidth()) / 2, 25));
                 }
 
                 JSONObject rightTeam = info.getJSONObject("right_team");
                 String rightTeamName = rightTeam.getString("name");
                 Pair<Integer, Integer> rightTeamNameSize = this.painter.getStringWidthAndHeight(rightTeamName);
-                painter.drawText(rightTeamName, new Point(rightMargin - rightTeamNameSize.getFirst(), 200 - rightTeamNameSize.getSecond() - 25));
+                painter.drawText(rightTeamName, new Point(rightMargin - rightTeamNameSize.getLeft(), 200 - rightTeamNameSize.getRight() - 25));
                 String rightTeamIconUrl = rightTeam.getString("pic");
                 Optional<BufferedImage> optionalRightTeamIcon = bilibili.getBilibiliImage(rightTeamIconUrl);
                 if (optionalRightTeamIcon.isPresent()) {
                     BufferedImage rightTeamIcon = ImageUtil.resizeByHeight(optionalRightTeamIcon.get(), 100);
-                    painter.drawImage(rightTeamIcon, new Point(rightMargin - rightTeamNameSize.getFirst() + (rightTeamNameSize.getFirst() - rightTeamIcon.getWidth()) / 2, 25));
+                    painter.drawImage(rightTeamIcon, new Point(rightMargin - rightTeamNameSize.getLeft() + (rightTeamNameSize.getLeft() - rightTeamIcon.getWidth()) / 2, 25));
                 }
 
                 String score = info.getJSONArray("center_top").stream().map(s -> (String) s).collect(Collectors.joining(" "));
                 Pair<Integer, Integer> scoreSize = this.painter.getStringWidthAndHeight(score, 50);
                 String tip = info.getString("center_bottom");
                 Pair<Integer, Integer> tipSize = this.painter.getStringWidthAndHeight(tip);
-                int marginY = (200 - scoreSize.getSecond() - tipSize.getSecond()) / 3;
-                painter.drawChapter(score, new Point(leftMargin + (rightMargin - leftMargin -scoreSize.getFirst()) / 2, marginY));
-                painter.drawText(tip, new Point(leftMargin + (rightMargin - leftMargin -tipSize.getFirst()) / 2, scoreSize.getSecond() + marginY * 2));
+                int marginY = (200 - scoreSize.getRight() - tipSize.getRight()) / 3;
+                painter.drawChapter(score, new Point(leftMargin + (rightMargin - leftMargin -scoreSize.getLeft()) / 2, marginY));
+                painter.drawText(tip, new Point(leftMargin + (rightMargin - leftMargin -tipSize.getLeft()) / 2, scoreSize.getRight() + marginY * 2));
 
                 if (isForward) {
                     int height = painter.getHeight() + this.painter.getRowSpace();
@@ -1259,9 +1260,9 @@ public class BilibiliDynamicPainter {
                 String desc = reserve.getJSONObject("desc1").getString("text") + "   " + reserve.getJSONObject("desc2").getString("text");
                 Pair<Integer, Integer> titleSize = this.painter.getStringWidthAndHeight(title);
                 Pair<Integer, Integer> descSize = this.painter.getStringWidthAndHeight(desc, 25);
-                int marginY = (200 - titleSize.getSecond() - descSize.getSecond() - 25) / 2;
+                int marginY = (200 - titleSize.getRight() - descSize.getRight() - 25) / 2;
                 painter.drawText(title, new Point(25, marginY));
-                painter.drawTip(desc, new Point(25, marginY + titleSize.getSecond() + 25));
+                painter.drawTip(desc, new Point(25, marginY + titleSize.getRight() + 25));
 
                 JSONObject button = reserve.getJSONObject("button").getJSONObject("uncheck");
                 String buttonText = button.getString("text");
@@ -1272,15 +1273,15 @@ public class BilibiliDynamicPainter {
                 String iconUrl = button.getString("icon_url");
                 Optional<BufferedImage> optionalIconImage = bilibili.getBilibiliImage(iconUrl);
                 if (optionalIconImage.isPresent()) {
-                    iconImage = ImageUtil.resizeByHeight(optionalIconImage.get(), size.getSecond());
+                    iconImage = ImageUtil.resizeByHeight(optionalIconImage.get(), size.getRight());
                     iconWidth = iconImage.getWidth();
                 }
 
-                painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - iconWidth - IMAGE_MARGIN * 4, (painter.getHeight() - size.getSecond()) / 2, size.getFirst() + iconWidth + 16, size.getSecond() + 10, 10, COLOR_PINK);
+                painter.drawRoundedRectangle(painter.getWidth() - size.getLeft() - iconWidth - IMAGE_MARGIN * 4, (painter.getHeight() - size.getRight()) / 2, size.getLeft() + iconWidth + 16, size.getRight() + 10, 10, COLOR_PINK);
                 if (optionalIconImage.isPresent()) {
-                    painter.drawImage(iconImage, new Point(painter.getWidth() - size.getFirst() - iconWidth - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getSecond()) / 2 + 5));
+                    painter.drawImage(iconImage, new Point(painter.getWidth() - size.getLeft() - iconWidth - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getRight()) / 2 + 5));
                 }
-                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getSecond()) / 2 + 5));
+                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getRight()) / 2 + 5));
 
                 if (isForward) {
                     int height = painter.getHeight() + this.painter.getRowSpace();
@@ -1311,9 +1312,9 @@ public class BilibiliDynamicPainter {
 
                 String timeText = ugc.getString("duration");
                 Pair<Integer, Integer> size = painter.getStringWidthAndHeight(timeText, 20);
-                painter.drawRoundedRectangle(2 + coverWidth - size.getFirst(), 158 - size.getSecond(), size.getFirst() + 16, size.getSecond() + 10, 10, new Color(115, 115, 115, 153));
+                painter.drawRoundedRectangle(2 + coverWidth - size.getLeft(), 158 - size.getRight(), size.getLeft() + 16, size.getRight() + 10, 10, new Color(115, 115, 115, 153));
                 TextWithStyle time = new TextWithStyle(timeText, 20, Color.WHITE);
-                painter.drawTextWithStyle(Collections.singletonList(time), new Point(10 + coverWidth - size.getFirst(), 163 - size.getSecond()));
+                painter.drawTextWithStyle(Collections.singletonList(time), new Point(10 + coverWidth - size.getLeft(), 163 - size.getRight()));
 
                 String title = ugc.getString("title");
                 String desc = ugc.getString("desc_second");
@@ -1324,7 +1325,7 @@ public class BilibiliDynamicPainter {
                 List<Integer> tail = "...".codePoints().boxed().toList();
                 for (int codePoint : title.codePoints().toArray()) {
                     Font font = fontUtil.findFontForCharacter(codePoint);
-                    if (lineImages.isEmpty()) {
+                    if (CollectionUtils.isEmpty(lineImages)) {
                         if (currentPainter.isNeedWrap(codePoint, TEXT_MARGIN, font)) {
                             lineImages.add(currentPainter.getImage());
                             currentPainter = factory.create(lineWidth, 40, true);
@@ -1346,7 +1347,7 @@ public class BilibiliDynamicPainter {
 
                 int heightTotal = lineImages.stream().mapToInt(BufferedImage::getHeight).sum() + this.painter.getRowSpace() * lineImages.size();
                 Pair<Integer, Integer> descSize = this.painter.getStringWidthAndHeight(desc, 25);
-                int marginY = (200 - heightTotal - descSize.getSecond()) / 2;
+                int marginY = (200 - heightTotal - descSize.getRight()) / 2;
 
                 painter.setPos(coverWidth + 50, marginY);
                 lineImages.forEach(painter::drawImage);
@@ -1373,10 +1374,10 @@ public class BilibiliDynamicPainter {
                 String buttonText = lottery.getJSONObject("button").getJSONObject("jump_style").getString("text");
                 Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(buttonText);
 
-                painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getSecond()) / 2, size.getFirst() + 16, size.getSecond() + 10, 10, COLOR_PINK);
-                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getSecond()) / 2 + 5));
+                painter.drawRoundedRectangle(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getRight()) / 2, size.getLeft() + 16, size.getRight() + 10, 10, COLOR_PINK);
+                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getRight()) / 2 + 5));
 
-                int marginRight = painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 - 25;
+                int marginRight = painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 - 25;
 
                 String title = lottery.getString("title");
                 String hint = lottery.getJSONObject("hint").getString("text");
@@ -1421,17 +1422,17 @@ public class BilibiliDynamicPainter {
                 String buttonText = vote.getJSONObject("button").getJSONObject("jump_style").getString("text");
                 Pair<Integer, Integer> size = this.painter.getStringWidthAndHeight(buttonText);
 
-                painter.drawRoundedRectangle(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getSecond()) / 2, size.getFirst() + 16, size.getSecond() + 10, 10, COLOR_PINK);
-                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getSecond()) / 2 + 5));
+                painter.drawRoundedRectangle(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4, (painter.getHeight() - size.getRight()) / 2, size.getLeft() + 16, size.getRight() + 10, 10, COLOR_PINK);
+                painter.drawText(buttonText, Color.WHITE, new Point(painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 + 8, (painter.getHeight() - size.getRight()) / 2 + 5));
 
-                int marginRight = painter.getWidth() - size.getFirst() - IMAGE_MARGIN * 4 - 225;
+                int marginRight = painter.getWidth() - size.getLeft() - IMAGE_MARGIN * 4 - 225;
 
                 String title = vote.getString("title");
                 String desc = vote.getString("desc");
                 BufferedImage titleImage = getOmitTextImage(title, marginRight, 40);
                 Pair<Integer, Integer> descSize = this.painter.getStringWidthAndHeight(desc, 25);
 
-                painter.setPos(200, (200 - titleImage.getHeight() - descSize.getSecond() - this.painter.getRowSpace()) / 2);
+                painter.setPos(200, (200 - titleImage.getHeight() - descSize.getRight() - this.painter.getRowSpace()) / 2);
                 painter.drawImage(titleImage);
                 painter.drawTip(desc);
 

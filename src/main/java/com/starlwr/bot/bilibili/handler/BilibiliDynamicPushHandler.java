@@ -17,8 +17,8 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.util.CollectionUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -105,12 +105,12 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
         String type = event.getDynamic().getType();
         JSONArray whiteList = params.getJSONArray("white_list");
         JSONArray blackList = params.getJSONArray("black_list");
-        if (!CollectionUtils.isEmpty(whiteList)) {
+        if (CollectionUtils.isNotEmpty(whiteList)) {
             if (!whiteList.contains(type)) {
                 log.info("[{}] {} 的动态类型 {} 不在白名单中, 跳过推送", event.getPlatform(), event.getSource().getUname(), type);
                 return;
             }
-        } else if (!CollectionUtils.isEmpty(blackList)) {
+        } else if (CollectionUtils.isNotEmpty(blackList)) {
             if (blackList.contains(type)) {
                 log.info("[{}] {} 的动态类型 {} 在黑名单中, 跳过推送", event.getPlatform(), event.getSource().getUname(), type);
                 return;

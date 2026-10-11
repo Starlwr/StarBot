@@ -18,6 +18,8 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.MathUtil;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -164,7 +166,7 @@ public class BilibiliEventParser {
         switch (msgType) {
             case 1 -> {
                 String promotionSource = payload.getSpreadDesc();
-                if (promotionSource != null && promotionSource.isBlank()) {
+                if (StringUtils.isBlank(promotionSource)) {
                     promotionSource = null;
                 }
                 return List.of(new BilibiliEnterRoomEvent(source, sender, payload.isSpread(), promotionSource, timestamp));
@@ -213,7 +215,7 @@ public class BilibiliEventParser {
 
         FansMedal fansMedal = null;
         JSONArray fansMedalInfo = info.getJSONArray(3);
-        if (!fansMedalInfo.isEmpty()) {
+        if (CollectionUtils.isNotEmpty(fansMedalInfo)) {
             Long fansMedalUid = fansMedalInfo.getLong(12);
             String fansMedalUname = fansMedalInfo.getString(2);
             Long fansMedalRoomId = fansMedalInfo.getLong(3);

@@ -19,15 +19,16 @@ import com.starlwr.bot.core.painter.ChartPainter;
 import com.starlwr.bot.core.painter.CommonPainter;
 import com.starlwr.bot.core.painter.WordCloudPainter;
 import com.starlwr.bot.core.service.LiveDataService;
-import com.starlwr.bot.core.util.CollectionUtil;
 import com.starlwr.bot.core.util.FontUtil;
 import com.starlwr.bot.core.util.ImageUtil;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.ListUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.ResourceLoader;
-import org.springframework.data.util.Pair;
-import org.springframework.util.CollectionUtils;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -162,7 +163,7 @@ public class BilibiliLiveReportPainter {
             return Optional.empty();
         }
 
-        if (StringUtil.isBlank(path)) {
+        if (StringUtils.isBlank(path)) {
             return this.painter.base64();
         } else {
             return this.painter.saveAndGetBase64(path);
@@ -243,10 +244,10 @@ public class BilibiliLiveReportPainter {
                 if (seconds > 0) {
                     time += seconds + " 秒";
                 }
-                time = time.trim();
+                time = time.strip();
             }
 
-            if (StringUtil.isBlank(time)) {
+            if (StringUtils.isBlank(time)) {
                 liveTime = startTime + " ~ " + endTime;
             } else {
                 liveTime = startTime + " ~ " + endTime + " (" + time + ")";
@@ -255,13 +256,13 @@ public class BilibiliLiveReportPainter {
 
         // 组织文字内容
         if (config.isShowLiveArea() && config.isShowLiveTime()) {
-            if (StringUtil.isBlank(liveArea)) {
+            if (StringUtils.isBlank(liveArea)) {
                 infoLines.add(liveTime);
             } else {
                 infoLines.add(liveArea + "  |  " + liveTime);
             }
         } else {
-            if (config.isShowLiveArea() && StringUtil.isNotBlank(liveArea)) {
+            if (config.isShowLiveArea() && StringUtils.isNotBlank(liveArea)) {
                 infoLines.add(liveArea);
             }
             if (config.isShowLiveTime()) {
@@ -269,7 +270,7 @@ public class BilibiliLiveReportPainter {
             }
         }
 
-        if (config.isShowLiveTitle() && StringUtil.isNotBlank(liveTitle)) {
+        if (config.isShowLiveTitle() && StringUtils.isNotBlank(liveTitle)) {
             infoLines.add(liveTitle);
         }
 
@@ -283,7 +284,7 @@ public class BilibiliLiveReportPainter {
             } else {
                 size = this.painter.getStringWidthAndHeight(line, CommonPainter.TIP_FONT_SIZE);
             }
-            maxWidth = Math.max(maxWidth, size.getFirst());
+            maxWidth = Math.max(maxWidth, size.getLeft());
         }
         maxWidth = maxWidth + 150;
         int marginX = Math.max(MARGIN, (this.painter.getWidth() - maxWidth) / 2);
@@ -318,22 +319,22 @@ public class BilibiliLiveReportPainter {
 
         List<Point> lightPoints = new ArrayList<>();
         lightPoints.add(new Point(this.painter.getX(), this.painter.getY() + 8));
-        lightPoints.add(new Point(this.painter.getX() + size.getFirst() + 48, this.painter.getY() + 8));
-        lightPoints.add(new Point(this.painter.getX() + size.getFirst() + 64, this.painter.getY() + size.getSecond() + 16));
-        lightPoints.add(new Point(this.painter.getX(), this.painter.getY() + size.getSecond() + 16));
+        lightPoints.add(new Point(this.painter.getX() + size.getLeft() + 48, this.painter.getY() + 8));
+        lightPoints.add(new Point(this.painter.getX() + size.getLeft() + 64, this.painter.getY() + size.getRight() + 16));
+        lightPoints.add(new Point(this.painter.getX(), this.painter.getY() + size.getRight() + 16));
         this.painter.drawPolygon(lightPoints, COLOR_LIGHT_PURPLE);
 
         List<Point> deepPoints = new ArrayList<>();
         deepPoints.add(new Point(this.painter.getX(), this.painter.getY()));
-        deepPoints.add(new Point(this.painter.getX() + size.getFirst() + 32, this.painter.getY()));
-        deepPoints.add(new Point(this.painter.getX() + size.getFirst() + 48, this.painter.getY() + size.getSecond() + 16));
-        deepPoints.add(new Point(this.painter.getX(), this.painter.getY() + size.getSecond() + 16));
+        deepPoints.add(new Point(this.painter.getX() + size.getLeft() + 32, this.painter.getY()));
+        deepPoints.add(new Point(this.painter.getX() + size.getLeft() + 48, this.painter.getY() + size.getRight() + 16));
+        deepPoints.add(new Point(this.painter.getX(), this.painter.getY() + size.getRight() + 16));
         this.painter.drawPolygon(deepPoints, COLOR_MIDDLE_PURPLE);
 
-        this.painter.drawRectangle(this.painter.getX(), this.painter.getY() + size.getSecond() + 12, this.painter.getWidth() - MARGIN * 2, 4, COLOR_LIGHT_PURPLE);
+        this.painter.drawRectangle(this.painter.getX(), this.painter.getY() + size.getRight() + 12, this.painter.getWidth() - MARGIN * 2, 4, COLOR_LIGHT_PURPLE);
 
         this.painter.drawChapter(title, new Point(this.painter.getX() + 16, this.painter.getY() + 8));
-        this.painter.setPos(MARGIN, this.painter.getY() + size.getSecond() + 50);
+        this.painter.setPos(MARGIN, this.painter.getY() + size.getRight() + 50);
     }
 
     /**
@@ -343,13 +344,13 @@ public class BilibiliLiveReportPainter {
      * @param text  提示文字
      */
     private void drawTitle(String title, String text) {
-        int lineY = this.painter.getY() + this.painter.getStringWidthAndHeight(title, CommonPainter.SECTION_FONT_SIZE).getSecond() + 12;
+        int lineY = this.painter.getY() + this.painter.getStringWidthAndHeight(title, CommonPainter.SECTION_FONT_SIZE).getRight() + 12;
         drawTitle(title);
 
-        if (StringUtil.isNotBlank(text)) {
+        if (StringUtils.isNotBlank(text)) {
             Pair<Integer, Integer> textSize = this.painter.getStringWidthAndHeight(text, CommonPainter.TEXT_FONT_SIZE);
-            int textX = this.painter.getWidth() - MARGIN * 2 - textSize.getFirst();
-            int textY = lineY - textSize.getSecond() - 5;
+            int textX = this.painter.getWidth() - MARGIN * 2 - textSize.getLeft();
+            int textY = lineY - textSize.getRight() - 5;
             this.painter.drawText(text, COLOR_DEEP_PURPLE, new Point(textX, textY));
         }
     }
@@ -361,14 +362,14 @@ public class BilibiliLiveReportPainter {
      * @param texts  提示文字列表
      */
     private void drawTitle(String title, List<TextWithStyle> texts) {
-        int lineY = this.painter.getY() + this.painter.getStringWidthAndHeight(title, CommonPainter.SECTION_FONT_SIZE).getSecond() + 12;
+        int lineY = this.painter.getY() + this.painter.getStringWidthAndHeight(title, CommonPainter.SECTION_FONT_SIZE).getRight() + 12;
         drawTitle(title);
 
         String allText = texts.stream().map(TextWithStyle::getText).collect(Collectors.joining());
-        if (StringUtil.isNotBlank(allText)) {
+        if (StringUtils.isNotBlank(allText)) {
             Pair<Integer, Integer> textSize = this.painter.getStringWidthAndHeight(allText, CommonPainter.TEXT_FONT_SIZE);
-            int textX = this.painter.getWidth() - MARGIN * 2 - textSize.getFirst();
-            int textY = lineY - textSize.getSecond() - 5;
+            int textX = this.painter.getWidth() - MARGIN * 2 - textSize.getLeft();
+            int textY = lineY - textSize.getRight() - 5;
             this.painter.drawTextWithStyle(texts, new Point(textX, textY));
         }
     }
@@ -634,7 +635,7 @@ public class BilibiliLiveReportPainter {
 
                 for (JSONObject danmu : danmus) {
                     String contentText = danmu.getString("contentText");
-                    if (StringUtil.isBlank(contentText)) {
+                    if (StringUtils.isBlank(contentText)) {
                         continue;
                     }
 
@@ -648,7 +649,7 @@ public class BilibiliLiveReportPainter {
                     }
 
                     for (SegToken token : tokens) {
-                        if (StringUtil.isNotBlank(token.word)) {
+                        if (StringUtils.isNotBlank(token.word)) {
                             frequency.merge(token.word, 1L, Long::sum);
                         }
                     }
@@ -724,7 +725,7 @@ public class BilibiliLiveReportPainter {
             tips.add(new TextWithStyle(senderCount + " 人", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
         }
         if (config.isShowBoxProfitDetails()) {
-            if (!CollectionUtils.isEmpty(tips)) {
+            if (CollectionUtils.isNotEmpty(tips)) {
                 tips.add(new TextWithStyle(" / ", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
             }
 
@@ -964,7 +965,7 @@ public class BilibiliLiveReportPainter {
             Map<String, Long> countByGiftName = paidGifts.stream().collect(Collectors.groupingBy(json -> json.getJSONObject("giftInfo").getString("name"), Collectors.summingLong(this::getGiftCount)));
             for (JSONObject box : boxes) {
                 JSONObject randomGiftInfo = box.getJSONObject("randomGiftInfo");
-                if (randomGiftInfo != null && StringUtil.isNotBlank(randomGiftInfo.getString("name"))) {
+                if (randomGiftInfo != null && StringUtils.isNotBlank(randomGiftInfo.getString("name"))) {
                     countByGiftName.merge(randomGiftInfo.getString("name"), getBoxCount(box), Long::sum);
                 }
             }
@@ -1063,7 +1064,7 @@ public class BilibiliLiveReportPainter {
 
         // 按大航海类型分组
         Map<GuardType, List<JSONObject>> grouped = guards.stream()
-                .filter(json -> StringUtil.isNotBlank(json.getString("type")))
+                .filter(json -> StringUtils.isNotBlank(json.getString("type")))
                 .collect(Collectors.groupingBy(json -> GuardType.valueOf(json.getString("type"))));
 
         // 各类型开通月数合计
@@ -1072,9 +1073,9 @@ public class BilibiliLiveReportPainter {
         long governorMonths = grouped.getOrDefault(GuardType.Governor, List.of()).stream().mapToLong(json -> json.getLongValue("count")).sum();
 
         if (config.isShowGuardDetails()) {
-            long captainUsers = grouped.getOrDefault(GuardType.Captain, List.of()).stream().map(json -> json.getString("sender")).filter(StringUtil::isNotBlank).distinct().count();
-            long commanderUsers = grouped.getOrDefault(GuardType.Commander, List.of()).stream().map(json -> json.getString("sender")).filter(StringUtil::isNotBlank).distinct().count();
-            long governorUsers = grouped.getOrDefault(GuardType.Governor, List.of()).stream().map(json -> json.getString("sender")).filter(StringUtil::isNotBlank).distinct().count();
+            long captainUsers = grouped.getOrDefault(GuardType.Captain, List.of()).stream().map(json -> json.getString("sender")).filter(StringUtils::isNotBlank).distinct().count();
+            long commanderUsers = grouped.getOrDefault(GuardType.Commander, List.of()).stream().map(json -> json.getString("sender")).filter(StringUtils::isNotBlank).distinct().count();
+            long governorUsers = grouped.getOrDefault(GuardType.Governor, List.of()).stream().map(json -> json.getString("sender")).filter(StringUtils::isNotBlank).distinct().count();
             int detailFontSize = CommonPainter.TIP_FONT_SIZE;
             int valueFontSize = 18;
             int labelValueGap = 6;
@@ -1092,18 +1093,18 @@ public class BilibiliLiveReportPainter {
             int[] userHeights = new int[labels.length];
             int[] valueWidths = new int[labels.length];
             int[] groupWidths = new int[labels.length];
-            int detailWidth = separatorSize.getFirst() * (labels.length - 1);
+            int detailWidth = separatorSize.getLeft() * (labels.length - 1);
             int detailHeight = 0;
             for (int i = 0; i < labels.length; i++) {
                 Pair<Integer, Integer> labelSize = this.painter.getStringWidthAndHeight(labels[i], detailFontSize);
                 Pair<Integer, Integer> monthSize = this.painter.getStringWidthAndHeight(months[i] + " 月", valueFontSize);
                 Pair<Integer, Integer> userSize = this.painter.getStringWidthAndHeight(users[i] + " 人", valueFontSize);
-                labelWidths[i] = labelSize.getFirst();
-                labelHeights[i] = labelSize.getSecond();
-                monthWidths[i] = monthSize.getFirst();
-                monthHeights[i] = monthSize.getSecond();
-                userWidths[i] = userSize.getFirst();
-                userHeights[i] = userSize.getSecond();
+                labelWidths[i] = labelSize.getLeft();
+                labelHeights[i] = labelSize.getRight();
+                monthWidths[i] = monthSize.getLeft();
+                monthHeights[i] = monthSize.getRight();
+                userWidths[i] = userSize.getLeft();
+                userHeights[i] = userSize.getRight();
                 valueWidths[i] = Math.max(monthWidths[i], userWidths[i]);
                 groupWidths[i] = labelWidths[i] + labelValueGap + valueWidths[i];
                 detailWidth += groupWidths[i];
@@ -1111,7 +1112,7 @@ public class BilibiliLiveReportPainter {
             }
 
             int titleY = this.painter.getY();
-            int titleHeight = this.painter.getStringWidthAndHeight("大航海分析", CommonPainter.CHAPTER_FONT_SIZE).getSecond() + 16;
+            int titleHeight = this.painter.getStringWidthAndHeight("大航海分析", CommonPainter.CHAPTER_FONT_SIZE).getRight() + 16;
             drawTitle("大航海分析");
             int detailX = this.painter.getWidth() - MARGIN * 2 - detailWidth;
             int detailY = titleY + (titleHeight - detailHeight) / 2;
@@ -1126,9 +1127,9 @@ public class BilibiliLiveReportPainter {
 
                 detailX += groupWidths[i];
                 if (i < labels.length - 1) {
-                    int separatorY = detailY + (detailHeight - separatorSize.getSecond()) / 2;
+                    int separatorY = detailY + (detailHeight - separatorSize.getRight()) / 2;
                     this.painter.drawTextWithStyle(List.of(new TextWithStyle(separator, detailFontSize, COLOR_DEEP_PURPLE)), new Point(detailX, separatorY));
-                    detailX += separatorSize.getFirst();
+                    detailX += separatorSize.getLeft();
                 }
             }
         } else {
@@ -1157,7 +1158,7 @@ public class BilibiliLiveReportPainter {
                     case Captain -> "classpath:images/live/captain.png";
                     default -> null;
                 };
-                if (StringUtil.isNotBlank(resource)) {
+                if (StringUtils.isNotBlank(resource)) {
                     try {
                         icons.put(type, ImageIO.read(resourceLoader.getResource(resource).getInputStream()));
                     } catch (IOException e) {
@@ -1187,7 +1188,7 @@ public class BilibiliLiveReportPainter {
                 }
                 BufferedImage icon = icons.get(type);
 
-                for (List<JSONObject> line : CollectionUtil.splitCollection(list, lineCount)) {
+                for (List<JSONObject> line : ListUtils.partition(list, lineCount)) {
                     int margin = (CHART_WIDTH - iconSize * line.size()) / (line.size() + 1);
                     int y = this.painter.getY();
                     for (int j = 0; j < line.size(); j++) {
@@ -1221,16 +1222,16 @@ public class BilibiliLiveReportPainter {
                             Pair<Integer, Integer> unameSize = this.painter.getStringWidthAndHeight(uname, textSize);
                             Pair<Integer, Integer> countSize = this.painter.getStringWidthAndHeight(countText, textSize);
                             Pair<Integer, Integer> badgeTextBounds = this.painter.getStringWidthAndHeight(badgeText, badgeTextSize);
-                            int badgeWidth = badgeTextBounds.getFirst() + badgeHorizontalPadding * 2;
-                            int badgeHeight = badgeTextBounds.getSecond() + badgeVerticalPadding * 2;
-                            int infoWidth = badgeWidth + badgeGap + countSize.getFirst();
+                            int badgeWidth = badgeTextBounds.getLeft() + badgeHorizontalPadding * 2;
+                            int badgeHeight = badgeTextBounds.getRight() + badgeVerticalPadding * 2;
+                            int infoWidth = badgeWidth + badgeGap + countSize.getLeft();
                             int textY = y + iconSize + 10;
-                            this.painter.drawTextWithStyle(List.of(new TextWithStyle(uname, textSize, color)), new Point(x + (iconSize - unameSize.getFirst()) / 2, textY));
+                            this.painter.drawTextWithStyle(List.of(new TextWithStyle(uname, textSize, color)), new Point(x + (iconSize - unameSize.getLeft()) / 2, textY));
                             int infoX = x + (iconSize - infoWidth) / 2;
-                            int infoY = textY + unameSize.getSecond() + 10;
+                            int infoY = textY + unameSize.getRight() + 10;
                             this.painter.drawRoundedRectangle(infoX, infoY, badgeWidth, badgeHeight, badgeHeight, badgeColor);
                             this.painter.drawTextWithStyle(List.of(new TextWithStyle(badgeText, badgeTextSize, Color.WHITE)), new Point(infoX + badgeHorizontalPadding, infoY + badgeVerticalPadding));
-                            this.painter.drawTextWithStyle(List.of(new TextWithStyle(countText, textSize, Color.BLACK)), new Point(infoX + badgeWidth + badgeGap, infoY + (badgeHeight - countSize.getSecond()) / 2));
+                            this.painter.drawTextWithStyle(List.of(new TextWithStyle(countText, textSize, Color.BLACK)), new Point(infoX + badgeWidth + badgeGap, infoY + (badgeHeight - countSize.getRight()) / 2));
                         }
                     }
                     this.painter.setPos(MARGIN, y + iconSize + textSize * 2 + 44 + this.painter.getRowSpace());

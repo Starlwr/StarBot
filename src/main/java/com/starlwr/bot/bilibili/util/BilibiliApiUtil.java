@@ -12,26 +12,26 @@ import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.*;
 import com.starlwr.bot.core.model.UserInfo;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.util.CollectionUtil;
 import com.starlwr.bot.core.util.HttpUtil;
 import com.starlwr.bot.core.util.MathUtil;
-import com.starlwr.bot.core.util.StringUtil;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.ListUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.classify.BinaryExceptionClassifier;
-import org.springframework.data.util.Pair;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.retry.backoff.FixedBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
 import org.springframework.retry.support.RetryTemplate;
-import org.springframework.util.CollectionUtils;
 
 import java.awt.image.BufferedImage;
 import java.net.SocketException;
@@ -102,18 +102,18 @@ public class BilibiliApiUtil {
         Map<String, String> headers = new HashMap<>();
         headers.put("Referer", "https://www.bilibili.com");
         headers.put("User-Agent", properties.getNetwork().getUserAgent());
-        if (StringUtil.isNotBlank(cookies.getSessData()) && StringUtil.isNotBlank(cookies.getBiliJct()) && StringUtil.isNotBlank(cookies.getBuvid3())) {
+        if (StringUtils.isNotBlank(cookies.getSessData()) && StringUtils.isNotBlank(cookies.getBiliJct()) && StringUtils.isNotBlank(cookies.getBuvid3())) {
             StringJoiner cookie = new StringJoiner("; ");
             cookie.add("SESSDATA=" + cookies.getSessData());
             cookie.add("buvid3=" + cookies.getBuvid3());
             cookie.add("bili_jct=" + cookies.getBiliJct());
-            if (StringUtil.isNotBlank(cookies.getDedeUserId())) {
+            if (StringUtils.isNotBlank(cookies.getDedeUserId())) {
                 cookie.add("DedeUserID=" + cookies.getDedeUserId());
             }
-            if (StringUtil.isNotBlank(cookies.getDedeUserIdCkMd5())) {
+            if (StringUtils.isNotBlank(cookies.getDedeUserIdCkMd5())) {
                 cookie.add("DedeUserID__ckMd5=" + cookies.getDedeUserIdCkMd5());
             }
-            if (StringUtil.isNotBlank(cookies.getSid())) {
+            if (StringUtils.isNotBlank(cookies.getSid())) {
                 cookie.add("sid=" + cookies.getSid());
             }
             cookie.add("bili_ticket=" + sign.getTicket());
@@ -346,7 +346,7 @@ public class BilibiliApiUtil {
      * @return 图片
      */
     public Optional<BufferedImage> getBilibiliImage(String url, Map<String, String> headers) {
-        if (StringUtil.isEmpty(url)) {
+        if (StringUtils.isEmpty(url)) {
             return Optional.empty();
         }
 
@@ -369,7 +369,7 @@ public class BilibiliApiUtil {
      * @return 图片
      */
     public CompletableFuture<Optional<BufferedImage>> asyncGetBilibiliImage(String url, Map<String, String> headers) {
-        if (StringUtil.isEmpty(url)) {
+        if (StringUtils.isEmpty(url)) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
 
@@ -478,7 +478,7 @@ public class BilibiliApiUtil {
 
         if (code == 0) {
             Cookies loginCookies = parseLoginCookies(response.getHeaders().get(HttpHeaders.SET_COOKIE));
-            if (StringUtil.isBlank(loginCookies.getSessData()) || StringUtil.isBlank(loginCookies.getBiliJct())) {
+            if (StringUtils.isBlank(loginCookies.getSessData()) || StringUtils.isBlank(loginCookies.getBiliJct())) {
                 log.error("扫码登录成功, 但未能解析出登录凭据, 原始接口返回结果: {}", body.toJSONString());
                 return false;
             }
@@ -518,19 +518,19 @@ public class BilibiliApiUtil {
         }
 
         for (String header : setCookies) {
-            if (StringUtil.isBlank(header)) {
+            if (StringUtils.isBlank(header)) {
                 continue;
             }
 
-            String pair = header.split(";", 2)[0].trim();
+            String pair = header.split(";", 2)[0].strip();
             int equals = pair.indexOf('=');
             if (equals <= 0) {
                 continue;
             }
 
-            String name = pair.substring(0, equals).trim();
-            String value = pair.substring(equals + 1).trim();
-            if (value.isEmpty()) {
+            String name = pair.substring(0, equals).strip();
+            String value = pair.substring(equals + 1).strip();
+            if (StringUtils.isBlank(value)) {
                 continue;
             }
 
@@ -697,7 +697,7 @@ public class BilibiliApiUtil {
 
                 JSONArray fansMedalInfo = message.getJSONArray("medal");
                 FansMedal fansMedal = null;
-                if (!fansMedalInfo.isEmpty()) {
+                if (CollectionUtils.isNotEmpty(fansMedalInfo)) {
                     Long fansMedalUid = fansMedalInfo.getLong(12);
                     String fansMedalUname = fansMedalInfo.getString(2);
                     Long fansMedalRoomId = fansMedalInfo.getLong(3);
@@ -841,7 +841,7 @@ public class BilibiliApiUtil {
 
         String api = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?uids[]=";
 
-        List<List<Long>> uidLists = CollectionUtil.splitCollection(uids, 100);
+        List<List<Long>> uidLists = ListUtils.partition(new ArrayList<>(uids), 100);
         for (List<Long> uidList : uidLists) {
             JSONObject result = requestBilibiliApi(api + uidList.stream().map(String::valueOf).collect(Collectors.joining("&uids[]=")));
             for (String uidString : result.keySet()) {
@@ -882,7 +882,7 @@ public class BilibiliApiUtil {
             infos.put(uid, new UserInfo(uid, "昵称获取失败"));
         }
 
-        List<List<Long>> parts = CollectionUtil.splitCollection(uids, 10);
+        List<List<Long>> parts = ListUtils.partition(new ArrayList<>(uids), 10);
         for (List<Long> part: parts) {
             String param = part.stream().map(String::valueOf).collect(Collectors.joining(","));
             String api = "https://api.vc.bilibili.com/account/v1/user/cards?uids=" + param;

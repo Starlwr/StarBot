@@ -20,8 +20,8 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.util.CollectionUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -178,7 +178,7 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
             if (seconds > 0) {
                 time += seconds + " 秒";
             }
-            time = time.trim();
+            time = time.strip();
         }
 
         String raw = params.getString("message");

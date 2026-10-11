@@ -6,6 +6,8 @@ import com.huaban.analysis.jieba.WordDictionary;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -86,8 +88,8 @@ public class BilibiliWordCloudUtil {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    String word = line.trim();
-                    if (!word.isEmpty()) {
+                    String word = line.strip();
+                    if (StringUtils.isNotBlank(word)) {
                         stopWords.add(word);
                     }
                 }
@@ -106,7 +108,7 @@ public class BilibiliWordCloudUtil {
     public List<SegToken> segment(String text) {
         List<SegToken> tokens = segmenter.process(text, JiebaSegmenter.SegMode.SEARCH);
         return tokens.stream()
-                .filter(token -> stopWords.isEmpty() || !stopWords.contains(token.word))
+                .filter(token -> CollectionUtils.isEmpty(stopWords) || !stopWords.contains(token.word))
                 .filter(token -> isValidUtf8(token.word))
                 .toList();
     }

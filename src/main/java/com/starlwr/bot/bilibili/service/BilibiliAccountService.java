@@ -11,14 +11,15 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.QrCodeUtil;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.SpringApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.boot.SpringApplication;
 import org.springframework.boot.web.server.context.WebServerApplicationContext;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
-import org.springframework.data.util.Pair;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.nio.file.Files;
@@ -75,7 +76,7 @@ public class BilibiliAccountService {
 
             Cookies cookies = JSON.parseObject(Files.readString(cookiePath), Cookies.class);
 
-            if (cookies == null || cookies.getSessData() == null || cookies.getBiliJct() == null || cookies.getBuvid3() == null) {
+            if (cookies == null || StringUtils.isBlank(cookies.getSessData()) || StringUtils.isBlank(cookies.getBiliJct()) || StringUtils.isBlank(cookies.getBuvid3())) {
                 log.warn("登录凭据文件内容不完整或格式不正确, 将触发扫码登录流程");
                 qrCodeLogin();
                 return;
@@ -110,8 +111,8 @@ public class BilibiliAccountService {
         bilibili.setCookies(new Cookies());
 
         Pair<String, String> loginInfo = bilibili.getQrCodeLoginInfo();
-        String url = loginInfo.getFirst();
-        String token = loginInfo.getSecond();
+        String url = loginInfo.getLeft();
+        String token = loginInfo.getRight();
 
         loginUrl = url;
 
