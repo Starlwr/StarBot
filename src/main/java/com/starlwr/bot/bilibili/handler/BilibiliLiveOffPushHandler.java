@@ -21,6 +21,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.util.CollectionUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -191,36 +192,48 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
         if (raw.contains("{picture}")) {
             BilibiliLiveReportConfig config = params.getJSONObject("modules").toJavaObject(BilibiliLiveReportConfig.class);
 
-            String cacheKey = up.getUid() + "|" + event.getTimestamp() + "|" + params.getJSONObject("modules").toJSONString();
-            String base64 = liveReportCache.getIfPresent(cacheKey);
-
-            if (base64 == null) {
-                BilibiliLiveReportPainter reportPainter = factory.create(up, config);
-
-                Optional<String> optionalBase64;
-                if (properties.getLive().isAutoSaveLiveReportImage()) {
-                    Path path = Paths.get("LiveReport", "live-report-" + up.getUname() + "-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()) + ".png");
-                    try {
-                        Files.createDirectories(path.getParent());
-                    } catch (IOException e) {
-                        log.error("创建直播报告图片保存目录失败: {}", path.getParent(), e);
-                    }
-                    optionalBase64 = reportPainter.paint(path.toString());
-                } else {
-                    optionalBase64 = reportPainter.paint();
-                }
-
-                if (optionalBase64.isPresent()) {
-                    base64 = optionalBase64.get();
-                    liveReportCache.put(cacheKey, base64);
-                }
-            }
-
-            if (base64 != null) {
-                content = content.replace("{picture}", "{image_base64=" + base64 + "}");
-            } else {
-                log.error("生成直播报告图片失败, UID: {}, 昵称: {}, 房间号: {}", up.getUid(), up.getUname(), up.getRoomId());
+            if (CollectionUtils.isEmpty(config.getSequence())
+                    || (!config.isEnableBasicInfo()
+                    && !config.isEnableChangeInfo()
+                    && !config.isEnableDanmuAnalysis()
+                    && !config.isEnableBoxAnalysis()
+                    && !config.isEnableGiftAnalysis()
+                    && !config.isEnableSuperChatAnalysis()
+                    && !config.isEnableGuardAnalysis()
+                    && !config.isEnableEnterRoomAnalysis())) {
                 content = content.replace("{picture}", "");
+            } else {
+                String cacheKey = up.getUid() + "|" + event.getTimestamp() + "|" + params.getJSONObject("modules").toJSONString();
+                String base64 = liveReportCache.getIfPresent(cacheKey);
+
+                if (base64 == null) {
+                    BilibiliLiveReportPainter reportPainter = factory.create(up, config);
+
+                    Optional<String> optionalBase64;
+                    if (properties.getLive().isAutoSaveLiveReportImage()) {
+                        Path path = Paths.get("LiveReport", "live-report-" + up.getUname() + "-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()) + ".png");
+                        try {
+                            Files.createDirectories(path.getParent());
+                        } catch (IOException e) {
+                            log.error("创建直播报告图片保存目录失败: {}", path.getParent(), e);
+                        }
+                        optionalBase64 = reportPainter.paint(path.toString());
+                    } else {
+                        optionalBase64 = reportPainter.paint();
+                    }
+
+                    if (optionalBase64.isPresent()) {
+                        base64 = optionalBase64.get();
+                        liveReportCache.put(cacheKey, base64);
+                    }
+                }
+
+                if (base64 != null) {
+                    content = content.replace("{picture}", "{image_base64=" + base64 + "}");
+                } else {
+                    log.error("生成直播报告图片失败, UID: {}, 昵称: {}, 房间号: {}", up.getUid(), up.getUname(), up.getRoomId());
+                    content = content.replace("{picture}", "");
+                }
             }
         }
 
