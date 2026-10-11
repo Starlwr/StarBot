@@ -33,6 +33,7 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -173,8 +174,8 @@ public class BilibiliLiveReportPainter {
      */
     private void drawLogo() {
         if (coreProperties.getPaint().isDrawLogo()) {
-            try {
-                BufferedImage logo = ImageIO.read(resourceLoader.getResource("classpath:logo.png").getInputStream());
+            try (InputStream input = resourceLoader.getResource("classpath:logo.png").getInputStream()) {
+                BufferedImage logo = ImageIO.read(input);
                 this.painter.drawImage(logo, new Point(200, 55)).setPos(MARGIN, 275);
             } catch (IOException e) {
                 log.error("加载 StarBot Logo 失败", e);

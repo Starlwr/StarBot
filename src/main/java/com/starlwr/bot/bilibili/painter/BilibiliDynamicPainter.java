@@ -123,8 +123,8 @@ public class BilibiliDynamicPainter {
      */
     private void drawLogo() {
         if (properties.getPaint().isDrawLogo()) {
-            try {
-                BufferedImage logo = ImageIO.read(resourceLoader.getResource("classpath:logo.png").getInputStream());
+            try (InputStream input = resourceLoader.getResource("classpath:logo.png").getInputStream()) {
+                BufferedImage logo = ImageIO.read(input);
                 this.painter.drawImage(logo, new Point(200, 55)).setPos(175, 300);
             } catch (IOException e) {
                 log.error("加载 StarBot Logo 失败", e);
