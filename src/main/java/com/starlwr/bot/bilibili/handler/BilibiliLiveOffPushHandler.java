@@ -1,24 +1,24 @@
 package com.starlwr.bot.bilibili.handler;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
-import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
-import com.starlwr.bot.bilibili.factory.BilibiliLiveReportPainterFactory;
-import com.starlwr.bot.bilibili.model.BilibiliLiveReportConfig;
-import com.starlwr.bot.bilibili.model.Up;
-import com.starlwr.bot.bilibili.painter.BilibiliLiveReportPainter;
-import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
-import com.starlwr.bot.core.model.Message;
-import com.starlwr.bot.core.model.PushMessage;
-import com.starlwr.bot.core.model.PushTarget;
-import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.bilibili.api.BilibiliApiService;
+import com.starlwr.bot.bilibili.api.model.Up;
+import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
+import com.starlwr.bot.bilibili.report.BilibiliLiveReportConfig;
+import com.starlwr.bot.bilibili.report.BilibiliLiveReportPainter;
+import com.starlwr.bot.bilibili.report.BilibiliLiveReportPainterFactory;
+import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.live.LiveDataService;
+import com.starlwr.bot.core.message.Message;
+import com.starlwr.bot.core.message.PushTargetType;
+import com.starlwr.bot.core.message.StarBotMessageSender;
+import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.push.handler.StarBotEventHandler;
+import com.starlwr.bot.core.push.model.PushMessage;
+import com.starlwr.bot.core.push.model.PushTarget;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -115,7 +115,7 @@ import java.util.concurrent.TimeUnit;
 public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
     private final StarBotBilibiliProperties properties;
 
-    private final BilibiliApiUtil bilibili;
+    private final BilibiliApiService bilibili;
 
     private final StarBotMessageSender sender;
 
@@ -130,7 +130,7 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
                     .build();
 
     @Autowired
-    public BilibiliLiveOffPushHandler(StarBotBilibiliProperties properties, BilibiliApiUtil bilibili, StarBotMessageSender sender, LiveDataService liveDataService, BilibiliLiveReportPainterFactory factory) {
+    public BilibiliLiveOffPushHandler(StarBotBilibiliProperties properties, BilibiliApiService bilibili, StarBotMessageSender sender, LiveDataService liveDataService, BilibiliLiveReportPainterFactory factory) {
         this.properties = properties;
         this.bilibili = bilibili;
         this.sender = sender;

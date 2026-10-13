@@ -1,9 +1,9 @@
 package com.starlwr.bot.bilibili.event.live;
 
-import com.starlwr.bot.bilibili.enums.GuardOperateType;
-import com.starlwr.bot.bilibili.enums.GuardType;
-import com.starlwr.bot.core.model.LiveStreamerInfo;
-import com.starlwr.bot.core.model.UserInfo;
+import com.starlwr.bot.bilibili.live.gift.GuardOperateType;
+import com.starlwr.bot.bilibili.live.gift.GuardType;
+import com.starlwr.bot.core.event.model.LiveStreamerInfo;
+import com.starlwr.bot.core.event.model.UserInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
