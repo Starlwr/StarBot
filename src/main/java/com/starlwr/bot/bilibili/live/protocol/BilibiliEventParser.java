@@ -483,6 +483,10 @@ public class BilibiliEventParser {
         JSONObject metaData = data.getJSONObject("data");
 
         JSONObject senderInfo = metaData.getJSONObject("uinfo");
+        if (senderInfo == null) {
+            return List.of();
+        }
+
         JSONObject senderBaseInfo = senderInfo.getJSONObject("base");
         Long senderUid = senderInfo.getLong("uid");
         String senderUname = senderBaseInfo.getString("name");
