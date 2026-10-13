@@ -3,9 +3,9 @@ package com.starlwr.bot.bilibili.datasource;
 import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.bilibili.api.model.Room;
 import com.starlwr.bot.bilibili.api.model.Up;
+import com.starlwr.bot.core.event.model.LivePlatform;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.push.datasource.DataSourceService;
-import com.starlwr.bot.core.push.datasource.DataSourceServiceConfig;
 import com.starlwr.bot.core.push.model.PushUser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,13 +19,21 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @StarBotComponent
-@DataSourceServiceConfig(name = "bilibili")
 public class BilibiliDataSourceService implements DataSourceService {
     private final BilibiliApiService bilibili;
 
     @Autowired
     public BilibiliDataSourceService(BilibiliApiService bilibili) {
         this.bilibili = bilibili;
+    }
+
+    /**
+     * 直播平台名称
+     * @return 直播平台名称
+     */
+    @Override
+    public String getPlatform() {
+        return LivePlatform.BILIBILI.getName();
     }
 
     /**
