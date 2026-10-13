@@ -20,7 +20,7 @@ public class StarBotBilibiliThymeleafConfig {
     }
 
     @PostConstruct
-    public void registerPluginTemplateResolver() {
+    private void registerPluginTemplateResolver() {
         ClassLoaderTemplateResolver pluginResolver = new ClassLoaderTemplateResolver(getClass().getClassLoader());
 
         pluginResolver.setPrefix("templates/");

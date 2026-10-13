@@ -33,7 +33,7 @@ public class BilibiliWordCloudService {
     private JiebaSegmenter segmenter;
 
     @PostConstruct
-    public void init() {
+    private void init() {
         log.info("开始初始化弹幕词云分词服务");
         long startTime = System.currentTimeMillis();
 

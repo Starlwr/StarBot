@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -98,7 +99,7 @@ public class BilibiliLiveReportPainterTest {
         coreProperties = new StarBotCoreProperties();
         coreProperties.getPaint().setFonts(List.of("微软雅黑", "宋体", "Segoe UI Emoji", "Segoe UI Symbol", "Arial"));
         fontService = new FontService(new DefaultResourceLoader(), coreProperties);
-        fontService.init();
+        ReflectionTestUtils.invokeMethod(fontService, "init");
 
         CommonPainter commonPainter = new CommonPainter(mock(BuildProperties.class), coreProperties, fontService, 1000, 5000, true);
 
@@ -204,7 +205,7 @@ public class BilibiliLiveReportPainterTest {
         bilibiliProperties.getDebug().setWordCloudDebug(true);
 
         BilibiliWordCloudService wordCloudService = new BilibiliWordCloudService();
-        wordCloudService.init();
+        ReflectionTestUtils.invokeMethod(wordCloudService, "init");
         BilibiliLiveReportPainter painter = new BilibiliLiveReportPainter(
                 coreProperties, bilibiliProperties, fontService, bilibili, factory, liveDataService, wordCloudService, up, config);
 
@@ -264,7 +265,7 @@ public class BilibiliLiveReportPainterTest {
     @Test
     public void testSegmentFiltersEmoji() {
         BilibiliWordCloudService wordCloudService = new BilibiliWordCloudService();
-        wordCloudService.init();
+        ReflectionTestUtils.invokeMethod(wordCloudService, "init");
 
         List<SegToken> tokens = wordCloudService.segment("测试😮测试✓🚀 666");
 

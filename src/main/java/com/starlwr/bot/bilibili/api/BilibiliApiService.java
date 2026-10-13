@@ -96,7 +96,7 @@ public class BilibiliApiService {
     }
 
     @PostConstruct
-    public void init() {
+    private void init() {
         retryableExceptionClassifier.setTraverseCauses(true);
 
         SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy(properties.getNetwork().getApiRetryMaxTimes(), retryableExceptionClassifier);

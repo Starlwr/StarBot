@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -3423,7 +3424,7 @@ public class BilibiliDynamicPainterTest {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         properties.getPaint().setFonts(List.of("微软雅黑", "宋体", "Segoe UI Emoji", "Segoe UI Symbol", "Arial"));
         FontService fontService = new FontService(new DefaultResourceLoader(), properties);
-        fontService.init();
+        ReflectionTestUtils.invokeMethod(fontService, "init");
 
         StarBotCommonPainterFactory commonFactory = new StarBotCommonPainterFactory(mock(BuildProperties.class), properties, fontService);
 
