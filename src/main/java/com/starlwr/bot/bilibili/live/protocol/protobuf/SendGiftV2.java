@@ -16,7 +16,7 @@ import java.util.List;
 @Data
 @AllArgsConstructor
 public class SendGiftV2 {
-    private long uid;
+    private String uid;
     private String uname;
     private String face;
     private int guardLevel;
@@ -27,7 +27,7 @@ public class SendGiftV2 {
 
     public static SendGiftV2 parseFrom(byte[] data) throws IOException {
         CodedInputStream input = CodedInputStream.newInstance(data);
-        long uid = 0;
+        String uid = "0";
         String uname = "";
         String face = "";
         int guardLevel = 0;
@@ -39,7 +39,7 @@ public class SendGiftV2 {
         int tag;
         while ((tag = input.readTag()) != 0) {
             switch (WireFormat.getTagFieldNumber(tag)) {
-                case 1 -> uid = input.readUInt64();
+                case 1 -> uid = Long.toUnsignedString(input.readUInt64());
                 case 2 -> uname = input.readStringRequireUtf8();
                 case 3 -> face = input.readStringRequireUtf8();
                 case 5 -> guardLevel = input.readUInt32();
@@ -103,12 +103,12 @@ public class SendGiftV2 {
     @Data
     @AllArgsConstructor
     public static class Medal {
-        private static final Medal EMPTY = new Medal("", 0, false, 0, "");
+        private static final Medal EMPTY = new Medal("", 0, false, "0", "");
 
         private String name;
         private int level;
         private boolean lighted;
-        private long ruid;
+        private String ruid;
         private String guardIcon;
 
         private static Medal parseFrom(byte[] data) throws IOException {
@@ -116,7 +116,7 @@ public class SendGiftV2 {
             String name = "";
             int level = 0;
             boolean lighted = false;
-            long ruid = 0;
+            String ruid = "0";
             String guardIcon = "";
 
             int tag;
@@ -125,7 +125,7 @@ public class SendGiftV2 {
                     case 1 -> name = input.readStringRequireUtf8();
                     case 2 -> level = input.readUInt32();
                     case 9 -> lighted = input.readBool();
-                    case 10 -> ruid = input.readUInt64();
+                    case 10 -> ruid = Long.toUnsignedString(input.readUInt64());
                     case 13 -> guardIcon = input.readStringRequireUtf8();
                     default -> input.skipField(tag);
                 }
@@ -134,29 +134,29 @@ public class SendGiftV2 {
         }
 
         public boolean isPresent() {
-            return ruid != 0;
+            return !"0".equals(ruid);
         }
     }
 
     @Data
     @AllArgsConstructor
     public static class BlindGift {
-        private static final BlindGift EMPTY = new BlindGift(0, "", 0);
+        private static final BlindGift EMPTY = new BlindGift("0", "", 0);
 
-        private long id;
+        private String id;
         private String name;
         private long price;
 
         private static BlindGift parseFrom(byte[] data) throws IOException {
             CodedInputStream input = CodedInputStream.newInstance(data);
-            long id = 0;
+            String id = "0";
             String name = "";
             long price = 0;
 
             int tag;
             while ((tag = input.readTag()) != 0) {
                 switch (WireFormat.getTagFieldNumber(tag)) {
-                    case 2 -> id = input.readUInt64();
+                    case 2 -> id = Long.toUnsignedString(input.readUInt64());
                     case 3 -> name = input.readStringRequireUtf8();
                     case 6 -> price = input.readUInt64();
                     default -> input.skipField(tag);
@@ -173,7 +173,7 @@ public class SendGiftV2 {
     @Data
     @AllArgsConstructor
     public static class GiftItem {
-        private long id;
+        private String id;
         private String name;
         private int count;
         private long discountPrice;
@@ -183,7 +183,7 @@ public class SendGiftV2 {
 
         private static GiftItem parseFrom(byte[] data) throws IOException {
             CodedInputStream input = CodedInputStream.newInstance(data);
-            long id = 0;
+            String id = "0";
             String name = "";
             int count = 0;
             long discountPrice = 0;
@@ -194,7 +194,7 @@ public class SendGiftV2 {
             int tag;
             while ((tag = input.readTag()) != 0) {
                 switch (WireFormat.getTagFieldNumber(tag)) {
-                    case 1 -> id = input.readUInt64();
+                    case 1 -> id = Long.toUnsignedString(input.readUInt64());
                     case 2 -> name = input.readStringRequireUtf8();
                     case 3 -> count = input.readUInt32();
                     case 6 -> discountPrice = input.readUInt64();

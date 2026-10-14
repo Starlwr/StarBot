@@ -469,7 +469,7 @@ public class BilibiliLiveReportPainter {
      * @param limit        展示前多少名
      * @param userInfos    用户信息
      */
-    private void drawSenderRankingChart(String sectionTitle, List<Map.Entry<String, Double>> sorted, int limit, Map<Long, UserInfo> userInfos) {
+    private void drawSenderRankingChart(String sectionTitle, List<Map.Entry<String, Double>> sorted, int limit, Map<String, UserInfo> userInfos) {
         drawSenderRankingChart(sectionTitle, sorted, limit, userInfos, null, null);
     }
 
@@ -483,14 +483,14 @@ public class BilibiliLiveReportPainter {
      * @param barStartColor 条形渐变起始颜色
      * @param barEndColor   条形渐变终止颜色
      */
-    private void drawSenderRankingChart(String sectionTitle, List<Map.Entry<String, Double>> sorted, int limit, Map<Long, UserInfo> userInfos, Color barStartColor, Color barEndColor) {
+    private void drawSenderRankingChart(String sectionTitle, List<Map.Entry<String, Double>> sorted, int limit, Map<String, UserInfo> userInfos, Color barStartColor, Color barEndColor) {
         List<Map.Entry<String, Double>> top = sorted.stream().limit(limit).toList();
         drawSection(sectionTitle + " (Top " + top.size() + ")");
 
         List<String> faceUrls = new ArrayList<>();
-        List<Long> topUids = new ArrayList<>();
+        List<String> topUids = new ArrayList<>();
         for (Map.Entry<String, Double> entry : top) {
-            Long senderUid = Long.valueOf(entry.getKey());
+            String senderUid = entry.getKey();
             topUids.add(senderUid);
             faceUrls.add(userInfos.get(senderUid).getFace());
         }
@@ -538,7 +538,7 @@ public class BilibiliLiveReportPainter {
         }
 
         String platform = LivePlatform.BILIBILI.getName();
-        Long uid = up.getUid();
+        String uid = up.getUid();
 
         List<JSONObject> danmus = liveDataService.getDanmu(platform, uid, JSONObject.class);
         List<JSONObject> emojis = liveDataService.getEmoji(platform, uid, JSONObject.class);
@@ -550,7 +550,7 @@ public class BilibiliLiveReportPainter {
         }
 
         if (config.isShowDanmuDetails()) {
-            long senderCount = all.stream().map(json -> json.getLong("sender")).distinct().count();
+            long senderCount = all.stream().map(json -> json.getString("sender")).distinct().count();
             String tip = count + " 条 / " + senderCount + " 人";
             drawTitle("弹幕分析", tip);
         } else {
@@ -564,8 +564,8 @@ public class BilibiliLiveReportPainter {
                 .toList();
 
         // 按需批量获取发送者用户信息
-        Map<Long, UserInfo> userInfos = config.getDanmuRankingLimit() > 0 || config.isShowDanmuSenderDistributionChart()
-                ? bilibili.getUserInfoByUids(countBySender.keySet().stream().map(Long::valueOf).collect(Collectors.toSet()))
+        Map<String, UserInfo> userInfos = config.getDanmuRankingLimit() > 0 || config.isShowDanmuSenderDistributionChart()
+                ? bilibili.getUserInfoByUids(countBySender.keySet())
                 : Map.of();
 
         // 弹幕排行榜
@@ -607,7 +607,7 @@ public class BilibiliLiveReportPainter {
             long otherCount = 0;
             for (Map.Entry<String, Long> entry : sorted) {
                 if ((double) entry.getValue() / all.size() > 0.05) {
-                    slices.add(new ChartPainter.DistributionSlice(userInfos.get(Long.valueOf(entry.getKey())).getUname(), entry.getValue()));
+                    slices.add(new ChartPainter.DistributionSlice(userInfos.get(entry.getKey()).getUname(), entry.getValue()));
                 } else {
                     otherCount += entry.getValue();
                 }
@@ -707,7 +707,7 @@ public class BilibiliLiveReportPainter {
         }
 
         String platform = LivePlatform.BILIBILI.getName();
-        Long uid = up.getUid();
+        String uid = up.getUid();
 
         List<JSONObject> boxes = liveDataService.getRandomGift(platform, uid, JSONObject.class);
         if (CollectionUtils.isEmpty(boxes)) {
@@ -719,7 +719,7 @@ public class BilibiliLiveReportPainter {
             long totalCount = boxes.stream().mapToLong(this::getBoxCount).sum();
             tips.add(new TextWithStyle(totalCount + " 个", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
             tips.add(new TextWithStyle(" / ", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
-            long senderCount = boxes.stream().map(json -> json.getLong("sender")).distinct().count();
+            long senderCount = boxes.stream().map(json -> json.getString("sender")).distinct().count();
             tips.add(new TextWithStyle(senderCount + " 人", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
         }
         if (config.isShowBoxProfitDetails()) {
@@ -758,8 +758,8 @@ public class BilibiliLiveReportPainter {
                 .toList();
 
         // 按需批量获取发送者用户信息
-        Map<Long, UserInfo> userInfos = config.getBoxRankingLimit() > 0 || config.getBoxProfitRankingLimit() > 0
-                ? bilibili.getUserInfoByUids(countBySender.keySet().stream().map(Long::valueOf).collect(Collectors.toSet()))
+        Map<String, UserInfo> userInfos = config.getBoxRankingLimit() > 0 || config.getBoxProfitRankingLimit() > 0
+                ? bilibili.getUserInfoByUids(countBySender.keySet())
                 : Map.of();
 
         // 盲盒数量排行榜
@@ -890,7 +890,7 @@ public class BilibiliLiveReportPainter {
         }
 
         String platform = LivePlatform.BILIBILI.getName();
-        Long uid = up.getUid();
+        String uid = up.getUid();
 
         List<JSONObject> freeGifts = liveDataService.getFreeGift(platform, uid, JSONObject.class);
         List<JSONObject> paidGifts = liveDataService.getPaidGift(platform, uid, JSONObject.class);
@@ -903,7 +903,7 @@ public class BilibiliLiveReportPainter {
         if (config.isShowGiftDetails()) {
             double totalValue = paidGifts.stream().mapToDouble(json -> json.getDoubleValue("value")).sum() + boxes.stream().mapToDouble(json -> json.getDoubleValue("value")).sum();
             long senderCount = Stream.concat(Stream.concat(paidGifts.stream(), freeGifts.stream()), boxes.stream())
-                    .map(json -> json.getLong("sender"))
+                    .map(json -> json.getString("sender"))
                     .distinct()
                     .count();
             String tip = String.format("%.1f 元 / %d 人", totalValue, senderCount);
@@ -935,8 +935,8 @@ public class BilibiliLiveReportPainter {
                 .toList();
 
         // 按需批量获取发送者用户信息
-        Map<Long, UserInfo> userInfos = config.getGiftRankingLimit() > 0
-                ? bilibili.getUserInfoByUids(valueBySender.keySet().stream().map(Long::valueOf).collect(Collectors.toSet()))
+        Map<String, UserInfo> userInfos = config.getGiftRankingLimit() > 0
+                ? bilibili.getUserInfoByUids(valueBySender.keySet())
                 : Map.of();
 
         // 礼物排行榜
@@ -991,7 +991,7 @@ public class BilibiliLiveReportPainter {
         }
 
         String platform = LivePlatform.BILIBILI.getName();
-        Long uid = up.getUid();
+        String uid = up.getUid();
 
         List<JSONObject> superChats = liveDataService.getSuperChat(platform, uid, JSONObject.class);
         if (CollectionUtils.isEmpty(superChats)) {
@@ -1000,7 +1000,7 @@ public class BilibiliLiveReportPainter {
 
         if (config.isShowSuperChatDetails()) {
             long totalValue = superChats.stream().mapToLong(json -> json.getLongValue("value")).sum();
-            long senderCount = superChats.stream().map(json -> json.getLong("sender")).distinct().count();
+            long senderCount = superChats.stream().map(json -> json.getString("sender")).distinct().count();
             String tip = totalValue + " 元 / " + senderCount + " 人";
             drawTitle("SC（醒目留言）分析", tip);
         } else {
@@ -1014,8 +1014,8 @@ public class BilibiliLiveReportPainter {
                 .toList();
 
         // 按需批量获取发送者用户信息
-        Map<Long, UserInfo> userInfos = config.getSuperChatRankingLimit() > 0
-                ? bilibili.getUserInfoByUids(valueBySender.keySet().stream().map(Long::valueOf).collect(Collectors.toSet()))
+        Map<String, UserInfo> userInfos = config.getSuperChatRankingLimit() > 0
+                ? bilibili.getUserInfoByUids(valueBySender.keySet())
                 : Map.of();
 
         // SC（醒目留言）排行榜
@@ -1053,7 +1053,7 @@ public class BilibiliLiveReportPainter {
         }
 
         String platform = LivePlatform.BILIBILI.getName();
-        Long uid = up.getUid();
+        String uid = up.getUid();
 
         List<JSONObject> guards = liveDataService.getMemberShip(platform, uid, JSONObject.class);
         if (CollectionUtils.isEmpty(guards)) {
@@ -1178,11 +1178,11 @@ public class BilibiliLiveReportPainter {
                     default -> Color.BLACK;
                 };
 
-                Map<Long, UserInfo> userInfos = bilibili.getUserInfoByUids(list.stream().map(json -> json.getLong("sender")).collect(Collectors.toSet()));
-                List<Optional<BufferedImage>> faces = bilibili.asyncGetBilibiliImages(list.stream().map(json -> userInfos.get(json.getLong("sender")).getFace()).toList()).join();
-                Map<Long, Optional<BufferedImage>> facesByUid = new HashMap<>();
+                Map<String, UserInfo> userInfos = bilibili.getUserInfoByUids(list.stream().map(json -> json.getString("sender")).collect(Collectors.toSet()));
+                List<Optional<BufferedImage>> faces = bilibili.asyncGetBilibiliImages(list.stream().map(json -> userInfos.get(json.getString("sender")).getFace()).toList()).join();
+                Map<String, Optional<BufferedImage>> facesByUid = new HashMap<>();
                 for (int i = 0; i < list.size(); i++) {
-                    facesByUid.put(list.get(i).getLong("sender"), faces.get(i));
+                    facesByUid.put(list.get(i).getString("sender"), faces.get(i));
                 }
                 BufferedImage icon = icons.get(type);
 
@@ -1192,7 +1192,7 @@ public class BilibiliLiveReportPainter {
                     for (int j = 0; j < line.size(); j++) {
                         JSONObject guard = line.get(j);
                         int x = MARGIN + margin + j * (iconSize + margin);
-                        Optional<BufferedImage> face = facesByUid.get(guard.getLong("sender"));
+                        Optional<BufferedImage> face = facesByUid.get(guard.getString("sender"));
                         if (face != null && face.isPresent()) {
                             int padding = (iconSize - faceSize) / 2;
                             this.painter.drawImage(ImageUtil.maskToCircle(ImageUtil.resize(face.get(), faceSize, faceSize)), new Point(x + padding, y + padding));
@@ -1200,7 +1200,7 @@ public class BilibiliLiveReportPainter {
                         if (icon != null) {
                             this.painter.drawImage(ImageUtil.resize(icon, iconSize, iconSize), new Point(x, y));
                         }
-                        UserInfo userInfo = userInfos.get(guard.getLong("sender"));
+                        UserInfo userInfo = userInfos.get(guard.getString("sender"));
                         if (userInfo != null) {
                             String uname = StringUtil.getOmitString(userInfo.getUname(), 8);
                             String countText = guard.getIntValue("count") + " 月";
@@ -1297,7 +1297,7 @@ public class BilibiliLiveReportPainter {
         }
 
         String platform = LivePlatform.BILIBILI.getName();
-        Long uid = up.getUid();
+        String uid = up.getUid();
 
         List<JSONObject> enters = liveDataService.getEnterRoom(platform, uid, JSONObject.class);
         if (CollectionUtils.isEmpty(enters)) {
@@ -1305,7 +1305,7 @@ public class BilibiliLiveReportPainter {
         }
 
         if (config.isShowEnterRoomDetails()) {
-            long senderCount = enters.stream().map(json -> json.getLong("sender")).distinct().count();
+            long senderCount = enters.stream().map(json -> json.getString("sender")).distinct().count();
             String tip = enters.size() + " 次 / " + senderCount + " 人";
             drawTitle("进房分析", tip);
         } else {

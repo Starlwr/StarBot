@@ -28,11 +28,11 @@ public class BilibiliLiveRoomService {
 
     private final BilibiliLiveRoomConnectTaskService taskService;
 
-    private final Map<Long, Up> ups = new HashMap<>();
+    private final Map<String, Up> ups = new HashMap<>();
 
-    private final Map<Long, Long> roomIdMap = new HashMap<>();
+    private final Map<String, String> roomIdMap = new HashMap<>();
 
-    private final Map<Long, BilibiliLiveRoomConnector> connectors = new HashMap<>();
+    private final Map<String, BilibiliLiveRoomConnector> connectors = new HashMap<>();
 
     @Autowired
     public BilibiliLiveRoomService(StarBotBilibiliProperties properties, BilibiliApiService bilibili, BilibiliLiveRoomConnectorFactory connectorFactory, BilibiliLiveRoomConnectTaskService taskService) {
@@ -72,7 +72,7 @@ public class BilibiliLiveRoomService {
      * @param uid UID
      * @return 是否存在指定 UID 的 UP 主
      */
-    public boolean hasUp(Long uid) {
+    public boolean hasUp(String uid) {
         return ups.containsKey(uid);
     }
 
@@ -80,7 +80,7 @@ public class BilibiliLiveRoomService {
      * 根据 UID 添加直播间监听
      * @param uid UID
      */
-    public synchronized void addByUid(Long uid) {
+    public synchronized void addByUid(String uid) {
         if (ups.containsKey(uid)) {
             log.warn("UID 为 {} 的 UP 主已存在于监听列表中, 无需重复添加", uid);
             return;
@@ -99,7 +99,7 @@ public class BilibiliLiveRoomService {
      * 根据房间号添加直播间监听
      * @param roomId 房间号
      */
-    public synchronized void addByRoomId(Long roomId) {
+    public synchronized void addByRoomId(String roomId) {
         Up up = bilibili.getUpInfoByRoomId(roomId);
         if (ups.containsKey(up.getUid())) {
             log.warn("房间号为 {} 的 UP 主已存在于监听列表中, 无需重复添加", up.getRoomId());
@@ -145,7 +145,7 @@ public class BilibiliLiveRoomService {
      * 根据 UID 移除直播间监听
      * @param uid UID
      */
-    public synchronized void removeByUid(Long uid) {
+    public synchronized void removeByUid(String uid) {
         if (!ups.containsKey(uid)) {
             log.warn("UID 为 {} 的 UP 主不存在于监听列表中, 无需移除", uid);
             return;
@@ -158,8 +158,8 @@ public class BilibiliLiveRoomService {
      * 根据房间号移除直播间监听
      * @param roomId 房间号
      */
-    public synchronized void removeByRoomId(Long roomId) {
-        Long uid = roomIdMap.get(roomId);
+    public synchronized void removeByRoomId(String roomId) {
+        String uid = roomIdMap.get(roomId);
         if (uid == null) {
             log.warn("房间号为 {} 的 UP 主不存在于监听列表中, 无需移除", roomId);
             return;

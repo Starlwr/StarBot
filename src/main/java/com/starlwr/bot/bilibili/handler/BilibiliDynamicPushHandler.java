@@ -119,7 +119,7 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
 
         boolean onlySelfOrigin = params.getBooleanValue("only_self_origin", false);
         if ("DYNAMIC_TYPE_FORWARD".equals(type) && onlySelfOrigin) {
-            Long originUid = event.getDynamic().getOrigin().getModules().getJSONObject("module_author").getLong("mid");
+            String originUid = event.getDynamic().getOrigin().getModules().getJSONObject("module_author").getString("mid");
             if (!event.getSource().getUid().equals(originUid)) {
                 log.info("[{}] {} 的转发动态源作者不为自己, 跳过推送", event.getPlatform(), event.getSource().getUname());
                 return;

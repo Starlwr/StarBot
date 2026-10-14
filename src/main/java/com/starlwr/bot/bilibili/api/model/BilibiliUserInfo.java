@@ -29,56 +29,56 @@ public class BilibiliUserInfo extends UserInfo {
      */
     private Integer honorLevel;
 
-    public BilibiliUserInfo(Long uid, String uname) {
+    public BilibiliUserInfo(String uid, String uname) {
         super(uid, uname);
     }
 
-    public BilibiliUserInfo(Long uid, String uname, String face) {
+    public BilibiliUserInfo(String uid, String uname, String face) {
         super(uid, uname, face);
     }
 
-    public BilibiliUserInfo(Long uid, String uname, FansMedal fansMedal) {
+    public BilibiliUserInfo(String uid, String uname, FansMedal fansMedal) {
         super(uid, uname);
         this.fansMedal = fansMedal;
     }
 
-    public BilibiliUserInfo(Long uid, String uname, String face, FansMedal fansMedal) {
+    public BilibiliUserInfo(String uid, String uname, String face, FansMedal fansMedal) {
         super(uid, uname, face);
         this.fansMedal = fansMedal;
     }
 
-    public BilibiliUserInfo(Long uid, String uname, FansMedal fansMedal, Integer honorLevel) {
+    public BilibiliUserInfo(String uid, String uname, FansMedal fansMedal, Integer honorLevel) {
         super(uid, uname);
         this.fansMedal = fansMedal;
         this.honorLevel = honorLevel;
     }
 
-    public BilibiliUserInfo(Long uid, String uname, String face, FansMedal fansMedal, Integer honorLevel) {
+    public BilibiliUserInfo(String uid, String uname, String face, FansMedal fansMedal, Integer honorLevel) {
         super(uid, uname, face);
         this.fansMedal = fansMedal;
         this.honorLevel = honorLevel;
     }
 
-    public BilibiliUserInfo(Long uid, String uname, FansMedal fansMedal, Guard guard) {
+    public BilibiliUserInfo(String uid, String uname, FansMedal fansMedal, Guard guard) {
         super(uid, uname);
         this.fansMedal = fansMedal;
         this.guard = guard;
     }
 
-    public BilibiliUserInfo(Long uid, String uname, String face, FansMedal fansMedal, Guard guard) {
+    public BilibiliUserInfo(String uid, String uname, String face, FansMedal fansMedal, Guard guard) {
         super(uid, uname, face);
         this.fansMedal = fansMedal;
         this.guard = guard;
     }
 
-    public BilibiliUserInfo(Long uid, String uname, FansMedal fansMedal, Guard guard, Integer honorLevel) {
+    public BilibiliUserInfo(String uid, String uname, FansMedal fansMedal, Guard guard, Integer honorLevel) {
         super(uid, uname);
         this.fansMedal = fansMedal;
         this.guard = guard;
         this.honorLevel = honorLevel;
     }
 
-    public BilibiliUserInfo(Long uid, String uname, String face, FansMedal fansMedal, Guard guard, Integer honorLevel) {
+    public BilibiliUserInfo(String uid, String uname, String face, FansMedal fansMedal, Guard guard, Integer honorLevel) {
         super(uid, uname, face);
         this.fansMedal = fansMedal;
         this.guard = guard;

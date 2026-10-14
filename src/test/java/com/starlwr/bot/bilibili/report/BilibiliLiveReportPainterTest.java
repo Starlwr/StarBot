@@ -64,12 +64,12 @@ public class BilibiliLiveReportPainterTest {
     /**
      * 测试主播 UID
      */
-    private static final long UID = 180864557L;
+    private static final String UID = "180864557";
 
     /**
      * 测试直播间房间号
      */
-    private static final long ROOM_ID = 7260744L;
+    private static final String ROOM_ID = "7260744";
 
     /**
      * 是否将生成的直播报告图片保存至本地 TestLiveReport 目录
@@ -134,36 +134,36 @@ public class BilibiliLiveReportPainterTest {
             List<String> urls = invocation.getArgument(0);
             return CompletableFuture.completedFuture(urls.stream().map(url -> Optional.of(face)).toList());
         });
-        Map<Long, UserInfo> userInfos = new HashMap<>();
-        userInfos.put(10001L, new UserInfo(10001L, "弹幕狂魔", "https://example.com/face1.jpg"));
-        userInfos.put(10002L, new UserInfo(10002L, "话痨小王", "https://example.com/face2.jpg"));
-        userInfos.put(10003L, new UserInfo(10003L, "互动达人", "https://example.com/face3.jpg"));
-        userInfos.put(10004L, new UserInfo(10004L, "潜水员甲", "https://example.com/face4.jpg"));
-        userInfos.put(10005L, new UserInfo(10005L, "潜水员乙", "https://example.com/face5.jpg"));
-        userInfos.put(10006L, new UserInfo(10006L, "潜水员丙", "https://example.com/face6.jpg"));
-        userInfos.put(10007L, new UserInfo(10007L, "潜水员丁", "https://example.com/face7.jpg"));
-        userInfos.put(10008L, new UserInfo(10008L, "潜水员戊", "https://example.com/face8.jpg"));
-        userInfos.put(20001L, new UserInfo(20001L, "表情选手", "https://example.com/face9.jpg"));
-        userInfos.put(20002L, new UserInfo(20002L, "表情玩家", "https://example.com/face10.jpg"));
-        userInfos.put(30001L, new UserInfo(30001L, "盲盒欧皇", "https://example.com/face11.jpg"));
-        userInfos.put(30002L, new UserInfo(30002L, "盲盒非酋", "https://example.com/face12.jpg"));
-        userInfos.put(30003L, new UserInfo(30003L, "尝鲜观众", "https://example.com/face13.jpg"));
-        userInfos.put(30004L, new UserInfo(30004L, "盒子老手", "https://example.com/face14.jpg"));
-        userInfos.put(40001L, new UserInfo(40001L, "礼物战神", "https://example.com/face15.jpg"));
-        userInfos.put(40002L, new UserInfo(40002L, "高能粉丝", "https://example.com/face16.jpg"));
-        userInfos.put(40003L, new UserInfo(40003L, "新来的", "https://example.com/face17.jpg"));
-        userInfos.put(40004L, new UserInfo(40004L, "白嫖怪", "https://example.com/face18.jpg"));
-        userInfos.put(50001L, new UserInfo(50001L, "SC 土豪", "https://example.com/face19.jpg"));
-        userInfos.put(50002L, new UserInfo(50002L, "一笔千金", "https://example.com/face20.jpg"));
-        userInfos.put(50003L, new UserInfo(50003L, "轻量助力", "https://example.com/face21.jpg"));
-        userInfos.put(60001L, new UserInfo(60001L, "总督老爷", "https://example.com/face22.jpg"));
-        userInfos.put(60002L, new UserInfo(60002L, "提督大人", "https://example.com/face23.jpg"));
-        userInfos.put(60003L, new UserInfo(60003L, "舰长哥哥", "https://example.com/face24.jpg"));
-        userInfos.put(60004L, new UserInfo(60004L, "续费舰长", "https://example.com/face25.jpg"));
-        userInfos.put(60005L, new UserInfo(60005L, "舰长小白", "https://example.com/face26.jpg"));
-        userInfos.put(70001L, new UserInfo(70001L, "进房常客", "https://example.com/face27.jpg"));
-        userInfos.put(70002L, new UserInfo(70002L, "路过观众", "https://example.com/face28.jpg"));
-        userInfos.put(70003L, new UserInfo(70003L, "串门者", "https://example.com/face29.jpg"));
+        Map<String, UserInfo> userInfos = new HashMap<>();
+        userInfos.put("10001", new UserInfo("10001", "弹幕狂魔", "https://example.com/face1.jpg"));
+        userInfos.put("10002", new UserInfo("10002", "话痨小王", "https://example.com/face2.jpg"));
+        userInfos.put("10003", new UserInfo("10003", "互动达人", "https://example.com/face3.jpg"));
+        userInfos.put("10004", new UserInfo("10004", "潜水员甲", "https://example.com/face4.jpg"));
+        userInfos.put("10005", new UserInfo("10005", "潜水员乙", "https://example.com/face5.jpg"));
+        userInfos.put("10006", new UserInfo("10006", "潜水员丙", "https://example.com/face6.jpg"));
+        userInfos.put("10007", new UserInfo("10007", "潜水员丁", "https://example.com/face7.jpg"));
+        userInfos.put("10008", new UserInfo("10008", "潜水员戊", "https://example.com/face8.jpg"));
+        userInfos.put("20001", new UserInfo("20001", "表情选手", "https://example.com/face9.jpg"));
+        userInfos.put("20002", new UserInfo("20002", "表情玩家", "https://example.com/face10.jpg"));
+        userInfos.put("30001", new UserInfo("30001", "盲盒欧皇", "https://example.com/face11.jpg"));
+        userInfos.put("30002", new UserInfo("30002", "盲盒非酋", "https://example.com/face12.jpg"));
+        userInfos.put("30003", new UserInfo("30003", "尝鲜观众", "https://example.com/face13.jpg"));
+        userInfos.put("30004", new UserInfo("30004", "盒子老手", "https://example.com/face14.jpg"));
+        userInfos.put("40001", new UserInfo("40001", "礼物战神", "https://example.com/face15.jpg"));
+        userInfos.put("40002", new UserInfo("40002", "高能粉丝", "https://example.com/face16.jpg"));
+        userInfos.put("40003", new UserInfo("40003", "新来的", "https://example.com/face17.jpg"));
+        userInfos.put("40004", new UserInfo("40004", "白嫖怪", "https://example.com/face18.jpg"));
+        userInfos.put("50001", new UserInfo("50001", "SC 土豪", "https://example.com/face19.jpg"));
+        userInfos.put("50002", new UserInfo("50002", "一笔千金", "https://example.com/face20.jpg"));
+        userInfos.put("50003", new UserInfo("50003", "轻量助力", "https://example.com/face21.jpg"));
+        userInfos.put("60001", new UserInfo("60001", "总督老爷", "https://example.com/face22.jpg"));
+        userInfos.put("60002", new UserInfo("60002", "提督大人", "https://example.com/face23.jpg"));
+        userInfos.put("60003", new UserInfo("60003", "舰长哥哥", "https://example.com/face24.jpg"));
+        userInfos.put("60004", new UserInfo("60004", "续费舰长", "https://example.com/face25.jpg"));
+        userInfos.put("60005", new UserInfo("60005", "舰长小白", "https://example.com/face26.jpg"));
+        userInfos.put("70001", new UserInfo("70001", "进房常客", "https://example.com/face27.jpg"));
+        userInfos.put("70002", new UserInfo("70002", "路过观众", "https://example.com/face28.jpg"));
+        userInfos.put("70003", new UserInfo("70003", "串门者", "https://example.com/face29.jpg"));
         when(bilibili.getUserInfoByUids(anySet())).thenReturn(userInfos);
         Room room = new Room(UID, "测试主播", ROOM_ID, "https://example.com/face.jpg", 1,
                 1784617225000L, "今晚测试直播标题", "https://example.com/cover.jpg", "虚拟主播", "综合");
@@ -494,7 +494,7 @@ public class BilibiliLiveReportPainterTest {
         box.put("sender", String.valueOf(sender));
 
         JSONObject randomGiftInfo = new JSONObject();
-        randomGiftInfo.put("id", 34914L);
+        randomGiftInfo.put("id", "34914");
         randomGiftInfo.put("name", boxName);
         randomGiftInfo.put("price", price / count);
         randomGiftInfo.put("count", count);
@@ -502,7 +502,7 @@ public class BilibiliLiveReportPainterTest {
         box.put("randomGiftInfo", randomGiftInfo);
 
         JSONObject giftInfo = new JSONObject();
-        giftInfo.put("id", 34919L);
+        giftInfo.put("id", "34919");
         giftInfo.put("name", giftName);
         giftInfo.put("price", value / count);
         giftInfo.put("count", count);
@@ -558,7 +558,7 @@ public class BilibiliLiveReportPainterTest {
         gift.put("sender", String.valueOf(sender));
 
         JSONObject giftInfo = new JSONObject();
-        giftInfo.put("id", 31036L);
+        giftInfo.put("id", "31036");
         giftInfo.put("name", giftName);
         giftInfo.put("price", price);
         giftInfo.put("count", count);

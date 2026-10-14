@@ -83,7 +83,7 @@ public class BilibiliAccountService {
 
             log.info("开始尝试使用登录凭据登录 B 站账号");
             bilibili.setCookies(cookies);
-            Long uid = bilibili.getLoginUid();
+            String uid = bilibili.getLoginUid();
             accountInfo = bilibili.getUpInfoByUid(uid);
 
             log.info("B 站账号登录成功, UID: {}, 昵称: {}, 房间号: {}", accountInfo.getUid(), accountInfo.getUname(), accountInfo.getRoomIdString());
@@ -142,7 +142,7 @@ public class BilibiliAccountService {
                 log.info("扫码登录成功, 开始使用登录凭据登录 B 站账号");
 
                 try {
-                    Long uid = bilibili.getLoginUid();
+                    String uid = bilibili.getLoginUid();
                     accountInfo = bilibili.getUpInfoByUid(uid);
                 } catch (Exception e) {
                     log.error("登录 B 站账号失败", e);

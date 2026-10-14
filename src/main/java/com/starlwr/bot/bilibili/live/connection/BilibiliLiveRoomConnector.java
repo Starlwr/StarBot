@@ -89,7 +89,7 @@ public class BilibiliLiveRoomConnector {
     @NoArgsConstructor
     @AllArgsConstructor
     private static class DanmuDTO {
-        private long uid;
+        private String uid;
         private String content;
         private long timestamp;
     }
@@ -223,8 +223,8 @@ public class BilibiliLiveRoomConnector {
      */
     private void sendVerifyData() {
         Map<String, Object> verifyData = Map.of(
-                "uid", accountService.getAccountInfo().getUid(),
-                "roomid", up.getRoomId(),
+                "uid", Long.parseLong(accountService.getAccountInfo().getUid()),
+                "roomid", Long.parseLong(up.getRoomId()),
                 "protover", 3,
                 "buvid", bilibili.getCookies().getBuvid3(),
                 "platform", "web",

@@ -44,7 +44,7 @@ public class BilibiliBackupLivePushService {
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
-    private final Set<Long> uids = new HashSet<>();
+    private final Set<String> uids = new HashSet<>();
 
     @Autowired
     public BilibiliBackupLivePushService(ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, BilibiliApiService bilibili, LiveDataService liveDataService) {
@@ -76,9 +76,9 @@ public class BilibiliBackupLivePushService {
             Thread.currentThread().setName("backup-live-push");
 
             try {
-                Map<Long, Room> liveInfos = bilibili.getLiveInfoByUids(uids);
-                for (Map.Entry<Long, Room> entry : liveInfos.entrySet()) {
-                    Long uid = entry.getKey();
+                Map<String, Room> liveInfos = bilibili.getLiveInfoByUids(uids);
+                for (Map.Entry<String, Room> entry : liveInfos.entrySet()) {
+                    String uid = entry.getKey();
                     Room liveInfo = entry.getValue();
 
                     synchronized (BilibiliBackupLivePushService.class) {

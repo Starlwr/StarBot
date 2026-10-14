@@ -146,7 +146,7 @@ public class BilibiliEventParser {
         boolean completeEvent = properties.getLive().isCompleteEvent();
         InteractWordV2.UserInfo userInfo = payload.getUserInfo();
 
-        long senderUid = payload.getUid();
+        String senderUid = payload.getUid();
         String senderUname = payload.getUname();
         String senderFace = userInfo.getBase().getFace();
 
@@ -155,7 +155,7 @@ public class BilibiliEventParser {
         if (medalInfo.isPresent()) {
             if (completeEvent) {
                 String fansMedalUname = completeUname(medalInfo.getTargetId(), source).orElse(null);
-                Long fansMedalRoomId = completeRoomId(medalInfo.getTargetId(), source).orElse(null);
+                String fansMedalRoomId = completeRoomId(medalInfo.getTargetId(), source).orElse(null);
                 String fansMedalFace = completeFace(medalInfo.getTargetId(), source).orElse(null);
                 fansMedal = new FansMedal(medalInfo.getTargetId(), fansMedalUname, fansMedalRoomId, fansMedalFace, medalInfo.getName(), medalInfo.getLevel(), medalInfo.isLighted());
             } else {
@@ -204,7 +204,7 @@ public class BilibiliEventParser {
 
         JSONObject senderInfo = metaInfo.getJSONObject("user");
         JSONObject senderBaseInfo = senderInfo.getJSONObject("base");
-        Long senderUid = senderInfo.getLong("uid");
+        String senderUid = senderInfo.getString("uid");
 
         String senderUname = null;
         String senderFace = null;
@@ -221,9 +221,9 @@ public class BilibiliEventParser {
         FansMedal fansMedal = null;
         JSONArray fansMedalInfo = info.getJSONArray(3);
         if (CollectionUtils.isNotEmpty(fansMedalInfo)) {
-            Long fansMedalUid = fansMedalInfo.getLong(12);
+            String fansMedalUid = fansMedalInfo.getString(12);
             String fansMedalUname = fansMedalInfo.getString(2);
-            Long fansMedalRoomId = fansMedalInfo.getLong(3);
+            String fansMedalRoomId = fansMedalInfo.getString(3);
             String fansMedalName = fansMedalInfo.getString(1);
             Integer fansMedalLevel = fansMedalInfo.getInteger(0);
             Boolean fansMedalLighted = fansMedalInfo.getInteger(11) == 1;
@@ -250,8 +250,8 @@ public class BilibiliEventParser {
         JSONObject danmuInfo = JSON.parseObject(metaInfo.getString("extra"));
         if (isDanmu) {
             UserInfo reply = null;
-            Long replyUid = danmuInfo.getLong("reply_mid");
-            if (replyUid != 0L) {
+            String replyUid = danmuInfo.getString("reply_mid");
+            if (!"0".equals(replyUid)) {
                 String replyUname = danmuInfo.getString("reply_uname");
                 if (completeEvent) {
                     String replyFace = completeFace(replyUid, source).orElse(null);
@@ -324,7 +324,7 @@ public class BilibiliEventParser {
         if (medal.isPresent()) {
             if (completeEvent) {
                 String fansMedalUname = completeUname(medal.getRuid(), source).orElse(null);
-                Long fansMedalRoomId = completeRoomId(medal.getRuid(), source).orElse(null);
+                String fansMedalRoomId = completeRoomId(medal.getRuid(), source).orElse(null);
                 String fansMedalFace = completeFace(medal.getRuid(), source).orElse(null);
                 fansMedal = new FansMedal(medal.getRuid(), fansMedalUname, fansMedalRoomId, fansMedalFace, medal.getName(), medal.getLevel(), medal.isLighted());
             } else {
@@ -377,20 +377,20 @@ public class BilibiliEventParser {
 
         JSONObject senderInfo = metaData.getJSONObject("uinfo");
         JSONObject senderBaseInfo = senderInfo.getJSONObject("base");
-        Long senderUid = senderInfo.getLong("uid");
+        String senderUid = senderInfo.getString("uid");
         String senderUname = senderBaseInfo.getString("name");
         String senderFace = senderBaseInfo.getString("face");
 
         FansMedal fansMedal = null;
         JSONObject fansMedalInfo = senderInfo.getJSONObject("medal");
         if (fansMedalInfo != null) {
-            Long fansMedalUid = fansMedalInfo.getLong("ruid");
+            String fansMedalUid = fansMedalInfo.getString("ruid");
             String fansMedalName = fansMedalInfo.getString("name");
             Integer fansMedalLevel = fansMedalInfo.getInteger("level");
             Boolean fansMedalLighted = fansMedalInfo.getInteger("is_light") == 1;
             if (completeEvent) {
                 String fansMedalUname = completeUname(fansMedalUid, source).orElse(null);
-                Long fansMedalRoomId = completeRoomId(fansMedalUid, source).orElse(null);
+                String fansMedalRoomId = completeRoomId(fansMedalUid, source).orElse(null);
                 String fansMedalFace = completeFace(fansMedalUid, source).orElse(null);
                 fansMedal = new FansMedal(fansMedalUid, fansMedalUname, fansMedalRoomId, fansMedalFace, fansMedalName, fansMedalLevel, fansMedalLighted);
             } else {
@@ -426,7 +426,7 @@ public class BilibiliEventParser {
 
         JSONObject senderInfo = metaData.getJSONObject("sender_uinfo");
         JSONObject senderBaseInfo = senderInfo.getJSONObject("base");
-        Long senderUid = senderInfo.getLong("uid");
+        String senderUid = senderInfo.getString("uid");
         String senderUname = senderBaseInfo.getString("name");
         String senderFace = null;
         if (completeEvent) {
@@ -488,20 +488,20 @@ public class BilibiliEventParser {
         }
 
         JSONObject senderBaseInfo = senderInfo.getJSONObject("base");
-        Long senderUid = senderInfo.getLong("uid");
+        String senderUid = senderInfo.getString("uid");
         String senderUname = senderBaseInfo.getString("name");
         String senderFace = senderBaseInfo.getString("face");
 
         FansMedal fansMedal = null;
         JSONObject fansMedalInfo = senderInfo.getJSONObject("medal");
         if (fansMedalInfo != null) {
-            Long fansMedalUid = fansMedalInfo.getLong("ruid");
+            String fansMedalUid = fansMedalInfo.getString("ruid");
             String fansMedalName = fansMedalInfo.getString("name");
             Integer fansMedalLevel = fansMedalInfo.getInteger("level");
             Boolean fansMedalLighted = fansMedalInfo.getInteger("is_light") == 1;
             if (completeEvent) {
                 String fansMedalUname = completeUname(fansMedalUid, source).orElse(null);
-                Long fansMedalRoomId = completeRoomId(fansMedalUid, source).orElse(null);
+                String fansMedalRoomId = completeRoomId(fansMedalUid, source).orElse(null);
                 String fansMedalFace = completeFace(fansMedalUid, source).orElse(null);
                 fansMedal = new FansMedal(fansMedalUid, fansMedalUname, fansMedalRoomId, fansMedalFace, fansMedalName, fansMedalLevel, fansMedalLighted);
             } else {
@@ -536,7 +536,7 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 昵称
      */
-    private Optional<String> completeUname(@NonNull Long uid, LiveStreamerInfo source) {
+    private Optional<String> completeUname(@NonNull String uid, LiveStreamerInfo source) {
         if (uid.equals(source.getUid())) {
             return Optional.ofNullable(source.getUname());
         }
@@ -550,7 +550,7 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 房间号
      */
-    private Optional<Long> completeRoomId(@NonNull Long uid, LiveStreamerInfo source) {
+    private Optional<String> completeRoomId(@NonNull String uid, LiveStreamerInfo source) {
         if (uid.equals(source.getUid())) {
             return Optional.ofNullable(source.getRoomId());
         }
@@ -564,7 +564,7 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 头像
      */
-    private Optional<String> completeFace(@NonNull Long uid, LiveStreamerInfo source) {
+    private Optional<String> completeFace(@NonNull String uid, LiveStreamerInfo source) {
         if (uid.equals(source.getUid())) {
             return Optional.ofNullable(source.getFace());
         }

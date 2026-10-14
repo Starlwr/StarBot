@@ -41,7 +41,7 @@ public class Room extends LiveStreamerInfo {
      */
     private String areaName;
 
-    public Room(Long uid, String uname, Long roomId, Integer liveStatus, Long liveStartTime, String title, String cover, String parentAreaName, String areaName) {
+    public Room(String uid, String uname, String roomId, Integer liveStatus, Long liveStartTime, String title, String cover, String parentAreaName, String areaName) {
         super(uid, uname, roomId);
         this.liveStatus = liveStatus;
         this.liveStartTime = liveStartTime;
@@ -51,7 +51,7 @@ public class Room extends LiveStreamerInfo {
         this.areaName = areaName;
     }
 
-    public Room(Long uid, String uname, Long roomId, String face, Integer liveStatus, Long liveStartTime, String title, String cover, String parentAreaName, String areaName) {
+    public Room(String uid, String uname, String roomId, String face, Integer liveStatus, Long liveStartTime, String title, String cover, String parentAreaName, String areaName) {
         super(uid, uname, roomId, face);
         this.liveStatus = liveStatus;
         this.liveStartTime = liveStartTime;

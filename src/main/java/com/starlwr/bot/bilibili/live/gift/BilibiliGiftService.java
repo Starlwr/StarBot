@@ -25,7 +25,7 @@ public class BilibiliGiftService {
 
     private Map<String, String> guards;
 
-    private Map<Long, Gift> gifts;
+    private Map<String, Gift> gifts;
 
     private Instant lastUpdate = Instant.now();
 
@@ -54,7 +54,7 @@ public class BilibiliGiftService {
      * @param giftId 礼物 ID
      * @return 礼物信息
      */
-    public Optional<Gift> getGiftInfo(@NonNull Long giftId) {
+    public Optional<Gift> getGiftInfo(@NonNull String giftId) {
         int giftCacheExpire = properties.getLive().getGiftCacheExpire();
         if (gifts == null || Instant.now().isAfter(lastUpdate.plusSeconds(giftCacheExpire))) {
             updateGiftInfo();

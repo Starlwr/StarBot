@@ -564,11 +564,11 @@ public class BilibiliApiService {
      * 获取登录账号 UID
      * @return 登录账号 UID
      */
-    public Long getLoginUid() {
+    public String getLoginUid() {
         String api = "https://api.bilibili.com/x/space/v2/myinfo";
         JSONObject result = requestBilibiliApi(api);
         JSONObject profile = result.getJSONObject("profile");
-        return profile.getLong("mid");
+        return profile.getString("mid");
     }
 
     /**
@@ -577,15 +577,15 @@ public class BilibiliApiService {
      * @return UP 主信息
      */
     @Cacheable(value = "bilibiliApiCache", keyGenerator = "cacheKeyGenerator")
-    public Up getUpInfoByUid(@NonNull Long uid) {
+    public Up getUpInfoByUid(@NonNull String uid) {
         String api = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + uid;
         JSONObject result = requestBilibiliApi(api);
 
         JSONObject info = result.getJSONObject("info");
         String uname = info.getString("uname");
-        Long roomId = result.getLong("room_id");
+        String roomId = result.getString("room_id");
         String face = info.getString("face");
-        return new Up(uid, uname, roomId == 0 ? null : roomId, face);
+        return new Up(uid, uname, "0".equals(roomId) ? null : roomId, face);
     }
 
     /**
@@ -594,14 +594,14 @@ public class BilibiliApiService {
      * @return UP 主信息
      */
     @Cacheable(value = "bilibiliApiCache", keyGenerator = "cacheKeyGenerator")
-    public Up getUpInfoByRoomId(@NonNull Long roomId) {
-        if (roomId == 0) {
+    public Up getUpInfoByRoomId(@NonNull String roomId) {
+        if ("0".equals(roomId)) {
             throw new IllegalArgumentException("房间号不能为 0");
         }
 
         String api = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=" + roomId;
         JSONObject result = requestBilibiliApi(api);
-        Long uid = result.getLong("uid");
+        String uid = result.getString("uid");
         return getUpInfoByUid(uid);
     }
 
@@ -610,7 +610,7 @@ public class BilibiliApiService {
      * @param uid UID
      * @return UP 主昵称
      */
-    public Optional<String> getUnameByUid(@NonNull Long uid) {
+    public Optional<String> getUnameByUid(@NonNull String uid) {
         try {
             return Optional.ofNullable(((BilibiliApiService) AopContext.currentProxy()).getUpInfoByUid(uid).getUname());
         } catch (Exception e) {
@@ -624,7 +624,7 @@ public class BilibiliApiService {
      * @param uid UID
      * @return UP 主房间号
      */
-    public Optional<Long> getRoomIdByUid(@NonNull Long uid) {
+    public Optional<String> getRoomIdByUid(@NonNull String uid) {
         try {
             return Optional.ofNullable(((BilibiliApiService) AopContext.currentProxy()).getUpInfoByUid(uid).getRoomId());
         } catch (Exception e) {
@@ -638,7 +638,7 @@ public class BilibiliApiService {
      * @param uid UID
      * @return UP 主头像
      */
-    public Optional<String> getFaceByUid(@NonNull Long uid) {
+    public Optional<String> getFaceByUid(@NonNull String uid) {
         try {
             return Optional.ofNullable(((BilibiliApiService) AopContext.currentProxy()).getUpInfoByUid(uid).getFace());
         } catch (Exception e) {
@@ -652,7 +652,7 @@ public class BilibiliApiService {
      * @param roomId 房间号
      * @return 直播间连接信息
      */
-    public ConnectInfo getLiveRoomConnectInfo(@NonNull Long roomId) {
+    public ConnectInfo getLiveRoomConnectInfo(@NonNull String roomId) {
         Map<String, Object> params = new HashMap<>();
         params.put("id", roomId);
 
@@ -668,7 +668,7 @@ public class BilibiliApiService {
      * 直播间 Web 心跳包
      * @param roomId 房间号
      */
-    public void liveRoomHeartbeat(@NonNull Long roomId) {
+    public void liveRoomHeartbeat(@NonNull String roomId) {
         String api = "https://live-trace.bilibili.com/xlive/rdata-interface/v1/heartbeat/webHeartBeat?pf=web&hb=";
         String hbParam = Base64.getEncoder().encodeToString(("60|" + roomId + "|1|0").getBytes(StandardCharsets.UTF_8));
         asyncRequestBilibiliApi(api + hbParam).whenComplete((response, exception) -> {
@@ -689,7 +689,7 @@ public class BilibiliApiService {
      * @param roomId 房间号
      * @return 最新弹幕列表
      */
-    public List<Danmu> getLiveRoomLatestDanmus(@NonNull Long roomId) {
+    public List<Danmu> getLiveRoomLatestDanmus(@NonNull String roomId) {
         List<Danmu> danmus = new ArrayList<>();
 
         String api = "https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory?roomid=" + roomId;
@@ -705,16 +705,16 @@ public class BilibiliApiService {
                     continue;
                 }
 
-                Long uid = userInfo.getLong("uid");
+                String uid = userInfo.getString("uid");
                 String uname = baseInfo.getString("name");
                 String face = baseInfo.getString("face");
 
                 JSONArray fansMedalInfo = message.getJSONArray("medal");
                 FansMedal fansMedal = null;
                 if (CollectionUtils.isNotEmpty(fansMedalInfo)) {
-                    Long fansMedalUid = fansMedalInfo.getLong(12);
+                    String fansMedalUid = fansMedalInfo.getString(12);
                     String fansMedalUname = fansMedalInfo.getString(2);
-                    Long fansMedalRoomId = fansMedalInfo.getLong(3);
+                    String fansMedalRoomId = fansMedalInfo.getString(3);
                     String fansMedalName = fansMedalInfo.getString(1);
                     Integer fansMedalLevel = fansMedalInfo.getInteger(0);
                     Boolean fansMedalLighted = fansMedalInfo.getInteger(11) == 1;
@@ -732,8 +732,8 @@ public class BilibiliApiService {
 
                 UserInfo reply = null;
                 JSONObject replyInfo = message.getJSONObject("reply");
-                Long replyUid = replyInfo.getLong("reply_mid");
-                if (replyUid != 0L) {
+                String replyUid = replyInfo.getString("reply_mid");
+                if (!"0".equals(replyUid)) {
                     String replyUname = replyInfo.getString("reply_uname");
                     reply = new UserInfo(replyUid, replyUname);
                 }
@@ -805,7 +805,7 @@ public class BilibiliApiService {
 
         JSONArray giftInfos = result.getJSONObject("global_gift").getJSONArray("list");
         for (JSONObject giftInfo: giftInfos.toList(JSONObject.class)) {
-            Long giftId = giftInfo.getLong("id");
+            String giftId = giftInfo.getString("id");
             String giftName = giftInfo.getString("name");
             double giftPrice = MathUtil.divide(giftInfo.getInteger("price"), 1000.0);
             String giftUrl = giftInfo.getString("img_basic");
@@ -838,12 +838,12 @@ public class BilibiliApiService {
      * @param uids UID 列表
      * @return 直播间信息列表
      */
-    public Map<Long, Room> getLiveInfoByUids(Set<Long> uids) {
-        Map<Long, Room> rooms = new HashMap<>();
+    public Map<String, Room> getLiveInfoByUids(Set<String> uids) {
+        Map<String, Room> rooms = new HashMap<>();
 
         if (uids.size() == 1) {
-            Long uid = uids.iterator().next();
-            Optional<Long> optionalRoomId = getRoomIdByUid(uid);
+            String uid = uids.iterator().next();
+            Optional<String> optionalRoomId = getRoomIdByUid(uid);
             if (optionalRoomId.isPresent()) {
                 Room room = getLiveInfoByRoomId(optionalRoomId.get());
                 room.setUname(getUnameByUid(uid).orElseThrow());
@@ -855,15 +855,14 @@ public class BilibiliApiService {
 
         String api = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?uids[]=";
 
-        List<List<Long>> uidLists = ListUtils.partition(new ArrayList<>(uids), 100);
-        for (List<Long> uidList : uidLists) {
+        List<List<String>> uidLists = ListUtils.partition(new ArrayList<>(uids), 100);
+        for (List<String> uidList : uidLists) {
             JSONObject result = requestBilibiliApi(api + uidList.stream().map(String::valueOf).collect(Collectors.joining("&uids[]=")));
-            for (String uidString : result.keySet()) {
-                JSONObject roomInfo = result.getJSONObject(uidString);
+            for (String uid : result.keySet()) {
+                JSONObject roomInfo = result.getJSONObject(uid);
 
-                Long uid = Long.parseLong(uidString);
                 String uname = roomInfo.getString("uname");
-                Long roomId = roomInfo.getLong("room_id");
+                String roomId = roomInfo.getString("room_id");
                 String face = roomInfo.getString("face");
                 Integer liveStatus = roomInfo.getInteger("live_status");
                 Long liveStartTime = roomInfo.getLong("live_time") * 1000;
@@ -885,25 +884,25 @@ public class BilibiliApiService {
      * @param uids UID 集合
      * @return 用户信息列表
      */
-    public Map<Long, UserInfo> getUserInfoByUids(Set<Long> uids) {
+    public Map<String, UserInfo> getUserInfoByUids(Set<String> uids) {
         if (CollectionUtils.isEmpty(uids)) {
             return new HashMap<>();
         }
 
-        Map<Long, UserInfo> infos = new HashMap<>();
+        Map<String, UserInfo> infos = new HashMap<>();
 
-        for (Long uid : uids) {
+        for (String uid : uids) {
             infos.put(uid, new UserInfo(uid, "昵称获取失败"));
         }
 
-        List<List<Long>> parts = ListUtils.partition(new ArrayList<>(uids), 10);
-        for (List<Long> part: parts) {
+        List<List<String>> parts = ListUtils.partition(new ArrayList<>(uids), 10);
+        for (List<String> part: parts) {
             String param = part.stream().map(String::valueOf).collect(Collectors.joining(","));
             String api = "https://api.vc.bilibili.com/account/v1/user/cards?uids=" + param;
             JSONArray results = requestBilibiliApiForArray(api);
             for (Object result : results) {
                 JSONObject info = (JSONObject) result;
-                Long uid = info.getLong("mid");
+                String uid = info.getString("mid");
                 String uname = info.getString("name");
                 String face = info.getString("face");
                 infos.put(uid, new UserInfo(uid, uname, face));
@@ -918,16 +917,16 @@ public class BilibiliApiService {
      * @param roomId 房间号
      * @return 直播间信息
      */
-    public Room getLiveInfoByRoomId(@NonNull Long roomId) {
-        if (roomId == 0) {
+    public Room getLiveInfoByRoomId(@NonNull String roomId) {
+        if ("0".equals(roomId)) {
             throw new IllegalArgumentException("房间号不能为 0");
         }
 
         String api = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=" + roomId;
         JSONObject result = requestBilibiliApi(api);
 
-        Long uid = result.getLong("uid");
-        Long realRoomId = result.getLong("room_id");
+        String uid = result.getString("uid");
+        String realRoomId = result.getString("room_id");
         Integer liveStatus = result.getInteger("live_status");
 
         long liveStartTime = 0L;
@@ -966,7 +965,7 @@ public class BilibiliApiService {
      * @param selfUid 自身 UID
      * @return 关注的 UP 主列表
      */
-    public List<Up> getFollowingUps(Long selfUid) {
+    public List<Up> getFollowingUps(String selfUid) {
         List<Up> ups = new ArrayList<>();
 
         int page = 1;
@@ -977,7 +976,7 @@ public class BilibiliApiService {
 
             JSONArray followings = result.getJSONArray("list");
             for (JSONObject following : followings.toList(JSONObject.class)) {
-                Long uid = following.getLong("mid");
+                String uid = following.getString("mid");
                 String uname = following.getString("uname");
                 String face = following.getString("face");
                 ups.add(new Up(uid, uname, null, face));
@@ -997,7 +996,7 @@ public class BilibiliApiService {
      * 关注 UP 主
      * @param uid 要关注的 UP 主 UID
      */
-    public void followUp(Long uid) {
+    public void followUp(String uid) {
         String api = "https://api.bilibili.com/x/relation/modify";
 
         Map<String, Object> params = new HashMap<>();
@@ -1020,7 +1019,7 @@ public class BilibiliApiService {
      * @param uid UID
      * @return 粉丝数
      */
-    public int getFansCount(Long uid) {
+    public int getFansCount(String uid) {
         String api = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + uid;
         JSONObject result = requestBilibiliApi(api);
 
@@ -1032,7 +1031,7 @@ public class BilibiliApiService {
      * @param uid UID
      * @return 粉丝团数(点亮粉丝勋章的粉丝数)
      */
-    public int getFansMedalCount(Long uid) {
+    public int getFansMedalCount(String uid) {
         String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuMedalAnchorInfo?ruid=" + uid;
         JSONObject result = requestBilibiliApi(api);
 
@@ -1045,7 +1044,7 @@ public class BilibiliApiService {
      * @param roomId 房间号
      * @return 大航海数
      */
-    public int getGuardCount(Long uid, Long roomId) {
+    public int getGuardCount(String uid, String roomId) {
         String api = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew?roomid=" + roomId + "&page=1&ruid=" + uid + "&page_size=20&typ=5&platform=web";
         JSONObject result = requestBilibiliApi(api);
 

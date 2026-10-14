@@ -14,7 +14,7 @@ public class Gift {
     /**
      * 礼物 ID
      */
-    private Long id;
+    private String id;
 
     /**
      * 礼物名称

@@ -15,6 +15,8 @@ import com.starlwr.bot.bilibili.event.live.BilibiliShareEvent;
 import com.starlwr.bot.bilibili.live.gift.BilibiliGiftService;
 import com.starlwr.bot.bilibili.live.gift.GuardOperateType;
 import com.starlwr.bot.bilibili.live.gift.GuardType;
+import com.starlwr.bot.bilibili.live.protocol.protobuf.InteractWordV2;
+import com.starlwr.bot.bilibili.live.protocol.protobuf.SendGiftV2;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.event.model.LiveStreamerInfo;
 import org.junit.jupiter.api.BeforeEach;
@@ -89,7 +91,37 @@ class BilibiliEventParserTest {
         StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
         properties.getLive().setCompleteEvent(false);
         parser = new BilibiliEventParser(properties, mock(BilibiliApiService.class), mock(BilibiliGiftService.class));
-        source = new LiveStreamerInfo(1000L, "主播", 2000L);
+        source = new LiveStreamerInfo("1000", "主播", "2000");
+    }
+
+    /**
+     * 验证 protobuf 无符号标识在超过 Long 范围后仍按完整十进制字符串解析
+     */
+    @Test
+    void preservesUnsignedIdentifiersAndProtocolDefaults() throws IOException {
+        String maximumUid = "18446744073709551615";
+        byte[] medal = message(output -> output.writeUInt64(10, -1L));
+        byte[] senderInfo = message(output -> output.writeByteArray(3, medal));
+        byte[] blindGift = message(output -> output.writeUInt64(2, -1L));
+        byte[] gift = message(output -> output.writeUInt64(1, -1L));
+        SendGiftV2 parsedGift = SendGiftV2.parseFrom(message(output -> {
+            output.writeUInt64(1, -1L);
+            output.writeByteArray(9, blindGift);
+            output.writeByteArray(10, gift);
+            output.writeByteArray(15, senderInfo);
+        }));
+        assertEquals(maximumUid, parsedGift.getUid());
+        assertEquals(maximumUid, parsedGift.getSenderInfo().getMedal().getRuid());
+        assertEquals(maximumUid, parsedGift.getBlindGift().getId());
+        assertEquals(maximumUid, parsedGift.getGifts().get(0).getId());
+        assertTrue(parsedGift.getSenderInfo().getMedal().isPresent());
+
+        InteractWordV2 parsedInteraction = InteractWordV2.parseFrom(
+                message(output -> output.writeUInt64(1, -1L)));
+        assertEquals(maximumUid, parsedInteraction.getUid());
+        assertEquals("0", parsedInteraction.getFansMedal().getTargetId());
+        assertFalse(parsedInteraction.getFansMedal().isPresent());
+        assertFalse(SendGiftV2.parseFrom(new byte[0]).getSenderInfo().getMedal().isPresent());
     }
 
     /**
@@ -113,14 +145,14 @@ class BilibiliEventParserTest {
         assertEquals(1_760_100_000_000L, event.getTimestamp());
 
         BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, event.getSender());
-        assertEquals(42L, sender.getUid());
+        assertEquals("42", sender.getUid());
         assertEquals("操作用户", sender.getUname());
         assertEquals("https://example.com/face.png", sender.getFace());
         assertEquals(GuardType.Captain, sender.getGuard().getGuardType());
         assertNull(sender.getGuard().getIcon());
-        assertEquals(1000L, sender.getFansMedal().getUid());
+        assertEquals("1000", sender.getFansMedal().getUid());
         assertEquals("主播", sender.getFansMedal().getUname());
-        assertEquals(2000L, sender.getFansMedal().getRoomId());
+        assertEquals("2000", sender.getFansMedal().getRoomId());
         assertEquals("星星", sender.getFansMedal().getName());
         assertEquals(12, sender.getFansMedal().getLevel());
         assertTrue(sender.getFansMedal().getIsLighted());
@@ -154,21 +186,21 @@ class BilibiliEventParserTest {
         assertEquals(1, events.size());
         BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class, events.get(0));
         assertEquals(0.2, event.getValue());
-        assertEquals(31036L, event.getGiftInfo().getId());
+        assertEquals("31036", event.getGiftInfo().getId());
         assertEquals("小花花", event.getGiftInfo().getName());
         assertEquals(0.1, event.getGiftInfo().getPrice());
         assertEquals(2, event.getGiftInfo().getCount());
         assertEquals("https://example.com/gift.png", event.getGiftInfo().getUrl());
 
         BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, event.getSender());
-        assertEquals(42L, sender.getUid());
+        assertEquals("42", sender.getUid());
         assertEquals("送礼人", sender.getUname());
         assertEquals("https://example.com/face.png", sender.getFace());
         assertEquals(GuardType.Captain, sender.getGuard().getGuardType());
         assertEquals("https://example.com/guard.png", sender.getGuard().getIcon());
-        assertEquals(1000L, sender.getFansMedal().getUid());
+        assertEquals("1000", sender.getFansMedal().getUid());
         assertEquals("主播", sender.getFansMedal().getUname());
-        assertEquals(2000L, sender.getFansMedal().getRoomId());
+        assertEquals("2000", sender.getFansMedal().getRoomId());
         assertEquals("星星", sender.getFansMedal().getName());
         assertEquals(12, sender.getFansMedal().getLevel());
         assertTrue(sender.getFansMedal().getIsLighted());
@@ -197,7 +229,7 @@ class BilibiliEventParserTest {
 
         assertEquals(2, events.size());
         BilibiliRandomGiftEvent first = assertInstanceOf(BilibiliRandomGiftEvent.class, events.get(0));
-        assertEquals(35206L, first.getRandomGiftInfo().getId());
+        assertEquals("35206", first.getRandomGiftInfo().getId());
         assertEquals("幸运盲盒", first.getRandomGiftInfo().getName());
         assertEquals(5.0, first.getRandomGiftInfo().getPrice());
         assertEquals(1, first.getRandomGiftInfo().getCount());
@@ -222,7 +254,7 @@ class BilibiliEventParserTest {
         assertEquals(1, events.size());
         BilibiliEnterRoomEvent event = assertInstanceOf(BilibiliEnterRoomEvent.class, events.get(0));
         BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, event.getSender());
-        assertEquals(12677205L, sender.getUid());
+        assertEquals("12677205", sender.getUid());
         assertEquals("PNEUMA373", sender.getUname());
         assertEquals("https://i0.hdslb.com/bfs/face/462ee33b1fc5f9a5512bd474e885573adf7a9716.jpg", sender.getFace());
         assertNull(sender.getFansMedal());
@@ -243,7 +275,7 @@ class BilibiliEventParserTest {
         assertEquals(1, events.size());
         BilibiliFollowEvent event = assertInstanceOf(BilibiliFollowEvent.class, events.get(0));
         BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, event.getSender());
-        assertEquals(21953917L, sender.getUid());
+        assertEquals("21953917", sender.getUid());
         assertEquals("软糖小鼠酱", sender.getUname());
         assertEquals("https://i1.hdslb.com/bfs/face/45ef442aa9615966aa485cd67fae7bb5b1062610.jpg", sender.getFace());
         assertNull(sender.getFansMedal());
@@ -262,10 +294,10 @@ class BilibiliEventParserTest {
         assertEquals(1, events.size());
         BilibiliShareEvent event = assertInstanceOf(BilibiliShareEvent.class, events.get(0));
         BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, event.getSender());
-        assertEquals(26928797L, sender.getUid());
+        assertEquals("26928797", sender.getUid());
         assertEquals("mikufilck", sender.getUname());
         assertEquals("https://i2.hdslb.com/bfs/face/6a0dd36ba7fa18e84c6527c87beba02a5d2de3f9.jpg", sender.getFace());
-        assertEquals(3546384651258599L, sender.getFansMedal().getUid());
+        assertEquals("3546384651258599", sender.getFansMedal().getUid());
         assertNull(sender.getFansMedal().getUname());
         assertNull(sender.getFansMedal().getRoomId());
         assertNull(sender.getFansMedal().getFace());
@@ -293,7 +325,7 @@ class BilibiliEventParserTest {
         assertEquals(1_789_456_843_000L, event.getTimestamp());
 
         BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, event.getSender());
-        assertEquals(404239497L, sender.getUid());
+        assertEquals("404239497", sender.getUid());
         assertEquals("洛洛溪水宝宝", sender.getUname());
         assertNull(sender.getFace());
         assertEquals(GuardType.Captain, sender.getGuard().getGuardType());
@@ -311,7 +343,7 @@ class BilibiliEventParserTest {
         properties.getLive().setCompleteEvent(true);
         BilibiliApiService bilibili = mock(BilibiliApiService.class);
         BilibiliGiftService giftService = mock(BilibiliGiftService.class);
-        when(bilibili.getFaceByUid(404239497L)).thenReturn(Optional.of("https://example.com/sender-face.png"));
+        when(bilibili.getFaceByUid("404239497")).thenReturn(Optional.of("https://example.com/sender-face.png"));
         when(giftService.getGuardIcon("舰长")).thenReturn(Optional.of("https://example.com/guard-icon.png"));
         parser = new BilibiliEventParser(properties, bilibili, giftService);
 
@@ -334,10 +366,10 @@ class BilibiliEventParserTest {
         assertEquals(1, events.size());
         BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class, events.get(0));
         BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, event.getSender());
-        assertEquals(3546837514455634L, sender.getUid());
+        assertEquals("3546837514455634", sender.getUid());
         assertEquals("Ceriselune", sender.getUname());
         assertEquals(32, sender.getHonorLevel());
-        assertEquals(31164L, event.getGiftInfo().getId());
+        assertEquals("31164", event.getGiftInfo().getId());
         assertEquals("粉丝团灯牌", event.getGiftInfo().getName());
         assertEquals(0.1, event.getGiftInfo().getPrice());
         assertEquals(1, event.getGiftInfo().getCount());
@@ -354,14 +386,14 @@ class BilibiliEventParserTest {
         assertEquals(1, events.size());
         BilibiliFreeGiftEvent event = assertInstanceOf(BilibiliFreeGiftEvent.class, events.get(0));
         BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, event.getSender());
-        assertEquals(9232442L, sender.getUid());
+        assertEquals("9232442", sender.getUid());
         assertEquals("饼゜", sender.getUname());
         assertNull(sender.getGuard());
         assertEquals("白礼甜", sender.getFansMedal().getName());
         assertEquals(5, sender.getFansMedal().getLevel());
         assertFalse(sender.getFansMedal().getIsLighted());
         assertEquals(79, sender.getHonorLevel());
-        assertEquals(31738L, event.getGiftInfo().getId());
+        assertEquals("31738", event.getGiftInfo().getId());
         assertEquals("粉丝团灯牌", event.getGiftInfo().getName());
         assertEquals(0.0, event.getGiftInfo().getPrice());
         assertEquals(1, event.getGiftInfo().getCount());
@@ -379,7 +411,7 @@ class BilibiliEventParserTest {
         BilibiliRandomGiftEvent second = assertInstanceOf(BilibiliRandomGiftEvent.class, events.get(1));
 
         BilibiliUserInfo sender = assertInstanceOf(BilibiliUserInfo.class, first.getSender());
-        assertEquals(48692754L, sender.getUid());
+        assertEquals("48692754", sender.getUid());
         assertEquals("白礼的魔法胖次", sender.getUname());
         assertEquals(GuardType.Commander, sender.getGuard().getGuardType());
         assertEquals("白礼甜", sender.getFansMedal().getName());
@@ -388,11 +420,11 @@ class BilibiliEventParserTest {
         assertEquals("https://i0.hdslb.com/bfs/live/62ac06fd72b05fe22be26426b9e1a8e1fc2c6b89.png", sender.getGuard().getIcon());
         assertEquals(60, sender.getHonorLevel());
 
-        assertEquals(35461L, first.getRandomGiftInfo().getId());
+        assertEquals("35461", first.getRandomGiftInfo().getId());
         assertEquals("羁绊宝盒", first.getRandomGiftInfo().getName());
         assertEquals(33.0, first.getRandomGiftInfo().getPrice());
         assertEquals(5, first.getRandomGiftInfo().getCount());
-        assertEquals(35464L, first.getGiftInfo().getId());
+        assertEquals("35464", first.getGiftInfo().getId());
         assertEquals("甜蜜契约", first.getGiftInfo().getName());
         assertEquals(35.0, first.getGiftInfo().getPrice());
         assertEquals(5, first.getGiftInfo().getCount());
@@ -400,8 +432,8 @@ class BilibiliEventParserTest {
         assertEquals(175.0, first.getValue());
         assertEquals(10.0, first.getProfit());
 
-        assertEquals(35461L, second.getRandomGiftInfo().getId());
-        assertEquals(35463L, second.getGiftInfo().getId());
+        assertEquals("35461", second.getRandomGiftInfo().getId());
+        assertEquals("35463", second.getGiftInfo().getId());
         assertEquals("星光点点", second.getGiftInfo().getName());
         assertEquals(20.0, second.getGiftInfo().getPrice());
         assertEquals(5, second.getGiftInfo().getCount());

@@ -29,14 +29,14 @@ public class FansMedal extends LiveStreamerInfo {
      */
     private Boolean isLighted;
 
-    public FansMedal(Long uid, String uname, Long roomId, String name, Integer level, Boolean isLighted) {
+    public FansMedal(String uid, String uname, String roomId, String name, Integer level, Boolean isLighted) {
         super(uid, uname, roomId);
         this.name = name;
         this.level = level;
         this.isLighted = isLighted;
     }
 
-    public FansMedal(Long uid, String uname, Long roomId, String face, String name, Integer level, Boolean isLighted) {
+    public FansMedal(String uid, String uname, String roomId, String face, String name, Integer level, Boolean isLighted) {
         super(uid, uname, roomId, face);
         this.name = name;
         this.level = level;

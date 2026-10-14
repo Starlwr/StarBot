@@ -59,7 +59,7 @@ public class BilibiliDataSourceService implements DataSourceService {
             return;
         }
 
-        Map<Long, Room> rooms = bilibili.getLiveInfoByUids(users.stream().map(PushUser::getUid).collect(Collectors.toSet()));
+        Map<String, Room> rooms = bilibili.getLiveInfoByUids(users.stream().map(PushUser::getUid).collect(Collectors.toSet()));
         for (PushUser user: users) {
             Room room = rooms.get(user.getUid());
             if (room == null) {

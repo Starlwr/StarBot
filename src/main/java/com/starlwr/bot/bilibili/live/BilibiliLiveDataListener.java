@@ -95,13 +95,13 @@ public class BilibiliLiveDataListener {
     public void onStarBotDataSourceLoadCompleteEvent(StarBotDataSourceLoadCompleteEvent event) {
         loadCompleted = true;
 
-        Set<Long> uids = event.getUsers().stream()
+        Set<String> uids = event.getUsers().stream()
                 .filter(user -> LivePlatform.BILIBILI.getName().equals(user.getPlatform()))
                 .filter(user -> !properties.getLive().isOnlyConnectNecessaryRooms() || user.hasEnabledLiveEvent())
                 .map(PushUser::getUid)
                 .collect(Collectors.toSet());
 
-        Map<Long, Room> liveInfos = bilibili.getLiveInfoByUids(uids);
+        Map<String, Room> liveInfos = bilibili.getLiveInfoByUids(uids);
 
         for (Room room : liveInfos.values()) {
             updateRoomInfo(room);
@@ -113,7 +113,7 @@ public class BilibiliLiveDataListener {
      * @param room 直播间信息
      */
     private void updateRoomInfo(Room room) {
-        Long uid = room.getUid();
+        String uid = room.getUid();
         boolean status = room.getLiveStatus() == 1;
 
         Optional<Boolean> optionalLastStatus = liveDataService.getLiveStatus(LivePlatform.BILIBILI.getName(), uid);
@@ -159,8 +159,8 @@ public class BilibiliLiveDataListener {
     public void onBilibiliLiveOnEvent(BilibiliLiveOnEvent event) {
         String platform = LivePlatform.BILIBILI.getName();
 
-        Long uid = event.getSource().getUid();
-        Long roomId = event.getSource().getRoomId();
+        String uid = event.getSource().getUid();
+        String roomId = event.getSource().getRoomId();
 
         int fansCount = bilibili.getFansCount(uid);
         int fansMedalCount = bilibili.getFansMedalCount(uid);
@@ -180,8 +180,8 @@ public class BilibiliLiveDataListener {
     public void onBilibiliLiveOffEvent(BilibiliLiveOffEvent event) {
         String platform = LivePlatform.BILIBILI.getName();
 
-        Long uid = event.getSource().getUid();
-        Long roomId = event.getSource().getRoomId();
+        String uid = event.getSource().getUid();
+        String roomId = event.getSource().getRoomId();
 
         int fansCount = bilibili.getFansCount(uid);
         int fansMedalCount = bilibili.getFansMedalCount(uid);

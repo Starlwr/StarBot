@@ -127,7 +127,7 @@ public class BilibiliDynamicService {
                         continue;
                     }
 
-                    Long uid = dynamic.getModules().getJSONObject("module_author").getLong("mid");
+                    String uid = dynamic.getModules().getJSONObject("module_author").getString("mid");
                     Optional<PushUser> optionalUser = dataSource.getUser(LivePlatform.BILIBILI.getName(), uid);
                     if (optionalUser.isPresent()) {
                         PushUser user = optionalUser.get();

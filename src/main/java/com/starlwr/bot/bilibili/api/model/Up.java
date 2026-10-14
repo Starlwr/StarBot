@@ -15,11 +15,11 @@ import java.util.Objects;
 @Setter
 @NoArgsConstructor
 public class Up extends LiveStreamerInfo {
-    public Up(Long uid, String uname, Long roomId) {
+    public Up(String uid, String uname, String roomId) {
         super(uid, uname, roomId);
     }
 
-    public Up(Long uid, String uname, Long roomId, String face) {
+    public Up(String uid, String uname, String roomId, String face) {
         super(uid, uname, roomId, face);
     }
 

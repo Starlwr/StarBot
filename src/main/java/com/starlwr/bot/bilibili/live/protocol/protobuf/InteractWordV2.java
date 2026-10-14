@@ -13,7 +13,7 @@ import java.io.IOException;
 @Data
 @AllArgsConstructor
 public class InteractWordV2 {
-    private long uid;
+    private String uid;
     private String uname;
     private int msgType;
     private long timestamp;
@@ -25,7 +25,7 @@ public class InteractWordV2 {
 
     public static InteractWordV2 parseFrom(byte[] data) throws IOException {
         CodedInputStream input = CodedInputStream.newInstance(data);
-        long uid = 0;
+        String uid = "0";
         String uname = "";
         int msgType = 0;
         long timestamp = 0;
@@ -38,7 +38,7 @@ public class InteractWordV2 {
         int tag;
         while ((tag = input.readTag()) != 0) {
             switch (WireFormat.getTagFieldNumber(tag)) {
-                case 1 -> uid = input.readUInt64();
+                case 1 -> uid = Long.toUnsignedString(input.readUInt64());
                 case 2 -> uname = input.readStringRequireUtf8();
                 case 5 -> msgType = input.readUInt32();
                 case 7 -> timestamp = input.readUInt64();
@@ -57,16 +57,16 @@ public class InteractWordV2 {
     @Data
     @AllArgsConstructor
     public static class FansMedalInfo {
-        private static final FansMedalInfo EMPTY = new FansMedalInfo(0, 0, "", false);
+        private static final FansMedalInfo EMPTY = new FansMedalInfo("0", 0, "", false);
 
-        private long targetId;
+        private String targetId;
         private int level;
         private String name;
         private boolean lighted;
 
         private static FansMedalInfo parseFrom(byte[] data) throws IOException {
             CodedInputStream input = CodedInputStream.newInstance(data);
-            long targetId = 0;
+            String targetId = "0";
             int level = 0;
             String name = "";
             boolean lighted = false;
@@ -74,7 +74,7 @@ public class InteractWordV2 {
             int tag;
             while ((tag = input.readTag()) != 0) {
                 switch (WireFormat.getTagFieldNumber(tag)) {
-                    case 1 -> targetId = input.readInt64();
+                    case 1 -> targetId = Long.toString(input.readInt64());
                     case 2 -> level = input.readInt32();
                     case 3 -> name = input.readStringRequireUtf8();
                     case 8 -> lighted = input.readInt64() == 1;
@@ -85,7 +85,7 @@ public class InteractWordV2 {
         }
 
         public boolean isPresent() {
-            return targetId != 0;
+            return !"0".equals(targetId);
         }
     }
 
