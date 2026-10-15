@@ -9,16 +9,28 @@ import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.event.model.UserInfo;
 import com.starlwr.bot.core.live.LiveDataService;
+import com.starlwr.bot.core.painter.ChartPainter;
 import com.starlwr.bot.core.painter.CommonPainter;
 import com.starlwr.bot.core.painter.FontService;
 import com.starlwr.bot.core.painter.StarBotCommonPainterFactory;
+import com.starlwr.bot.core.painter.TextWithStyle;
+import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.nio.file.Files;
@@ -30,7 +42,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,15 +56,20 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * Bilibili 直播报告绘图器测试
  * <p>
  * 数据来源（BilibiliApiService / LiveDataService）全部使用 Mockito mock，避免真实网络请求与数据库依赖；
- * 绘图链路使用真实 {@link FontService}（配置系统字体）与真实 {@link CommonPainter}，仅 mock BuildProperties，
- * 保证生成的直播报告图片与生产环境绘制行为一致。
+ * 完整报告绘图用例使用真实 {@link FontService}（配置系统字体）与真实 {@link CommonPainter}，仅 mock BuildProperties，
+ * 保证生成的直播报告图片与生产环境绘制行为一致；金额精度用例使用 mock CommonPainter 捕获标题文字并检查排行榜数据。
  * <p>
  * 覆盖：基础信息、数据变动（diff 三态）、弹幕分析（排行榜/曲线/分布/词云）、盲盒分析、礼物分析、
  * SC（醒目留言）分析、大航海分析、进房分析全部模块；报告图片输出至 TestLiveReport 目录，
@@ -288,6 +308,168 @@ public class BilibiliLiveReportPainterTest {
         assertTrue(tokens.stream().anyMatch(token -> "测试".equals(token.word)), "正常汉字应保留");
         assertTrue(tokens.stream().anyMatch(token -> "666".equals(token.word)), "数字词条应保留");
         assertTrue(tokens.stream().anyMatch(token -> "✓".equals(token.word)), "完整符号（✓）应保留");
+    }
+
+    /**
+     * 测试盲盒盈亏标题的金额精度与盈亏判断
+     *
+     * @param profits  单笔盲盒盈亏列表
+     * @param expected 预期标题文字
+     */
+    @ParameterizedTest
+    @MethodSource("createBoxProfits")
+    public void testBoxProfitText(List<Double> profits, String expected) {
+        CommonPainter commonPainter = mock(CommonPainter.class, RETURNS_SELF);
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        BilibiliLiveReportConfig config = new BilibiliLiveReportConfig();
+        config.setEnableBoxAnalysis(true);
+        config.setShowBoxProfitDetails(true);
+        BilibiliLiveReportPainter report = createAmountTestPainter(commonPainter, liveDataService, config);
+        List<JSONObject> boxes = profits.stream().map(profit -> createAmountRecord("profit", profit)).toList();
+        when(liveDataService.getRandomGift(PLATFORM, UID, JSONObject.class)).thenReturn(boxes);
+
+        ReflectionTestUtils.invokeMethod(report, "drawBoxAnalysis");
+
+        ArgumentCaptor<List<TextWithStyle>> texts = ArgumentCaptor.forClass(List.class);
+        verify(commonPainter).drawTextWithStyle(texts.capture(), any(Point.class));
+        assertEquals(expected, texts.getValue().stream().map(TextWithStyle::getText).collect(Collectors.joining()));
+    }
+
+    /**
+     * 测试盲盒、礼物与 SC 排行榜精确累加金额
+     *
+     * @param module 报告模块
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"box", "gift", "superChat"})
+    public void testAmountRankingUsesExactSum(String module) {
+        CommonPainter commonPainter = mock(CommonPainter.class, RETURNS_SELF);
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        BilibiliLiveReportConfig config = new BilibiliLiveReportConfig();
+        BilibiliLiveReportPainter report = createAmountTestPainter(commonPainter, liveDataService, config);
+        List<JSONObject> records = List.of(createAmountRecord(module.equals("box") ? "profit" : "value", 0.1),
+                createAmountRecord(module.equals("box") ? "profit" : "value", 0.2));
+        String method;
+        switch (module) {
+            case "box" -> {
+                config.setEnableBoxAnalysis(true);
+                config.setBoxProfitRankingLimit(1);
+                when(liveDataService.getRandomGift(PLATFORM, UID, JSONObject.class)).thenReturn(records);
+                method = "drawBoxAnalysis";
+            }
+            case "gift" -> {
+                config.setEnableGiftAnalysis(true);
+                config.setGiftRankingLimit(1);
+                when(liveDataService.getPaidGift(PLATFORM, UID, JSONObject.class)).thenReturn(records.subList(0, 1));
+                when(liveDataService.getRandomGift(PLATFORM, UID, JSONObject.class)).thenReturn(records.subList(1, 2));
+                method = "drawGiftAnalysis";
+            }
+            default -> {
+                config.setEnableSuperChatAnalysis(true);
+                config.setSuperChatRankingLimit(1);
+                when(liveDataService.getSuperChat(PLATFORM, UID, JSONObject.class)).thenReturn(records);
+                method = "drawSuperChatAnalysis";
+            }
+        }
+
+        try (MockedStatic<ChartPainter> charts = mockStatic(ChartPainter.class)) {
+            ReflectionTestUtils.invokeMethod(report, method);
+
+            ArgumentCaptor<List<ChartPainter.RankingItem>> items = ArgumentCaptor.forClass(List.class);
+            charts.verify(() -> ChartPainter.renderRankingChart(items.capture(), eq(900), any(Font.class),
+                    nullable(Color.class), nullable(Color.class), isNull(), isNull()));
+            assertEquals(1, items.getValue().size());
+            assertEquals(0.3, items.getValue().get(0).getValue());
+        }
+    }
+
+    /**
+     * 测试 SC 金额汇总保留小数金额
+     */
+    @Test
+    public void testSuperChatTotalPreservesDecimalAmount() {
+        CommonPainter commonPainter = mock(CommonPainter.class, RETURNS_SELF);
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        BilibiliLiveReportConfig config = new BilibiliLiveReportConfig();
+        config.setEnableSuperChatAnalysis(true);
+        config.setShowSuperChatDetails(true);
+        BilibiliLiveReportPainter report = createAmountTestPainter(commonPainter, liveDataService, config);
+        when(liveDataService.getSuperChat(PLATFORM, UID, JSONObject.class))
+                .thenReturn(List.of(createAmountRecord("value", 0.1), createAmountRecord("value", 0.2)));
+
+        ReflectionTestUtils.invokeMethod(report, "drawSuperChatAnalysis");
+
+        verify(commonPainter).drawText(eq("0.3 元 / 1 人"), any(Color.class), any(Point.class));
+    }
+
+    /**
+     * 测试礼物总金额汇总后保持一位小数的展示格式
+     */
+    @Test
+    public void testGiftTotalKeepsOneDecimalPlace() {
+        CommonPainter commonPainter = mock(CommonPainter.class, RETURNS_SELF);
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        BilibiliLiveReportConfig config = new BilibiliLiveReportConfig();
+        config.setEnableGiftAnalysis(true);
+        config.setShowGiftDetails(true);
+        BilibiliLiveReportPainter report = createAmountTestPainter(commonPainter, liveDataService, config);
+        when(liveDataService.getPaidGift(PLATFORM, UID, JSONObject.class)).thenReturn(List.of(createAmountRecord("value", 0.1)));
+        when(liveDataService.getRandomGift(PLATFORM, UID, JSONObject.class)).thenReturn(List.of(createAmountRecord("value", 0.25)));
+
+        ReflectionTestUtils.invokeMethod(report, "drawGiftAnalysis");
+
+        verify(commonPainter).drawText(eq("0.4 元 / 1 人"), any(Color.class), any(Point.class));
+    }
+
+    /**
+     * 构造盲盒盈亏测试用例，覆盖浮点尾数、盈亏抵消和整数金额
+     *
+     * @return 盈亏测试用例
+     */
+    private static Stream<Arguments> createBoxProfits() {
+        return Stream.of(
+                Arguments.of(List.of(-30.1, -1.3), "亏了 31.4 元"),
+                Arguments.of(List.of(30.1, 1.3), "赚了 31.4 元"),
+                Arguments.of(List.of(0.1, 0.2, -0.3), "不赚不亏"),
+                Arguments.of(List.of(100.0), "赚了 100 元")
+        );
+    }
+
+    /**
+     * 创建用于验证金额文字和排行榜数据的直播报告绘图器
+     *
+     * @param commonPainter   通用绘图器
+     * @param liveDataService 直播数据服务
+     * @param config          直播报告配置
+     * @return 直播报告绘图器
+     */
+    private BilibiliLiveReportPainter createAmountTestPainter(CommonPainter commonPainter, LiveDataService liveDataService, BilibiliLiveReportConfig config) {
+        when(commonPainter.getStringWidthAndHeight(anyString(), anyInt())).thenReturn(Pair.of(100, 30));
+        when(commonPainter.getWidth()).thenReturn(1000);
+        StarBotCommonPainterFactory amountFactory = mock(StarBotCommonPainterFactory.class);
+        when(amountFactory.create(anyInt(), anyInt(), anyBoolean())).thenReturn(commonPainter);
+
+        BilibiliApiService bilibili = mock(BilibiliApiService.class);
+        when(bilibili.getUserInfoByUids(anySet())).thenReturn(Map.of("1", new UserInfo("1", "测试观众", "face")));
+        when(bilibili.asyncGetBilibiliImages(anyList())).thenReturn(CompletableFuture.completedFuture(List.of(Optional.empty())));
+
+        return new BilibiliLiveReportPainter(coreProperties, new StarBotBilibiliProperties(), fontService, bilibili, amountFactory,
+                liveDataService, mock(BilibiliWordCloudService.class), new Up(UID, "测试主播", ROOM_ID), config);
+    }
+
+    /**
+     * 构造一条用于金额精度测试的直播记录
+     *
+     * @param field  金额字段
+     * @param amount 金额
+     * @return 直播记录
+     */
+    private JSONObject createAmountRecord(String field, Double amount) {
+        JSONObject record = new JSONObject();
+        record.put("sender", "1");
+        record.put("timestamp", 1L);
+        record.put(field, amount);
+        return record;
     }
 
     /**

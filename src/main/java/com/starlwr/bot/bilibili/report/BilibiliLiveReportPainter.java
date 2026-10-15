@@ -33,6 +33,7 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -727,14 +728,14 @@ public class BilibiliLiveReportPainter {
                 tips.add(new TextWithStyle(" / ", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
             }
 
-            double totalProfit = boxes.stream().mapToDouble(json -> json.getDoubleValue("profit")).sum();
-            if (totalProfit > 0) {
+            BigDecimal totalProfit = boxes.stream().map(json -> json.getBigDecimal("profit")).reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (totalProfit.signum() > 0) {
                 tips.add(new TextWithStyle("赚了 ", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
-                tips.add(new TextWithStyle(String.valueOf(Math.abs(totalProfit)), CommonPainter.TEXT_FONT_SIZE, Color.RED));
+                tips.add(new TextWithStyle(totalProfit.abs().stripTrailingZeros().toPlainString(), CommonPainter.TEXT_FONT_SIZE, Color.RED));
                 tips.add(new TextWithStyle(" 元", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
-            } else if (totalProfit < 0) {
+            } else if (totalProfit.signum() < 0) {
                 tips.add(new TextWithStyle("亏了 ", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
-                tips.add(new TextWithStyle(String.valueOf(Math.abs(totalProfit)), CommonPainter.TEXT_FONT_SIZE, Color.GREEN));
+                tips.add(new TextWithStyle(totalProfit.abs().stripTrailingZeros().toPlainString(), CommonPainter.TEXT_FONT_SIZE, Color.GREEN));
                 tips.add(new TextWithStyle(" 元", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
             } else {
                 tips.add(new TextWithStyle("不赚不亏", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
@@ -748,13 +749,14 @@ public class BilibiliLiveReportPainter {
 
         // 按发送者分组统计盲盒数量与盈亏
         Map<String, Long> countBySender = boxes.stream().collect(Collectors.groupingBy(json -> json.getString("sender"), Collectors.summingLong(this::getBoxCount)));
-        Map<String, Double> profitBySender = boxes.stream().collect(Collectors.groupingBy(json -> json.getString("sender"), Collectors.summingDouble(json -> json.getDoubleValue("profit"))));
+        Map<String, BigDecimal> profitBySender = boxes.stream().collect(Collectors.groupingBy(json -> json.getString("sender"), Collectors.reducing(BigDecimal.ZERO, json -> json.getBigDecimal("profit"), BigDecimal::add)));
         List<Map.Entry<String, Double>> sortedCount = countBySender.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                 .map(entry -> Map.entry(entry.getKey(), (double) entry.getValue()))
                 .toList();
         List<Map.Entry<String, Double>> sortedProfit = profitBySender.entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue().doubleValue()))
                 .toList();
 
         // 按需批量获取发送者用户信息
@@ -803,7 +805,7 @@ public class BilibiliLiveReportPainter {
 
         if (config.isShowBoxProfitGrowthChart() || config.isShowBoxProfitInteractionChart()) {
             List<ChartPainter.LinePoint> profitSamples = boxes.stream()
-                    .map(json -> new ChartPainter.LinePoint(json.getLongValue("timestamp"), json.getDoubleValue("profit")))
+                    .map(json -> new ChartPainter.LinePoint(json.getLongValue("timestamp"), json.getBigDecimal("profit").doubleValue()))
                     .toList();
 
             // 盲盒盈亏累计曲线图
@@ -825,11 +827,11 @@ public class BilibiliLiveReportPainter {
             long evenCount = 0;
             long lossCount = 0;
             for (JSONObject box : boxes) {
-                double profit = box.getDoubleValue("profit");
+                BigDecimal profit = box.getBigDecimal("profit");
                 long count = getBoxCount(box);
-                if (profit > 0) {
+                if (profit.signum() > 0) {
                     profitCount += count;
-                } else if (profit < 0) {
+                } else if (profit.signum() < 0) {
                     lossCount += count;
                 } else {
                     evenCount += count;
@@ -901,7 +903,7 @@ public class BilibiliLiveReportPainter {
         }
 
         if (config.isShowGiftDetails()) {
-            double totalValue = paidGifts.stream().mapToDouble(json -> json.getDoubleValue("value")).sum() + boxes.stream().mapToDouble(json -> json.getDoubleValue("value")).sum();
+            BigDecimal totalValue = Stream.concat(paidGifts.stream(), boxes.stream()).map(json -> json.getBigDecimal("value")).reduce(BigDecimal.ZERO, BigDecimal::add);
             long senderCount = Stream.concat(Stream.concat(paidGifts.stream(), freeGifts.stream()), boxes.stream())
                     .map(json -> json.getString("sender"))
                     .distinct()
@@ -919,19 +921,20 @@ public class BilibiliLiveReportPainter {
 
         // 按发送者分组统计礼物价值
         List<ChartPainter.LinePoint> valueSamples = new ArrayList<>();
-        Map<String, Double> valueBySender = new HashMap<>();
+        Map<String, BigDecimal> valueBySender = new HashMap<>();
         for (JSONObject gift : paidGifts) {
-            double value = gift.getDoubleValue("value");
-            valueSamples.add(new ChartPainter.LinePoint(gift.getLongValue("timestamp"), value));
-            valueBySender.merge(gift.getString("sender"), value, Double::sum);
+            BigDecimal value = gift.getBigDecimal("value");
+            valueSamples.add(new ChartPainter.LinePoint(gift.getLongValue("timestamp"), value.doubleValue()));
+            valueBySender.merge(gift.getString("sender"), value, BigDecimal::add);
         }
         for (JSONObject box : boxes) {
-            double value = box.getDoubleValue("value");
-            valueSamples.add(new ChartPainter.LinePoint(box.getLongValue("timestamp"), value));
-            valueBySender.merge(box.getString("sender"), value, Double::sum);
+            BigDecimal value = box.getBigDecimal("value");
+            valueSamples.add(new ChartPainter.LinePoint(box.getLongValue("timestamp"), value.doubleValue()));
+            valueBySender.merge(box.getString("sender"), value, BigDecimal::add);
         }
         List<Map.Entry<String, Double>> sorted = valueBySender.entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue().doubleValue()))
                 .toList();
 
         // 按需批量获取发送者用户信息
@@ -999,18 +1002,19 @@ public class BilibiliLiveReportPainter {
         }
 
         if (config.isShowSuperChatDetails()) {
-            long totalValue = superChats.stream().mapToLong(json -> json.getLongValue("value")).sum();
+            BigDecimal totalValue = superChats.stream().map(json -> json.getBigDecimal("value")).reduce(BigDecimal.ZERO, BigDecimal::add);
             long senderCount = superChats.stream().map(json -> json.getString("sender")).distinct().count();
-            String tip = totalValue + " 元 / " + senderCount + " 人";
+            String tip = totalValue.stripTrailingZeros().toPlainString() + " 元 / " + senderCount + " 人";
             drawTitle("SC（醒目留言）分析", tip);
         } else {
             drawTitle("SC（醒目留言）分析");
         }
 
         // 按发送者分组统计 SC（醒目留言）金额
-        Map<String, Double> valueBySender = superChats.stream().collect(Collectors.groupingBy(json -> json.getString("sender"), Collectors.summingDouble(json -> json.getDoubleValue("value"))));
+        Map<String, BigDecimal> valueBySender = superChats.stream().collect(Collectors.groupingBy(json -> json.getString("sender"), Collectors.reducing(BigDecimal.ZERO, json -> json.getBigDecimal("value"), BigDecimal::add)));
         List<Map.Entry<String, Double>> sorted = valueBySender.entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue().doubleValue()))
                 .toList();
 
         // 按需批量获取发送者用户信息
@@ -1025,7 +1029,7 @@ public class BilibiliLiveReportPainter {
 
         if (config.isShowSuperChatGrowthChart() || config.isShowSuperChatInteractionChart()) {
             List<ChartPainter.LinePoint> samples = superChats.stream()
-                    .map(json -> new ChartPainter.LinePoint(json.getLongValue("timestamp"), json.getDoubleValue("value")))
+                    .map(json -> new ChartPainter.LinePoint(json.getLongValue("timestamp"), json.getBigDecimal("value").doubleValue()))
                     .toList();
 
             // SC（醒目留言）累计曲线图
