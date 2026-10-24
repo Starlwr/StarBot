@@ -1170,10 +1170,21 @@ public class BilibiliLiveReportPainter {
             }
 
             for (GuardType type : List.of(GuardType.Governor, GuardType.Commander, GuardType.Captain)) {
-                List<JSONObject> list = grouped.get(type);
-                if (CollectionUtils.isEmpty(list)) {
+                List<JSONObject> records = grouped.get(type);
+                if (CollectionUtils.isEmpty(records)) {
                     continue;
                 }
+
+                Map<Pair<String, String>, Long> monthsBySenderAndOperateType = records.stream()
+                        .collect(Collectors.groupingBy(json -> Pair.of(json.getString("sender"), json.getString("operateType")),
+                                LinkedHashMap::new, Collectors.summingLong(json -> json.getLongValue("count"))));
+                List<JSONObject> list = monthsBySenderAndOperateType.entrySet().stream().map(entry -> {
+                    JSONObject guard = new JSONObject();
+                    guard.put("sender", entry.getKey().getLeft());
+                    guard.put("operateType", entry.getKey().getRight());
+                    guard.put("count", entry.getValue());
+                    return guard;
+                }).toList();
 
                 Color color = switch (type) {
                     case Governor -> COLOR_GUARD_GOVERNOR;
@@ -1207,7 +1218,7 @@ public class BilibiliLiveReportPainter {
                         UserInfo userInfo = userInfos.get(guard.getString("sender"));
                         if (userInfo != null) {
                             String uname = StringUtil.getOmitString(userInfo.getUname(), 8);
-                            String countText = guard.getIntValue("count") + " 月";
+                            String countText = guard.getLongValue("count") + " 月";
                             String operateType = guard.getString("operateType");
                             String badgeText;
                             Color badgeColor;

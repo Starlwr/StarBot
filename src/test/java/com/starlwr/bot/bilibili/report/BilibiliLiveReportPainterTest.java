@@ -59,8 +59,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.RETURNS_SELF;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -419,6 +421,69 @@ public class BilibiliLiveReportPainterTest {
         ReflectionTestUtils.invokeMethod(report, "drawGiftAnalysis");
 
         verify(commonPainter).drawText(eq("0.4 元 / 1 人"), any(Color.class), any(Point.class));
+    }
+
+    /**
+     * 测试大航海列表按用户和操作类型汇总月数，不同等级分别展示且不修改原始记录
+     */
+    @Test
+    public void testGuardListAggregatesMonthsByUserAndOperateType() {
+        CommonPainter commonPainter = mock(CommonPainter.class, RETURNS_SELF);
+        when(commonPainter.getStringWidthAndHeight(anyString(), anyInt())).thenReturn(Pair.of(100, 30));
+        when(commonPainter.getWidth()).thenReturn(1000);
+        StarBotCommonPainterFactory guardFactory = mock(StarBotCommonPainterFactory.class);
+        when(guardFactory.create(anyInt(), anyInt(), anyBoolean())).thenReturn(commonPainter);
+
+        BilibiliApiService bilibili = mock(BilibiliApiService.class);
+        when(bilibili.getUserInfoByUids(anySet())).thenReturn(Map.of(
+                "1", new UserInfo("1", "测试观众", "face1"),
+                "2", new UserInfo("2", "测试观众", "face2")));
+        when(bilibili.asyncGetBilibiliImages(anyList())).thenAnswer(invocation -> {
+            List<String> urls = invocation.getArgument(0);
+            return CompletableFuture.completedFuture(urls.stream().map(url -> Optional.<BufferedImage>empty()).toList());
+        });
+
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        List<JSONObject> guards = List.of(
+                createGuard(1L, 1L, "Captain", "ACTIVATION", 1, 138.0),
+                createGuard(2L, 2L, "Captain", "ACTIVATION", 7, 138.0),
+                createGuard(3L, 1L, "Captain", "ACTIVATION", 2, 138.0),
+                createGuard(4L, 1L, "Captain", "RENEWAL", 4, 138.0),
+                createGuard(5L, 1L, "Captain", "RENEWAL", 5, 138.0),
+                createGuard(6L, 1L, "Commander", "ACTIVATION", 2, 1998.0),
+                createGuard(7L, 1L, "Commander", "ACTIVATION", 4, 1998.0),
+                createGuard(8L, 1L, "Commander", "RENEWAL", 8, 1998.0));
+        List<JSONObject> originalGuards = guards.stream().map(JSONObject::new).toList();
+        when(liveDataService.getMemberShip(PLATFORM, UID, JSONObject.class)).thenReturn(guards);
+
+        BilibiliLiveReportConfig config = new BilibiliLiveReportConfig();
+        config.setEnableGuardAnalysis(true);
+        config.setShowGuardList(true);
+        config.setShowGuardOperateTypeMonthDistributionChart(true);
+        config.setShowGuardOperateTypeUserDistributionChart(true);
+        BilibiliLiveReportPainter report = new BilibiliLiveReportPainter(coreProperties, new StarBotBilibiliProperties(), fontService,
+                bilibili, guardFactory, liveDataService, mock(BilibiliWordCloudService.class), new Up(UID, "测试主播", ROOM_ID), config);
+
+        try (MockedStatic<ChartPainter> charts = mockStatic(ChartPainter.class)) {
+            ReflectionTestUtils.invokeMethod(report, "drawGuardAnalysis");
+
+            ArgumentCaptor<List<TextWithStyle>> texts = ArgumentCaptor.forClass(List.class);
+            verify(commonPainter, atLeastOnce()).drawTextWithStyle(texts.capture(), any(Point.class));
+            List<String> renderedTexts = texts.getAllValues().stream().flatMap(List::stream).map(TextWithStyle::getText).toList();
+            assertEquals(List.of(
+                    "测试观众", "开通", "6 月", "测试观众", "续费", "8 月",
+                    "测试观众", "开通", "3 月", "测试观众", "开通", "7 月", "测试观众", "续费", "9 月"), renderedTexts);
+            List<Color> userColors = texts.getAllValues().stream().flatMap(List::stream)
+                    .filter(text -> "测试观众".equals(text.getText())).map(TextWithStyle::getColor).toList();
+            assertEquals(List.of(new Color(255, 0, 255), new Color(255, 0, 255),
+                    new Color(0, 191, 255), new Color(0, 191, 255), new Color(0, 191, 255)), userColors);
+
+            ArgumentCaptor<List<ChartPainter.DistributionSlice>> slices = ArgumentCaptor.forClass(List.class);
+            charts.verify(() -> ChartPainter.renderDistributionChart(slices.capture(), eq(900), any(Font.class)), times(2));
+            assertEquals(List.of(16.0, 17.0), slices.getAllValues().get(0).stream().map(ChartPainter.DistributionSlice::getValue).toList());
+            assertEquals(List.of(2.0, 1.0), slices.getAllValues().get(1).stream().map(ChartPainter.DistributionSlice::getValue).toList());
+        }
+        assertEquals(originalGuards, guards, "列表汇总不应修改原始大航海记录");
     }
 
     /**
