@@ -99,7 +99,7 @@ class RedisLiveReportDataDriver(uri: String, private val prefix: String = "starb
         }
         error("Concurrent report completion retry limit exceeded for $sessionId")
     }
-    @Synchronized override fun recent(uid: Long, limit: Int): List<LiveReportSnapshot> = redis.zrevrange(recentKey(uid), 0, limit.coerceIn(1, 100).toLong() - 1)
+    @Synchronized override fun recent(uid: String, limit: Int): List<LiveReportSnapshot> = redis.zrevrange(recentKey(uid), 0, limit.coerceIn(1, 100).toLong() - 1)
         .mapNotNull { snapshot(it) }
     @Synchronized override fun health() = runCatching { redis.ping() }.fold({ DriverHealth(it == "PONG") }, { DriverHealth(false, it.message ?: "redis error") })
     @Synchronized override fun close() { connection.close(); client.shutdown() }
@@ -160,7 +160,7 @@ class RedisLiveReportDataDriver(uri: String, private val prefix: String = "starb
 
     private fun sessionKey(id: String) = "$prefix:{$id}:snapshot"
     private fun eventKey(id: String) = "$prefix:{$id}:events"
-    private fun recentKey(uid: Long) = "$prefix:recent:$uid"
+    private fun recentKey(uid: String) = "$prefix:recent:$uid"
     private fun openKey() = "$prefix:open"
     private fun rebuildOpenIndexIfNeeded() {
         if (redis.exists(openKey()) > 0) return

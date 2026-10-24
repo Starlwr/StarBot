@@ -3,23 +3,24 @@ package com.starlwr.bot.bilibili.handler;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
-import com.starlwr.bot.bilibili.factory.BilibiliLiveReportPainterFactory;
-import com.starlwr.bot.bilibili.model.BilibiliLiveReportConfig;
-import com.starlwr.bot.bilibili.model.Up;
-import com.starlwr.bot.bilibili.painter.BilibiliLiveReportPainter;
-import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.enums.PushTargetType;
+import com.starlwr.bot.bilibili.report.BilibiliLiveReportPainterFactory;
+import com.starlwr.bot.bilibili.report.BilibiliLiveReportConfig;
+import com.starlwr.bot.bilibili.api.model.Up;
+import com.starlwr.bot.bilibili.report.BilibiliLiveReportPainter;
+import com.starlwr.bot.bilibili.api.BilibiliApiService;
+import com.starlwr.bot.core.message.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
-import com.starlwr.bot.core.handler.DefaultHandlerForEvent;
-import com.starlwr.bot.core.model.Message;
-import com.starlwr.bot.core.model.PushMessage;
-import com.starlwr.bot.core.model.PushTarget;
+import com.starlwr.bot.core.push.handler.StarBotEventHandler;
+import com.starlwr.bot.core.push.handler.DefaultHandlerForEvent;
+import org.apache.commons.collections4.CollectionUtils;
+import com.starlwr.bot.core.message.Message;
+import com.starlwr.bot.core.push.model.PushMessage;
+import com.starlwr.bot.core.push.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.message.StarBotMessageSender;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.live.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -123,7 +124,7 @@ import java.util.concurrent.TimeUnit;
 public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
     private final StarBotBilibiliProperties properties;
 
-    private final BilibiliApiUtil bilibili;
+    private final BilibiliApiService bilibili;
 
     private final StarBotMessageSender sender;
 
@@ -138,7 +139,7 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
                     .build();
 
     @Autowired
-    public BilibiliLiveOffPushHandler(StarBotBilibiliProperties properties, BilibiliApiUtil bilibili, StarBotMessageSender sender, LiveDataService liveDataService, BilibiliLiveReportPainterFactory factory) {
+    public BilibiliLiveOffPushHandler(StarBotBilibiliProperties properties, BilibiliApiService bilibili, StarBotMessageSender sender, LiveDataService liveDataService, BilibiliLiveReportPainterFactory factory) {
         this.properties = properties;
         this.bilibili = bilibili;
         this.sender = sender;
@@ -200,6 +201,11 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
         if (raw.contains("{picture}")) {
             BilibiliLiveReportConfig config = params.getJSONObject("modules").toJavaObject(BilibiliLiveReportConfig.class);
 
+            // 全部模块关闭或绘制顺序为空时不再绘制并发送空图片（对齐上游 1de6698，并覆盖本地 like/share 模块开关）
+            if (CollectionUtils.isEmpty(config.getSequence()) || isAllModulesDisabled(config)) {
+                log.info("直播报告全部模块关闭或绘制顺序为空, 跳过图片绘制: UID: {}, 昵称: {}", up.getUid(), up.getUname());
+                content = content.replace("{picture}", "");
+            } else {
             String cacheKey = up.getUid() + "|" + event.getTimestamp() + "|" + params.getJSONObject("modules").toJSONString();
             String base64 = liveReportCache.getIfPresent(cacheKey);
 
@@ -230,6 +236,7 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
             } else {
                 log.error("生成直播报告图片失败, UID: {}, 昵称: {}, 房间号: {}", up.getUid(), up.getUname(), up.getRoomId());
                 content = content.replace("{picture}", "");
+            }
             }
         }
 
@@ -305,6 +312,8 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
         modules.put("enableGuardAnalysis", true);
         modules.put("showGuardDetails", true);
         modules.put("showGuardList", true);
+        modules.put("showGuardOperateTypeMonthDistributionChart", true);
+        modules.put("showGuardOperateTypeUserDistributionChart", true);
         modules.put("enableEnterRoomAnalysis", true);
         modules.put("showEnterRoomDetails", true);
         modules.put("showEnterRoomGrowthChart", true);
@@ -322,5 +331,16 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
         params.put("modules", modules);
 
         return params;
+    }
+
+    /**
+     * 判断直播报告全部模块开关是否全部关闭（含本地 like/share 模块）
+     */
+    private boolean isAllModulesDisabled(BilibiliLiveReportConfig config) {
+        return !config.isEnableBasicInfo() && !config.isEnableChangeInfo()
+                && !config.isEnableDanmuAnalysis() && !config.isEnableBoxAnalysis()
+                && !config.isEnableGiftAnalysis() && !config.isEnableSuperChatAnalysis()
+                && !config.isEnableGuardAnalysis() && !config.isEnableEnterRoomAnalysis()
+                && !config.isEnableLikeAnalysis() && !config.isEnableShareAnalysis();
     }
 }

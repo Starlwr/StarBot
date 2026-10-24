@@ -4,9 +4,9 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent
-import com.starlwr.bot.core.model.LiveStreamerInfo
-import com.starlwr.bot.core.model.UserInfo
-import com.starlwr.bot.core.service.LiveDataService
+import com.starlwr.bot.core.event.model.LiveStreamerInfo
+import com.starlwr.bot.core.event.model.UserInfo
+import com.starlwr.bot.core.live.LiveDataService
 import java.time.Instant
 import java.util.Optional
 import java.util.concurrent.Executors
@@ -16,9 +16,9 @@ class LiveReportSnapshotReadTest {
     @Test fun `interaction fast path does not copy the accumulated report`() {
         val driver = spy(InMemoryLiveReportDataDriver())
         val liveData = mock(LiveDataService::class.java)
-        `when`(liveData.getLiveStartTime("bilibili", 1L)).thenReturn(Optional.of(1000L))
+        `when`(liveData.getLiveStartTime("bilibili", "1")).thenReturn(Optional.of(1000L))
         val manager = LiveReportSessionManager(driver, liveData, LiveReportRecoveryProperties())
-        val event = BilibiliDanmuEvent(LiveStreamerInfo(1L, "test", 2L), UserInfo(9L, "viewer"), "test", Instant.ofEpochMilli(2000))
+        val event = BilibiliDanmuEvent(LiveStreamerInfo("1", "test", "2"), UserInfo("9", "viewer"), "test", Instant.ofEpochMilli(2000))
         manager.interactionSession(event)
         clearInvocations(driver)
         repeat(500) { manager.interactionSession(event) }

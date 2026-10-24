@@ -1,18 +1,18 @@
 package com.starlwr.bot.bilibili.report
 
 import com.alibaba.fastjson2.JSONObject
-import com.starlwr.bot.core.enums.PushTargetType
+import com.starlwr.bot.core.message.PushTargetType
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent
-import com.starlwr.bot.core.handler.StarBotEventHandler
-import com.starlwr.bot.core.model.Message
-import com.starlwr.bot.core.model.PushMessage
+import com.starlwr.bot.core.push.handler.StarBotEventHandler
+import com.starlwr.bot.core.message.Message
+import com.starlwr.bot.core.push.model.PushMessage
 import com.starlwr.bot.core.plugin.StarBotComponent
-import com.starlwr.bot.core.sender.StarBotMessageSender
+import com.starlwr.bot.core.message.StarBotMessageSender
 import org.slf4j.LoggerFactory
-import com.starlwr.bot.bilibili.util.BilibiliApiUtil
+import com.starlwr.bot.bilibili.api.BilibiliApiService
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties
-import com.starlwr.bot.bilibili.factory.BilibiliLiveReportPainterFactory
+import com.starlwr.bot.bilibili.report.BilibiliLiveReportPainterFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 
@@ -21,7 +21,7 @@ class LiveReportPushHandler(
     private val collector: LiveReportCollector,
     private val painter: LiveReportPainter,
     private val sender: StarBotMessageSender,
-    private val api: BilibiliApiUtil,
+    private val api: BilibiliApiService,
     private val properties: StarBotBilibiliProperties,
     private val upstreamFactory: BilibiliLiveReportPainterFactory,
     @param:Qualifier("bilibiliLiveReportThreadPool") private val executor: ThreadPoolTaskExecutor

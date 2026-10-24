@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.credential
 
 import com.alibaba.fastjson2.annotation.JSONField
-import com.starlwr.bot.bilibili.model.Cookies
+import com.starlwr.bot.bilibili.account.Cookies
 import java.net.URI
 import java.time.Instant
 import java.util.Locale

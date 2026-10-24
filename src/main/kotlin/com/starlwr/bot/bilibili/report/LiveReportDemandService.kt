@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.report
 
-import com.starlwr.bot.core.datasource.AbstractDataSource
+import com.starlwr.bot.core.push.datasource.AbstractDataSource
 import com.starlwr.bot.core.event.datasource.base.StarBotDataSourceChangeEvent
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent
 import com.starlwr.bot.core.plugin.StarBotComponent
@@ -15,7 +15,7 @@ data class ReportDemand(val enabled: Boolean = false, val sections: Set<String> 
 @StarBotComponent
 class LiveReportDemandService(private val dataSource: AbstractDataSource) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val demands = ConcurrentHashMap<Long, ReportDemand>()
+    private val demands = ConcurrentHashMap<String, ReportDemand>()
     @Order(-10_000) @EventListener(StarBotDataSourceLoadCompleteEvent::class)
     fun reload() {
         demands.clear()
@@ -34,9 +34,9 @@ class LiveReportDemandService(private val dataSource: AbstractDataSource) {
         log.info("直播报告采集需求已刷新, 启用主播数={}, UID={}", enabled.size, enabled.keys.sorted())
     }
     @EventListener fun onChange(@Suppress("UNUSED_PARAMETER") event: StarBotDataSourceChangeEvent) = reload()
-    fun deactivate(uid: Long) {
+    fun deactivate(uid: String) {
         demands.remove(uid)
     }
-    fun forUid(uid: Long?) = uid?.let { demands[it] } ?: ReportDemand()
-    fun enabledUids(): Set<Long> = demands.filterValues { it.enabled }.keys.toSet()
+    fun forUid(uid: String?) = uid?.let { demands[it] } ?: ReportDemand()
+    fun enabledUids(): Set<String> = demands.filterValues { it.enabled }.keys.toSet()
 }

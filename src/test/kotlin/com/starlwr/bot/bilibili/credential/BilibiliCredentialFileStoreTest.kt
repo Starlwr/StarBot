@@ -76,7 +76,7 @@ class BilibiliCredentialFileStoreTest {
             legacyCookieFile = temporary.resolve("cookies.json").toString()
         }
         val store = BilibiliCredentialFileStore(properties)
-        val account = com.starlwr.bot.bilibili.model.Cookies().apply {
+        val account = com.starlwr.bot.bilibili.account.Cookies().apply {
             sessData = "sess"
             biliJct = "csrf"
             validationLeaseExpiresAtEpochSeconds = 2000
@@ -102,7 +102,7 @@ class BilibiliCredentialFileStoreTest {
             legacyCookieFile = temporary.resolve("cookies.json").toString()
         }
         val store = BilibiliCredentialFileStore(properties)
-        val account = com.starlwr.bot.bilibili.model.Cookies().apply {
+        val account = com.starlwr.bot.bilibili.account.Cookies().apply {
             sessData = "current-session"
             biliJct = "current-csrf"
             biliTicket = "current-ticket"
@@ -166,7 +166,7 @@ class BilibiliCredentialFileStoreTest {
             legacyCookieFile = temporary.resolve("cookies.json").toString()
         }
         val store = BilibiliCredentialFileStore(properties)
-        store.saveCookies(com.starlwr.bot.bilibili.model.Cookies().apply {
+        store.saveCookies(com.starlwr.bot.bilibili.account.Cookies().apply {
             sessData = "jvm-session"
             biliJct = "jvm-csrf"
         })
@@ -187,7 +187,7 @@ class BilibiliCredentialFileStoreTest {
             legacyCookieFile = temporary.resolve("cookies.json").toString()
         }
         val store = BilibiliCredentialFileStore(properties)
-        val candidate = com.starlwr.bot.bilibili.model.Cookies().apply {
+        val candidate = com.starlwr.bot.bilibili.account.Cookies().apply {
             sessData = "new-session"; biliJct = "new-csrf"; acTimeValue = "new-refresh"
         }
         store.stagePendingRefresh(PendingCredentialRefresh(
@@ -213,7 +213,7 @@ class BilibiliCredentialFileStoreTest {
         }
         val store = BilibiliCredentialFileStore(properties)
         val expiry = Instant.now().epochSecond + 7200
-        val candidate = com.starlwr.bot.bilibili.model.Cookies().apply {
+        val candidate = com.starlwr.bot.bilibili.account.Cookies().apply {
             sessData = "new-session"
             biliJct = "new-csrf"
             expiresAtEpochSeconds = expiry
@@ -242,7 +242,7 @@ class BilibiliCredentialFileStoreTest {
         }
         val store = BilibiliCredentialFileStore(properties)
         val serverExpiry = Instant.now().epochSecond + 30 * 24 * 60 * 60
-        val account = com.starlwr.bot.bilibili.model.Cookies().apply {
+        val account = com.starlwr.bot.bilibili.account.Cookies().apply {
             sessData = "same-session"
             biliJct = "csrf"
             expiresAtEpochSeconds = serverExpiry
@@ -270,7 +270,7 @@ class BilibiliCredentialFileStoreTest {
         }
         val expiry = Instant.now().epochSecond + 7200
         BilibiliCredentialFileStore(properties).saveCookiesWithMetadata(
-            com.starlwr.bot.bilibili.model.Cookies().apply {
+            com.starlwr.bot.bilibili.account.Cookies().apply {
                 sessData = "domain-session"
                 biliJct = "csrf"
                 expiresAtEpochSeconds = expiry
@@ -313,7 +313,7 @@ class BilibiliCredentialFileStoreTest {
         val expiry = Instant.now().epochSecond + 7200
 
         store.saveCookiesWithMetadata(
-            com.starlwr.bot.bilibili.model.Cookies().apply {
+            com.starlwr.bot.bilibili.account.Cookies().apply {
                 sessData = "host-session"
                 biliJct = "csrf"
                 expiresAtEpochSeconds = expiry

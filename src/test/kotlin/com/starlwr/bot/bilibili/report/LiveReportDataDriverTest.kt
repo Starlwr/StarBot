@@ -7,7 +7,7 @@ import java.nio.file.Path
 
 class LiveReportDataDriverTest {
     @TempDir lateinit var temp: Path
-    private val session = ReportSession("bilibili:1:1000", "bilibili", 1, 2, "tester", 1000)
+    private val session = ReportSession("bilibili:1:1000", "bilibili", "1", "2", "tester", 1000)
     private val delta = ReportDelta(ReportMetric.BOX, 2, 30.0, 5.0,
         ReportUserDelta("9", "sender", count = 2, value = 30.0, profit = 5.0), 65_432, label = "gift")
 

@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 @StarBotComponent
 public class StarBotBilibiliLogConfig {
     @PostConstruct
-    public void init() {
+    private void init() {
         LoggerContext context = (LoggerContext) LoggerFactory.getILoggerFactory();
 
         Appender<ILoggingEvent> liveMessageAppender = new BilibiliLiveLogFileAppender();

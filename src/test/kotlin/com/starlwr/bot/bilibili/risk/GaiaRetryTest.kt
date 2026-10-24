@@ -7,8 +7,8 @@ import com.starlwr.bot.bilibili.http.BilibiliHttpPipeline
 import com.starlwr.bot.bilibili.http.BilibiliHttpRequest
 import com.starlwr.bot.bilibili.http.BilibiliHttpResponse
 import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger
-import com.starlwr.bot.bilibili.util.BilibiliApiUtil
-import com.starlwr.bot.core.util.HttpUtil
+import com.starlwr.bot.bilibili.api.BilibiliApiService
+import com.starlwr.bot.core.support.http.HttpService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -39,8 +39,8 @@ class GaiaRetryTest {
             }
         }
         val properties = StarBotBilibiliProperties()
-        val api = BilibiliApiUtil(
-            properties, Mockito.mock(HttpUtil::class.java), Mockito.mock(BilibiliBrowserIdentity::class.java),
+        val api = BilibiliApiService(
+            properties, Mockito.mock(HttpService::class.java), Mockito.mock(BilibiliBrowserIdentity::class.java),
             BilibiliNetworkLogger(properties), pipeline, Mockito.mock(BilibiliCredentialFileStore::class.java),
             BilibiliRiskProperties(), provider,
         )

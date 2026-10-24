@@ -8,7 +8,7 @@ import java.sql.DriverManager
 
 class JdbcLiveReportBatchTest {
     @TempDir lateinit var temp: Path
-    private val session = ReportSession("batch", "bilibili", 1, 2, "test", 1)
+    private val session = ReportSession("batch", "bilibili", "1", "2", "test", 1)
     private fun events() = (1..500).map { ReportEventWrite(session, "e$it", ReportDelta(ReportMetric.DANMU, 1)) }
     @Test fun `batch writes a snapshot once and preserves durable dedup after reopen`() {
         val url = "jdbc:sqlite:${temp.resolve("batch.db")}"

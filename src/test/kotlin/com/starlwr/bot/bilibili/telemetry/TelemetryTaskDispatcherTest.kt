@@ -40,7 +40,7 @@ class TelemetryTaskDispatcherTest {
             val rejected = CountDownLatch(1)
             val caller = Thread.currentThread().name
             val started = System.nanoTime()
-            TelemetryTaskDispatcher(worker, scheduler).submit("overload-test", 1, onRejected = {
+            TelemetryTaskDispatcher(worker, scheduler).submit("overload-test", "1", onRejected = {
                 assertTrue(Thread.currentThread().name.startsWith("telemetry-test-scheduler-"))
                 assertTrue(Thread.currentThread().name != caller)
                 rejected.countDown()

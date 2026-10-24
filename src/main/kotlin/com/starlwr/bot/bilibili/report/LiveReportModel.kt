@@ -51,8 +51,8 @@ data class LiveReportSnapshot(
     var schemaVersion: Int = CURRENT_SCHEMA,
     var sessionId: String = "",
     var platform: String = "bilibili",
-    var uid: Long = 0,
-    var roomId: Long = 0,
+    var uid: String = "0",
+    var roomId: String = "0",
     var uname: String = "",
     var startedAt: Long = 0,
     var collectionStartedAt: Long = 0,
@@ -150,7 +150,7 @@ data class LiveReportSnapshot(
 }
 
 data class ReportSession(
-    val sessionId: String, val platform: String, val uid: Long, val roomId: Long,
+    val sessionId: String, val platform: String, val uid: String, val roomId: String,
     val uname: String, val startedAt: Long = Instant.now().toEpochMilli(),
     val collectionStartedAt: Long = startedAt,
     val baselineType: ReportBaselineType = ReportBaselineType.FULL,

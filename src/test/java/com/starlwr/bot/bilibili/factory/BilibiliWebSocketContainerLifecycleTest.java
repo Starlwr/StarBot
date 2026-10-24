@@ -1,7 +1,8 @@
 package com.starlwr.bot.bilibili.factory;
 
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
-import com.starlwr.bot.bilibili.model.Up;
+import com.starlwr.bot.bilibili.api.model.Up;
+import com.starlwr.bot.bilibili.live.connection.BilibiliLiveRoomConnectorFactory;
 import org.apache.tomcat.websocket.WsWebSocketContainer;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -18,6 +19,6 @@ class BilibiliWebSocketContainerLifecycleTest {
         ReflectionTestUtils.setField(factory,"container",owned);
         factory.close(); factory.close();
         verify(owned,times(1)).destroy();
-        assertThrows(IllegalStateException.class,() -> factory.create(new Up(1L,"test",2L)));
+        assertThrows(IllegalStateException.class,() -> factory.create(new Up("1", "test", "2")));
     }
 }

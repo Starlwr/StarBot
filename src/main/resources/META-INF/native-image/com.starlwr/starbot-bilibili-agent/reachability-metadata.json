@@ -369,18 +369,18 @@
       ]
     },
     {
-      "type": "com.starlwr.bot.bilibili.controller.BilibiliLoginController",
+      "type": "com.starlwr.bot.bilibili.account.BilibiliLoginController",
       "methods": [
         {
           "name": "<init>",
           "parameterTypes": [
-            "com.starlwr.bot.bilibili.service.BilibiliAccountService"
+            "com.starlwr.bot.bilibili.account.BilibiliAccountService"
           ]
         }
       ]
     },
     {
-      "type": "com.starlwr.bot.bilibili.factory.BilibiliDynamicPainterFactory",
+      "type": "com.starlwr.bot.bilibili.dynamic.BilibiliDynamicPainterFactory",
       "methods": [
         {
           "name": "<init>",
@@ -394,7 +394,7 @@
       ]
     },
     {
-      "type": "com.starlwr.bot.bilibili.factory.BilibiliLiveRoomConnectorFactory"
+      "type": "com.starlwr.bot.bilibili.live.connection.BilibiliLiveRoomConnectorFactory"
     },
     {
       "type": "com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler"
@@ -406,13 +406,16 @@
       "type": "com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"
     },
     {
-      "type": "com.starlwr.bot.bilibili.listener.BilibiliDataSourceEventListener"
+      "type": "com.starlwr.bot.bilibili.datasource.BilibiliDataSourceEventListener"
     },
     {
-      "type": "com.starlwr.bot.bilibili.listener.BilibiliLiveDataListener"
+      "type": "com.starlwr.bot.bilibili.live.BilibiliLiveDataListener"
     },
     {
-      "type": "com.starlwr.bot.bilibili.report.BlindBoxCommandController"
+      "type": "com.starlwr.bot.bilibili.report.BlindBoxCommandController",
+      "type": "com.starlwr.bot.bilibili.report.BlindBoxStatsCommand",
+      "type": "com.starlwr.bot.bilibili.report.LiveReportQueryCommand",
+      "type": "com.starlwr.bot.bilibili.report.ReportCommandQueryService"
     },
     {
       "type": "com.starlwr.bot.bilibili.report.BlindBoxLiveOffReportHandler"
@@ -451,7 +454,7 @@
       "type": "com.starlwr.bot.bilibili.report.LiveReportStorageProperties"
     },
     {
-      "type": "com.starlwr.bot.bilibili.service.BilibiliAccountService",
+      "type": "com.starlwr.bot.bilibili.account.BilibiliAccountService",
       "methods": [
         {
           "name": "<init>",
@@ -464,25 +467,25 @@
       ]
     },
     {
-      "type": "com.starlwr.bot.bilibili.service.BilibiliBackupLivePushService"
+      "type": "com.starlwr.bot.bilibili.live.BilibiliBackupLivePushService"
     },
     {
-      "type": "com.starlwr.bot.bilibili.service.BilibiliDataSourceService"
+      "type": "com.starlwr.bot.bilibili.datasource.BilibiliDataSourceService"
     },
     {
-      "type": "com.starlwr.bot.bilibili.service.BilibiliDynamicService"
+      "type": "com.starlwr.bot.bilibili.dynamic.BilibiliDynamicService"
     },
     {
-      "type": "com.starlwr.bot.bilibili.service.BilibiliEventParser"
+      "type": "com.starlwr.bot.bilibili.live.protocol.BilibiliEventParser"
     },
     {
-      "type": "com.starlwr.bot.bilibili.service.BilibiliGiftService"
+      "type": "com.starlwr.bot.bilibili.live.gift.BilibiliGiftService"
     },
     {
-      "type": "com.starlwr.bot.bilibili.service.BilibiliLiveRoomConnectTaskService"
+      "type": "com.starlwr.bot.bilibili.live.connection.BilibiliLiveRoomConnectTaskService"
     },
     {
-      "type": "com.starlwr.bot.bilibili.service.BilibiliLiveRoomService"
+      "type": "com.starlwr.bot.bilibili.live.connection.BilibiliLiveRoomService"
     },
     {
       "type": "com.starlwr.bot.bilibili.util.BilibiliApiUtil",
@@ -5070,10 +5073,15 @@
       "glob": "com/starlwr/bot/bilibili/report/BlindBoxCommandController$Companion.class"
     },
     {
-      "glob": "com/starlwr/bot/bilibili/report/BlindBoxCommandController$Range.class"
     },
     {
-      "glob": "com/starlwr/bot/bilibili/report/BlindBoxCommandController.class"
+      "glob": "com/starlwr/bot/bilibili/report/BlindBoxCommandController.class",
+      "glob": "com/starlwr/bot/bilibili/report/BlindBoxStatsCommand.class",
+      "glob": "com/starlwr/bot/bilibili/report/BlindBoxStatsCommand$*.class",
+      "glob": "com/starlwr/bot/bilibili/report/LiveReportQueryCommand.class",
+      "glob": "com/starlwr/bot/bilibili/report/LiveReportQueryCommand$*.class",
+      "glob": "com/starlwr/bot/bilibili/report/ReportCommandQueryService.class",
+      "glob": "com/starlwr/bot/bilibili/report/ReportCommandQueryService$*.class"
     },
     {
       "glob": "com/starlwr/bot/bilibili/report/BlindBoxLiveOffReportHandler.class"

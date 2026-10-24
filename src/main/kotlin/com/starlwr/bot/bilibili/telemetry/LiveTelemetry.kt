@@ -6,8 +6,8 @@ import com.starlwr.bot.bilibili.credential.BilibiliCredentialFileStore
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent
 import com.starlwr.bot.bilibili.http.BilibiliHttpPipeline
-import com.starlwr.bot.bilibili.service.BilibiliFailureIncidentReporter
-import com.starlwr.bot.bilibili.util.BilibiliApiUtil
+import com.starlwr.bot.bilibili.live.connection.BilibiliFailureIncidentReporter
+import com.starlwr.bot.bilibili.api.BilibiliApiService
 import com.starlwr.bot.core.plugin.StarBotComponent
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
@@ -57,7 +57,7 @@ data class WebLogReportData(
     val platform: String = "web",
     val screenStatus: Int,
     val clickStatus: Int,
-    val roomId: Long,
+    val roomId: String,
     val playUrl: String,
     val qid: Long,
     val sid: String,
@@ -73,7 +73,7 @@ class CsnSigner {
         val canonical = linkedMapOf<String, Any>(
             "uid" to data.uid, "buvid" to data.buvid, "platform" to data.platform,
             "screen_status" to data.screenStatus, "click_status" to data.clickStatus,
-            "room_id" to data.roomId, "play_url" to data.playUrl, "qid" to data.qid,
+            "room_id" to (data.roomId.toLongOrNull() ?: data.roomId), "play_url" to data.playUrl, "qid" to data.qid,
             "sid" to data.sid, "cts" to data.cts, "stky" to data.stky,
         )
         val message = JSON.toJSONString(canonical).toByteArray(StandardCharsets.UTF_8)
@@ -167,7 +167,7 @@ class WebLogSession(
         val body = linkedMapOf<String, Any>(
             "uid" to data.uid, "buvid" to data.buvid, "platform" to data.platform,
             "screen_status" to data.screenStatus, "click_status" to data.clickStatus,
-            "room_id" to data.roomId, "play_url" to data.playUrl, "qid" to data.qid,
+            "room_id" to (data.roomId.toLongOrNull() ?: data.roomId), "play_url" to data.playUrl, "qid" to data.qid,
             "cts" to data.cts,
         )
         if (sid.isNotBlank()) body["sid"] = sid
@@ -396,12 +396,12 @@ class LiveTelemetryCoordinator(
     private val credentials: BilibiliCredentialFileStore,
     private val playUrlProvider: PlayUrlProvider,
     private val signer: CsnSigner,
-    private val api: BilibiliApiUtil,
+    private val api: BilibiliApiService,
     private val dispatcher: TelemetryTaskDispatcher,
     private val incidentReporter: BilibiliFailureIncidentReporter,
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val sessions = ConcurrentHashMap<Long, ActiveTelemetrySession>()
+    private val sessions = ConcurrentHashMap<String, ActiveTelemetrySession>()
     private val closed = AtomicBoolean()
 
     @EventListener
@@ -455,7 +455,7 @@ class LiveTelemetryCoordinator(
     ) {
         if (!session.clearWebLog(failedSession) || closed.get() || session.isClosed()) return
         val jitterMaximum = properties.webLogRebootstrapJitterSeconds.coerceAtLeast(0)
-        val jitter = if (jitterMaximum == 0L) 0L else Math.floorMod(session.context.roomId, jitterMaximum + 1)
+        val jitter = if (jitterMaximum == 0L) 0L else Math.floorMod(session.context.roomId.toLongOrNull() ?: 0L, jitterMaximum + 1)
         val delay = properties.webLogRebootstrapSeconds.coerceAtLeast(1) + jitter
         log.warn("WebLog 当前会话已停止，将使用全新会话延迟重建: room={}, kind={}, delaySeconds={}",
             session.context.roomId, failure.kind, delay)
@@ -477,7 +477,8 @@ class LiveTelemetryCoordinator(
                 val now = System.currentTimeMillis()
                 val lease = playUrlProvider.get(session.context.roomId)
                 val payload = linkedMapOf<String, Any>(
-                    "room_id" to session.context.roomId, "up_id" to session.context.anchorUid,
+                    "room_id" to (session.context.roomId.toLongOrNull() ?: session.context.roomId),
+                    "up_id" to (session.context.anchorUid.toLongOrNull() ?: session.context.anchorUid),
                     "area" to session.context.areaId, "parent_area" to session.context.parentAreaId,
                     "guid" to guid, "play_type" to 1, "pid" to 0,
                     "playurl" to URLEncoder.encode(lease.url, StandardCharsets.UTF_8),
@@ -503,7 +504,7 @@ class LiveTelemetryCoordinator(
         session.tasks += task
     }
 
-    private fun submit(operation: String, roomId: Long? = null, onRejected: () -> Unit = {}, action: () -> Unit) {
+    private fun submit(operation: String, roomId: String? = null, onRejected: () -> Unit = {}, action: () -> Unit) {
         if (closed.get()) return
         dispatcher.submit(operation, roomId, onRejected) { if (!closed.get()) action() }
     }

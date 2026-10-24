@@ -20,7 +20,7 @@ interface LiveReportDataDriver : Closeable {
     fun complete(sessionId: String, endedAt: Long,
                  disposition: ReportCloseDisposition = ReportCloseDisposition.NORMAL,
                  reason: String? = null): LiveReportSnapshot?
-    fun recent(uid: Long, limit: Int = 10): List<LiveReportSnapshot>
+    fun recent(uid: String, limit: Int = 10): List<LiveReportSnapshot>
     fun health(): DriverHealth
     override fun close() {}
 }
@@ -57,7 +57,7 @@ class InMemoryLiveReportDataDriver(private val maxSessions: Int = 1_000, private
                 snapshot.copySafe()
             }
         }
-    override fun recent(uid: Long, limit: Int) = sessions.values.filter { it.uid == uid && it.endedAt != null }
+    override fun recent(uid: String, limit: Int) = sessions.values.filter { it.uid == uid && it.endedAt != null }
         .sortedByDescending { it.startedAt }.take(limit).map { it.copySafe() }
     override fun health() = DriverHealth(true)
     private fun evictIfNeeded() {

@@ -106,23 +106,23 @@ public class BilibiliNetworkLogger {
         return false;
     }
 
-    public void websocketOut(String channel, Long roomId, String kind, int bytes, Object body, boolean heartbeat) {
+    public void websocketOut(String channel, String roomId, String kind, int bytes, Object body, boolean heartbeat) {
         websocketOutLazy(channel, roomId, kind, bytes, () -> body, heartbeat);
     }
 
-    public void websocketIn(String channel, Long roomId, String kind, int bytes, Object body, boolean heartbeat) {
+    public void websocketIn(String channel, String roomId, String kind, int bytes, Object body, boolean heartbeat) {
         websocketInLazy(channel, roomId, kind, bytes, () -> body, heartbeat);
     }
 
-    public void websocketOutLazy(String channel, Long roomId, String kind, int bytes, Supplier<?> body, boolean heartbeat) {
+    public void websocketOutLazy(String channel, String roomId, String kind, int bytes, Supplier<?> body, boolean heartbeat) {
         websocket("OUT", channel, roomId, kind, bytes, body, heartbeat);
     }
 
-    public void websocketInLazy(String channel, Long roomId, String kind, int bytes, Supplier<?> body, boolean heartbeat) {
+    public void websocketInLazy(String channel, String roomId, String kind, int bytes, Supplier<?> body, boolean heartbeat) {
         websocket("IN ", channel, roomId, kind, bytes, body, heartbeat);
     }
 
-    private void websocket(String direction, String channel, Long roomId, String kind,
+    private void websocket(String direction, String channel, String roomId, String kind,
                            int bytes, Supplier<?> body, boolean heartbeat) {
         StarBotBilibiliProperties.Network network = properties.getNetwork();
         if (!network.isWebsocketLogEnabled() || (heartbeat && !network.isWebsocketHeartbeatLogEnabled())

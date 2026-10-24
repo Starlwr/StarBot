@@ -21,7 +21,7 @@ public class StarBotBilibiliCacheConfig {
     }
 
     @PostConstruct
-    public void init() {
+    private void init() {
         cacheManager.registerCustomCache("bilibiliApiCache",
                 Caffeine.newBuilder()
                         .expireAfterAccess(5, TimeUnit.MINUTES)

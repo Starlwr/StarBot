@@ -10,8 +10,8 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
 data class PlayUrlLease(
-    val roomId: Long,
-    val anchorUid: Long,
+    val roomId: String,
+    val anchorUid: String,
     val areaId: Long,
     val parentAreaId: Long,
     val url: String,
@@ -22,9 +22,9 @@ data class PlayUrlLease(
 }
 
 data class LiveClientContext(
-    val displayRoomId: Long,
-    val roomId: Long,
-    val anchorUid: Long,
+    val displayRoomId: String,
+    val roomId: String,
+    val anchorUid: String,
     val areaId: Long,
     val parentAreaId: Long,
     val liveStartedAtEpochMillis: Long,
@@ -36,13 +36,13 @@ data class LiveClientContext(
 class PlayUrlProvider(
     private val http: BilibiliHttpPipeline,
 ) {
-    private val cache = ConcurrentHashMap<Long, PlayUrlLease>()
-    private val inFlight = ConcurrentHashMap<Long, CompletableFuture<PlayUrlLease>>()
-    private val lineIndex = ConcurrentHashMap<Long, Int>()
+    private val cache = ConcurrentHashMap<String, PlayUrlLease>()
+    private val inFlight = ConcurrentHashMap<String, CompletableFuture<PlayUrlLease>>()
+    private val lineIndex = ConcurrentHashMap<String, Int>()
 
-    fun current(roomId: Long): PlayUrlLease? = cache[roomId]?.takeUnless { it.needsRefresh() }
+    fun current(roomId: String): PlayUrlLease? = cache[roomId]?.takeUnless { it.needsRefresh() }
 
-    fun get(roomId: Long, force: Boolean = false): PlayUrlLease {
+    fun get(roomId: String, force: Boolean = false): PlayUrlLease {
         if (!force) current(roomId)?.let { return it }
         val candidate = CompletableFuture<PlayUrlLease>()
         val existing = inFlight.putIfAbsent(roomId, candidate)
@@ -57,7 +57,7 @@ class PlayUrlProvider(
         }
     }
 
-    private fun fetch(roomId: Long): PlayUrlLease {
+    private fun fetch(roomId: String): PlayUrlLease {
         val params = linkedMapOf(
             "room_id" to roomId.toString(), "platform" to "web", "ptype" to "16",
             "protocol" to "0,1", "format" to "0,2", "codec" to "0,1", "qn" to "10000"
@@ -96,7 +96,7 @@ class PlayUrlProvider(
             ?: serverTtl.takeIf { it > 1 }?.let { now.epochSecond + it }
             ?: now.epochSecond + 1800
         return PlayUrlLease(
-            roomId = data.getLongValue("room_id", roomId), anchorUid = data.getLongValue("uid"),
+            roomId = data.getLong("room_id")?.toString() ?: roomId, anchorUid = data.getLongValue("uid").toString(),
             areaId = data.getLongValue("area_id"), parentAreaId = data.getLongValue("parent_area_id"),
             url = url, obtainedAtEpochMillis = System.currentTimeMillis(), expiresAtEpochSeconds = expiry
         ).also { cache[roomId] = it }

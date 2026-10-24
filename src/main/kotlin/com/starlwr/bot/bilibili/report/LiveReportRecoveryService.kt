@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.report
 import com.alibaba.fastjson2.JSONObject
 import com.starlwr.bot.bilibili.event.live.BilibiliDisconnectedEvent
 import com.starlwr.bot.bilibili.http.BilibiliHttpPipeline
-import com.starlwr.bot.bilibili.model.Room
+import com.starlwr.bot.bilibili.api.model.Room
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent
 import com.starlwr.bot.core.plugin.StarBotComponent
 import jakarta.annotation.PostConstruct
@@ -67,9 +67,9 @@ class LiveReportStatusProbeClient(
     private val pipeline: BilibiliHttpPipeline,
     private val trustedTime: LiveReportTrustedTimeProvider,
 ) {
-    fun probe(uids: Set<Long>): Map<Long, LiveStatusObservation> {
+    fun probe(uids: Set<String>): Map<String, LiveStatusObservation> {
         if (uids.isEmpty()) return emptyMap()
-        val result = LinkedHashMap<Long, LiveStatusObservation>()
+        val result = LinkedHashMap<String, LiveStatusObservation>()
         uids.chunked(100).forEach { chunk ->
             val url = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?uids[]=" +
                 chunk.joinToString("&uids[]=")
@@ -81,8 +81,9 @@ class LiveReportStatusProbeClient(
             val (observedAt, source) = trustedTime.resolve(response.headers)
             data.forEach { (uidText, value) ->
                 val node = value as? JSONObject ?: return@forEach
-                val uid = uidText.toLongOrNull() ?: return@forEach
-                val room = Room(uid, node.getString("uname"), node.getLong("room_id"), node.getString("face"),
+                if (uidText.toLongOrNull() == null) return@forEach
+                val uid = uidText
+                val room = Room(uid, node.getString("uname"), node.getString("room_id"), node.getString("face"),
                     node.getInteger("live_status"), node.getLongValue("live_time") * 1_000,
                     node.getString("title"), node.getString("cover_from_user"))
                 result[uid] = LiveStatusObservation(room, observedAt, source)
@@ -103,7 +104,7 @@ class LiveReportRecoveryService(
     private val log = LoggerFactory.getLogger(javaClass)
     private val enabled = AtomicBoolean(false)
     private val closing = AtomicBoolean(false)
-    private val retrySince = ConcurrentHashMap<Long, Long>()
+    private val retrySince = ConcurrentHashMap<String, Long>()
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { task ->
         Thread(task, "live-report-recovery").apply { isDaemon = true }
     }
@@ -141,12 +142,12 @@ class LiveReportRecoveryService(
         submitProbe(setOf(uid), "collector_disconnected")
     }
 
-    private fun submitProbe(uids: Set<Long>, reason: String) {
+    private fun submitProbe(uids: Set<String>, reason: String) {
         if (uids.isEmpty() || closing.get()) return
         submitTask { probeWithRetry(uids, reason) }
     }
 
-    private fun probeWithRetry(uids: Set<Long>, reason: String) {
+    private fun probeWithRetry(uids: Set<String>, reason: String) {
         if (uids.isEmpty() || closing.get()) return
         val now = trustedTime.now()
         uids.forEach { retrySince.putIfAbsent(it, now) }
@@ -168,7 +169,7 @@ class LiveReportRecoveryService(
         probeSafely((pending + retrySince.keys).toSet(), "scheduled_retry")
     }
 
-    private fun probeSafely(uids: Set<Long>, reason: String) {
+    private fun probeSafely(uids: Set<String>, reason: String) {
         runCatching { probe(uids, reason) }.onFailure { error ->
             val now = trustedTime.now()
             uids.forEach { uid -> handleFailure(uid, now, error.toString()) }
@@ -176,7 +177,7 @@ class LiveReportRecoveryService(
         }
     }
 
-    private fun probe(uids: Set<Long>, reason: String) {
+    private fun probe(uids: Set<String>, reason: String) {
         if (uids.isEmpty()) return
         val observations = probeClient.probe(uids)
         val missing = uids - observations.keys
@@ -200,7 +201,7 @@ class LiveReportRecoveryService(
         }
     }
 
-    private fun handleFailure(uid: Long, now: Long, reason: String) {
+    private fun handleFailure(uid: String, now: Long, reason: String) {
         val snapshot = sessions.markProbeFailure(uid, reason)
         val since = retrySince.computeIfAbsent(uid) { snapshot?.pendingCloseSince ?: now }
         if (snapshot == null) {

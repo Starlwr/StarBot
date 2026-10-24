@@ -7,6 +7,8 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.starlwr.bot.bilibili.api.sign.BilibiliWbiUtil;
+
 class BilibiliWbiUtilTest {
     @Test
     void encodedQueryIsDefaultAndContainsOneWts() {

@@ -2,19 +2,19 @@ package com.starlwr.bot.bilibili.handler;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
-import com.starlwr.bot.bilibili.model.Room;
-import com.starlwr.bot.bilibili.model.Up;
-import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.enums.PushTargetType;
+import com.starlwr.bot.bilibili.api.model.Room;
+import com.starlwr.bot.bilibili.api.model.Up;
+import com.starlwr.bot.bilibili.api.BilibiliApiService;
+import com.starlwr.bot.core.message.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
-import com.starlwr.bot.core.handler.DefaultHandlerForEvent;
-import com.starlwr.bot.core.model.Message;
-import com.starlwr.bot.core.model.PushMessage;
-import com.starlwr.bot.core.model.PushTarget;
+import com.starlwr.bot.core.push.handler.StarBotEventHandler;
+import com.starlwr.bot.core.push.handler.DefaultHandlerForEvent;
+import com.starlwr.bot.core.message.Message;
+import com.starlwr.bot.core.push.model.PushMessage;
+import com.starlwr.bot.core.push.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.message.StarBotMessageSender;
+import org.apache.commons.lang3.StringUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -50,12 +50,12 @@ import java.util.List;
 @StarBotComponent
 @DefaultHandlerForEvent(event = "com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent")
 public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
-    private final BilibiliApiUtil bilibili;
+    private final BilibiliApiService bilibili;
 
     private final StarBotMessageSender sender;
 
     @Autowired
-    public BilibiliLiveOnPushHandler(BilibiliApiUtil bilibili, StarBotMessageSender sender) {
+    public BilibiliLiveOnPushHandler(BilibiliApiService bilibili, StarBotMessageSender sender) {
         this.bilibili = bilibili;
         this.sender = sender;
     }
@@ -96,7 +96,7 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
         try {
             Room room = bilibili.getLiveInfoByRoomId(event.getSource().getRoomId());
             title = room.getTitle();
-            if (StringUtil.isNotBlank(room.getCover())) {
+            if (StringUtils.isNotBlank(room.getCover())) {
                 cover = "{image_url=" + room.getCover() + "}";
             }
         } catch (Exception e) {

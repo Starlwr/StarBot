@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.report
 
 import com.alibaba.fastjson2.JSONObject
-import com.starlwr.bot.bilibili.model.BilibiliLiveReportConfig
+import com.starlwr.bot.bilibili.report.BilibiliLiveReportConfig
 
 data class LiveReportTargetConfig(
     val enabled: Boolean = true,
@@ -76,6 +76,8 @@ data class LiveReportTargetConfig(
         setEnableGuardAnalysis(section("guard"))
         setShowGuardDetails(section("guard") && amount("guard"))
         setShowGuardList(section("guard_list"))
+        setShowGuardOperateTypeMonthDistributionChart(chart("guard_operate_type"))
+        setShowGuardOperateTypeUserDistributionChart(chart("guard_operate_type"))
         setEnableEnterRoomAnalysis(section("enter_room"))
         setShowEnterRoomDetails(section("enter_room"))
         setShowEnterRoomGrowthChart(chart("enter_room"))
@@ -136,7 +138,7 @@ data class LiveReportTargetConfig(
             val chartsJson = params.getJSONObject("charts")
             val charts = (ReportMetric.entries.map { it.name.lowercase() } +
                 listOf("box_profit", "danmu_type", "danmu_sender", "gift_type", "box_profit_distribution", "box_gift_distribution",
-                    "enter_room", "like", "share"))
+                    "enter_room", "like", "share", "guard_operate_type"))
                 .associate { key ->
                     val current = chartsJson?.getJSONObject(key)?.getBooleanValue("enabled")
                     val upstream = when (key) {
@@ -153,6 +155,8 @@ data class LiveReportTargetConfig(
                         "enter_room" -> module("showEnterRoomGrowthChart") == true || module("showEnterRoomInteractionChart") == true
                         "like" -> module("showLikeGrowthChart") == true || module("showLikeInteractionChart") == true
                         "share" -> module("showShareGrowthChart") == true || module("showShareInteractionChart") == true
+                        "guard_operate_type" -> module("showGuardOperateTypeMonthDistributionChart") == true
+                                || module("showGuardOperateTypeUserDistributionChart") == true
                         else -> null
                     }
                     key to (current ?: upstream ?: false)

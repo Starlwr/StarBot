@@ -24,7 +24,7 @@ class JdbcLiveReportDataDriver(
             }
             c.createStatement().use { s ->
                 s.execute("""CREATE TABLE IF NOT EXISTS starbot_report_session (
-                    session_id VARCHAR(160) PRIMARY KEY, uid BIGINT NOT NULL, started_at BIGINT NOT NULL,
+                    session_id VARCHAR(160) PRIMARY KEY, uid VARCHAR(64) NOT NULL, started_at BIGINT NOT NULL,
                     ended_at BIGINT NULL, schema_version INTEGER NOT NULL, payload ${if (mysql) "LONGTEXT" else "TEXT"} NOT NULL)""")
                 s.execute("""CREATE TABLE IF NOT EXISTS starbot_report_event (
                     session_id VARCHAR(160) NOT NULL, event_id VARCHAR(160) NOT NULL,
@@ -94,9 +94,9 @@ class JdbcLiveReportDataDriver(
             save(c, it)
         }?.copySafe()
     }
-    override fun recent(uid: Long, limit: Int): List<LiveReportSnapshot> = connection().use { c ->
+    override fun recent(uid: String, limit: Int): List<LiveReportSnapshot> = connection().use { c ->
         c.prepareStatement("SELECT payload FROM starbot_report_session WHERE uid=? AND ended_at IS NOT NULL ORDER BY started_at DESC LIMIT ?").use { p ->
-            p.setLong(1, uid); p.setInt(2, limit.coerceIn(1, 100)); p.executeQuery().use { rs ->
+            p.setString(1, uid); p.setInt(2, limit.coerceIn(1, 100)); p.executeQuery().use { rs ->
                 buildList { while (rs.next()) add(decode(rs.getString(1))) }
             }
         }
@@ -115,7 +115,7 @@ class JdbcLiveReportDataDriver(
         else """INSERT INTO starbot_report_session(session_id,uid,started_at,ended_at,schema_version,payload) VALUES(?,?,?,?,?,?)
             ON CONFLICT(session_id) DO UPDATE SET ended_at=excluded.ended_at,schema_version=excluded.schema_version,payload=excluded.payload"""
         c.prepareStatement(sql).use { p ->
-            p.setString(1, s.sessionId); p.setLong(2, s.uid); p.setLong(3, s.startedAt)
+            p.setString(1, s.sessionId); p.setString(2, s.uid); p.setLong(3, s.startedAt)
             if (s.endedAt == null) p.setNull(4, java.sql.Types.BIGINT) else p.setLong(4, s.endedAt!!)
             p.setInt(5, s.schemaVersion); p.setString(6, JSON.toJSONString(s)); p.executeUpdate()
         }

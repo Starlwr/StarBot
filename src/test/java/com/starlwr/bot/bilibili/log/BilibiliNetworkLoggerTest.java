@@ -27,13 +27,13 @@ class BilibiliNetworkLoggerTest {
         StarBotBilibiliProperties properties = properties(false, 16_384);
         AtomicInteger materialized = new AtomicInteger();
         captureAll("com.starlwr.bot.bilibili.network.websocket", properties, logger -> {
-            logger.websocketInLazy("bilibili-live", 1L, "BINARY", 100, materialized::incrementAndGet, false);
+            logger.websocketInLazy("bilibili-live", "1", "BINARY", 100, materialized::incrementAndGet, false);
             properties.getNetwork().setWebsocketLogEnabled(true);
             properties.getNetwork().setConsoleCategories(Set.of("dynamic"));
-            logger.websocketInLazy("bilibili-live", 1L, "BINARY", 100, materialized::incrementAndGet, false);
+            logger.websocketInLazy("bilibili-live", "1", "BINARY", 100, materialized::incrementAndGet, false);
             properties.getNetwork().setConsoleCategories(Set.of("all"));
             properties.getNetwork().setWebsocketHeartbeatLogEnabled(false);
-            logger.websocketInLazy("bilibili-live", 1L, "HEARTBEAT", 100, materialized::incrementAndGet, true);
+            logger.websocketInLazy("bilibili-live", "1", "HEARTBEAT", 100, materialized::incrementAndGet, true);
         });
         assertEquals(0, materialized.get());
     }
@@ -45,10 +45,10 @@ class BilibiliNetworkLoggerTest {
         properties.getNetwork().setConsoleCategories(Set.of("all"));
         String encoded = java.util.Base64.getEncoder().encodeToString("replay-secret".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         List<String> messages = captureAll("com.starlwr.bot.bilibili.network.websocket", properties, logger -> {
-            logger.websocketOutLazy("bilibili-live", 1L, "VERIFY", 100,
+            logger.websocketOutLazy("bilibili-live", "1", "VERIFY", 100,
                     () -> Map.of("decoded", "key=replay-secret", "frameBase64", encoded), false);
             properties.getNetwork().setIncludeSensitiveData(true);
-            logger.websocketOutLazy("bilibili-live", 1L, "VERIFY", 100,
+            logger.websocketOutLazy("bilibili-live", "1", "VERIFY", 100,
                     () -> Map.of("decoded", "key=replay-secret", "frameBase64", encoded), false);
         });
         assertEquals(2, messages.size());

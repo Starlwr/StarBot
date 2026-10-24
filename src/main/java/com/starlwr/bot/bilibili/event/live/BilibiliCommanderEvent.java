@@ -1,9 +1,9 @@
 package com.starlwr.bot.bilibili.event.live;
 
-import com.starlwr.bot.bilibili.enums.GuardOperateType;
-import com.starlwr.bot.bilibili.enums.GuardType;
-import com.starlwr.bot.core.model.LiveStreamerInfo;
-import com.starlwr.bot.core.model.UserInfo;
+import com.starlwr.bot.bilibili.live.gift.GuardOperateType;
+import com.starlwr.bot.bilibili.live.gift.GuardType;
+import com.starlwr.bot.core.event.model.LiveStreamerInfo;
+import com.starlwr.bot.core.event.model.UserInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -15,7 +15,7 @@ import java.time.Instant;
  * <h3>Bilibili 开通提督事件</h3>
  * <h4>触发条件：</h4>
  * <ul>
- *     <li>USER_TOAST_MSG（开通舰长、提督、总督）</li>
+ *     <li>USER_TOAST_MSG_V2（开通舰长、提督、总督）</li>
  * </ul>
  * <h4>示例：</h4>
  * <p>参见 {@link BilibiliCaptainEvent}</p>

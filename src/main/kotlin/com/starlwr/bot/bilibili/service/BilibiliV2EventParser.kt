@@ -7,20 +7,21 @@ import com.starlwr.bot.bilibili.event.live.BilibiliFreeGiftEvent
 import com.starlwr.bot.bilibili.event.live.BilibiliPaidGiftEvent
 import com.starlwr.bot.bilibili.event.live.BilibiliRandomGiftEvent
 import com.starlwr.bot.bilibili.event.live.BilibiliShareEvent
-import com.starlwr.bot.bilibili.model.BilibiliUserInfo
-import com.starlwr.bot.bilibili.model.FansMedal
-import com.starlwr.bot.bilibili.model.Guard
-import com.starlwr.bot.bilibili.util.BilibiliApiUtil
+import com.starlwr.bot.bilibili.api.model.BilibiliUserInfo
+import com.starlwr.bot.bilibili.api.model.FansMedal
+import com.starlwr.bot.bilibili.api.model.Guard
+import com.starlwr.bot.bilibili.api.BilibiliApiService
+import com.starlwr.bot.bilibili.live.gift.BilibiliGiftService
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent
-import com.starlwr.bot.core.model.GiftInfo
-import com.starlwr.bot.core.model.LiveStreamerInfo
+import com.starlwr.bot.core.event.model.GiftInfo
+import com.starlwr.bot.core.event.model.LiveStreamerInfo
 import com.starlwr.bot.core.plugin.StarBotComponent
 import org.slf4j.LoggerFactory
 import java.time.Instant
 
 @StarBotComponent
 class BilibiliV2EventParser(
-    private val bilibili: BilibiliApiUtil,
+    private val bilibili: BilibiliApiService,
     private val giftService: BilibiliGiftService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -46,12 +47,12 @@ class BilibiliV2EventParser(
             }
             val count = gift.count.toInt()
             val timestamp = eventTime(gift.timestamp, data)
-            val giftInfo = GiftInfo(gift.id, gift.name, coinValue(gift.discountPrice), count, gift.image)
+            val giftInfo = GiftInfo(gift.id.toString(), gift.name, coinValue(gift.discountPrice), count, gift.image)
             val blindInfo = decoded.blind?.let { blind ->
                 val image = if (completeEvent) {
-                    giftService.getGiftImageUrl(blind.id)
+                    giftService.getGiftImageUrl(blind.id.toString())
                 } else null
-                GiftInfo(blind.id, blind.name, coinValue(blind.price), count, image)
+                GiftInfo(blind.id.toString(), blind.name, coinValue(blind.price), count, image)
             }
             val event = when (gift.coinType.lowercase()) {
                 "silver" -> BilibiliFreeGiftEvent(source, sender, giftInfo, timestamp)
@@ -78,9 +79,9 @@ class BilibiliV2EventParser(
             log.warn("解析直播间 {} 的 INTERACT_WORD_V2 失败: {}", source.roomId, it.toString())
             return emptyList()
         }
-        val medal = decoded.medal?.let { buildMedal(it.targetUid, it.name, it.level, it.lighted, source, completeEvent) }
+        val medal = decoded.medal?.let { buildMedal(it.targetUid.toString(), it.name, it.level, it.lighted, source, completeEvent) }
         val guard = decoded.privilegeType.takeIf { it != 0 }?.let(::Guard)
-        val sender = BilibiliUserInfo(decoded.uid, decoded.name, decoded.face, medal, guard, decoded.wealthLevel)
+        val sender = BilibiliUserInfo(decoded.uid.toString(), decoded.name, decoded.face, medal, guard, decoded.wealthLevel)
         val timestamp = eventTime(decoded.timestamp, data)
         return when (decoded.messageType) {
             1 -> listOf(BilibiliEnterRoomEvent(source, sender, decoded.spread,
@@ -102,17 +103,17 @@ class BilibiliV2EventParser(
     ): BilibiliUserInfo {
         val medalInfo = decoded.senderMedal
         val medal = medalInfo?.let {
-            buildMedal(it.targetUid, it.name, it.level, it.lighted, source, completeEvent)
+            buildMedal(it.targetUid.toString(), it.name, it.level, it.lighted, source, completeEvent)
         }
         val guard = decoded.guardLevel.takeIf { it != 0 }?.let {
             Guard(it, medalInfo?.guardIcon)
         }
-        return BilibiliUserInfo(decoded.senderUid, decoded.senderName, decoded.senderFace,
+        return BilibiliUserInfo(decoded.senderUid.toString(), decoded.senderName, decoded.senderFace,
             medal, guard, decoded.wealthLevel)
     }
 
     private fun buildMedal(
-        targetUid: Long,
+        targetUid: String,
         name: String,
         level: Int,
         lighted: Boolean,

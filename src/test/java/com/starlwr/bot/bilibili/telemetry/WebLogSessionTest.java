@@ -6,7 +6,7 @@ import com.starlwr.bot.bilibili.credential.StoredCookie;
 import com.starlwr.bot.bilibili.http.BilibiliHttpPipeline;
 import com.starlwr.bot.bilibili.http.BilibiliHttpRequest;
 import com.starlwr.bot.bilibili.http.BilibiliHttpResponse;
-import com.starlwr.bot.bilibili.model.Cookies;
+import com.starlwr.bot.bilibili.account.Cookies;
 import kotlin.Unit;
 import kotlin.jvm.functions.Function0;
 import org.junit.jupiter.api.Test;
@@ -53,9 +53,9 @@ class WebLogSessionTest {
         envelope.setCookies(List.of(liveBuvid));
         when(credentials.snapshot()).thenReturn(envelope);
 
-        PlayUrlLease lease = new PlayUrlLease(1, 2, 3, 4, "https://example.invalid/live.m3u8",
+        PlayUrlLease lease = new PlayUrlLease("1", "2", 3L, 4L, "https://example.invalid/live.m3u8",
                 System.currentTimeMillis(), Instant.now().plusSeconds(300).getEpochSecond());
-        when(playUrls.get(1, false)).thenReturn(lease);
+        when(playUrls.get("1", false)).thenReturn(lease);
         BilibiliHttpRequest request = new BilibiliHttpRequest("POST", URI.create("https://data.bilivideo.com/log/web/te9Kl"),
                 Map.of(), new byte[0], com.starlwr.bot.bilibili.http.BilibiliBodyType.JSON,
                 "bilibili-telemetry-weblog", "jvm", false);
@@ -63,7 +63,7 @@ class WebLogSessionTest {
                 .thenReturn(new BilibiliHttpResponse(request, 504, Map.of(), new byte[0], 1, 10));
 
         AtomicReference<WebLogFailure> terminal = new AtomicReference<>();
-        LiveClientContext context = new LiveClientContext(1, 1, 2, 3, 4,
+        LiveClientContext context = new LiveClientContext("1", "1", "2", 3L, 4L,
                 System.currentTimeMillis(), 1, lease);
         WebLogSession session = new WebLogSession(context, properties, http, credentials, playUrls,
                 new CsnSigner(), dispatcher, null, failure -> {
@@ -96,9 +96,9 @@ class WebLogSessionTest {
         envelope.setCookies(List.of(liveBuvid));
         when(credentials.snapshot()).thenReturn(envelope);
 
-        PlayUrlLease lease = new PlayUrlLease(1, 2, 3, 4, "https://example.invalid/live.m3u8",
+        PlayUrlLease lease = new PlayUrlLease("1", "2", 3L, 4L, "https://example.invalid/live.m3u8",
                 System.currentTimeMillis(), Instant.now().plusSeconds(300).getEpochSecond());
-        when(playUrls.get(1, false)).thenReturn(lease);
+        when(playUrls.get("1", false)).thenReturn(lease);
         BilibiliHttpRequest request = new BilibiliHttpRequest("POST", URI.create("https://data.bilivideo.com/log/web/te9Kl"),
                 Map.of(), new byte[0], com.starlwr.bot.bilibili.http.BilibiliBodyType.JSON,
                 "bilibili-telemetry-weblog", "jvm", false);
@@ -110,14 +110,14 @@ class WebLogSessionTest {
 
         AtomicReference<Function0<Unit>> scheduledAction = new AtomicReference<>();
         ScheduledFuture<?> scheduledFuture = mock(ScheduledFuture.class);
-        when(dispatcher.schedule(any(Duration.class), anyString(), anyLong(), any(), any()))
+        when(dispatcher.schedule(any(Duration.class), anyString(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     scheduledAction.set(invocation.getArgument(4));
                     return scheduledFuture;
                 });
 
         AtomicReference<WebLogFailure> terminal = new AtomicReference<>();
-        LiveClientContext context = new LiveClientContext(1, 1, 2, 3, 4,
+        LiveClientContext context = new LiveClientContext("1", "1", "2", 3L, 4L,
                 System.currentTimeMillis(), 1, lease);
         WebLogSession session = new WebLogSession(context, properties, http, credentials, playUrls,
                 new CsnSigner(), dispatcher, null, failure -> {
@@ -131,7 +131,7 @@ class WebLogSessionTest {
         heartbeat.invoke();
 
         verify(http, times(3)).postJson(anyString(), anyMap(), any(), anyString());
-        verify(dispatcher, times(2)).schedule(any(Duration.class), anyString(), anyLong(), any(), any());
+        verify(dispatcher, times(2)).schedule(any(Duration.class), anyString(), any(), any(), any());
         assertNull(terminal.get());
     }
 }

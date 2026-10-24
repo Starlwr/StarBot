@@ -14,14 +14,6 @@ spring:
 
 starbot:
   bilibili:
-    onebot-command:
-      enabled: false
-      websocket-url: ws://127.0.0.1:3000/
-      access-token: ""
-      bot-qq: 0
-      sender-platform: qq-onebot
-      owners: []
-      reconnect-seconds: 3
     account:
       login-on-startup: true
       credential-file: ./config/bilibili-credential.json

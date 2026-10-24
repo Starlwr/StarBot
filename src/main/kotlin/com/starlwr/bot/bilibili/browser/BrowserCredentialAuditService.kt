@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.browser
 import com.alibaba.fastjson2.JSON
 import com.starlwr.bot.bilibili.credential.BilibiliCredentialFileStore
 import com.starlwr.bot.bilibili.credential.BilibiliCredentialService
-import com.starlwr.bot.bilibili.model.Cookies
+import com.starlwr.bot.bilibili.account.Cookies
 import com.starlwr.bot.core.plugin.StarBotComponent
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled

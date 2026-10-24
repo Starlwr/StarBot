@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.report
 
-import com.starlwr.bot.core.factory.StarBotCommonPainterFactory
-import com.starlwr.bot.core.model.TextWithStyle
+import com.starlwr.bot.core.painter.StarBotCommonPainterFactory
+import com.starlwr.bot.core.painter.TextWithStyle
 import com.starlwr.bot.core.painter.ChartPainter
 import com.starlwr.bot.core.painter.CommonPainter
 import com.starlwr.bot.core.plugin.StarBotComponent

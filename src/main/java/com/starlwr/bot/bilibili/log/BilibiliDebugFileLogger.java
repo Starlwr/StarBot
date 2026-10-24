@@ -35,7 +35,7 @@ public class BilibiliDebugFileLogger {
         write(DYNAMIC_LOG, "dynamic", type, "dynamicId", dynamicId, payload);
     }
 
-    public void live(String type, Long roomId, Object payload) {
+    public void live(String type, String roomId, Object payload) {
         write(LIVE_LOG, "live", type, "room", roomId == null ? "-" : roomId.toString(), payload);
     }
 

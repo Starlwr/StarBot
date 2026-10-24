@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.credential
 import com.alibaba.fastjson2.JSON
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties
 import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger
-import com.starlwr.bot.bilibili.model.Cookies
+import com.starlwr.bot.bilibili.account.Cookies
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test

@@ -23,7 +23,7 @@ class TelemetryTaskDispatcher(
 
     fun submit(
         operation: String,
-        roomId: Long? = null,
+        roomId: String? = null,
         onRejected: () -> Unit = {},
         action: () -> Unit,
     ): Boolean = try {
@@ -63,7 +63,7 @@ class TelemetryTaskDispatcher(
     fun schedule(
         delay: Duration,
         operation: String,
-        roomId: Long? = null,
+        roomId: String? = null,
         onRejected: () -> Unit = {},
         action: () -> Unit,
     ): ScheduledFuture<*>? = runCatching {
@@ -76,7 +76,7 @@ class TelemetryTaskDispatcher(
     fun scheduleAtFixedRate(
         interval: Duration,
         operation: String,
-        roomId: Long? = null,
+        roomId: String? = null,
         action: () -> Unit,
     ): ScheduledFuture<*> = scheduler.scheduleAtFixedRate(
         { submit(operation, roomId, action = action) }, interval)

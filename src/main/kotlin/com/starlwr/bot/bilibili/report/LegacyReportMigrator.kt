@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.report
 
 import com.alibaba.fastjson2.JSON
-import com.starlwr.bot.core.datasource.AbstractDataSource
+import com.starlwr.bot.core.push.datasource.AbstractDataSource
 import com.starlwr.bot.core.plugin.StarBotComponent
 import io.lettuce.core.RedisClient
 import org.slf4j.LoggerFactory
@@ -32,7 +32,7 @@ class LegacyReportMigrator(
         val path = candidates.firstOrNull(Files::isRegularFile) ?: return
         var imported = 0
         Files.newBufferedReader(path).useLines { lines -> lines.filter(String::isNotBlank).forEach { line ->
-            val j = JSON.parseObject(line); val uid = j.getLongValue("uid"); val room = j.getLongValue("roomId")
+            val j = JSON.parseObject(line); val uid = j.getString("uid") ?: "0"; val room = j.getString("roomId") ?: "0"
             val time = runCatching { Instant.parse(j.getString("time")).toEpochMilli() }.getOrDefault(System.currentTimeMillis())
             val session = ReportSession("legacy-community:$uid:${time / 86_400_000}", "bilibili", uid, room, j.getString("uname") ?: "", time)
             driver.createOrResume(session)
@@ -55,7 +55,7 @@ class LegacyReportMigrator(
                 "RoomGiftProfit","RoomScTotal","RoomScProfit","RoomCaptainTotal","RoomCaptainCount","RoomCommanderTotal",
                 "RoomCommanderCount","RoomGovernorTotal","RoomGovernorCount").flatMap(redis::hkeys).toSet()
             roomIds.forEach { roomText ->
-                val room = roomText.toLongOrNull() ?: return@forEach; val up = users[room]
+                if (roomText.toLongOrNull() == null) return@forEach; val room = roomText; val up = users[room]
                 val uid = up?.uid ?: room; val now = System.currentTimeMillis()
                 val session = ReportSession("legacy-v2:$uid:$room", "bilibili", uid, room, up?.uname ?: "legacy-v2", now)
                 driver.createOrResume(session)

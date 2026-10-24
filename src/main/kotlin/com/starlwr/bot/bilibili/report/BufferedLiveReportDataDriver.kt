@@ -96,7 +96,7 @@ class BufferedLiveReportDataDriver(
     private fun release(sessionId: String) {
         snapshots.remove(sessionId); localEvents.remove(sessionId); completions.remove(sessionId)
     }
-    @Synchronized override fun recent(uid: Long, limit: Int): List<LiveReportSnapshot> { flushBatch(); return delegate.recent(uid, limit) }
+    @Synchronized override fun recent(uid: String, limit: Int): List<LiveReportSnapshot> { flushBatch(); return delegate.recent(uid, limit) }
     @Synchronized override fun health(): DriverHealth {
         val health = delegate.health()
         return if (health.healthy) DriverHealth(true, "queued=${queue.size},retained=${snapshots.size},completing=${completions.size}") else health

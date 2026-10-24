@@ -1,8 +1,8 @@
 package com.starlwr.bot.bilibili.report
 
-import com.starlwr.bot.bilibili.model.Room
+import com.starlwr.bot.bilibili.api.model.Room
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent
-import com.starlwr.bot.core.service.LiveDataService
+import com.starlwr.bot.core.live.LiveDataService
 import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import com.starlwr.bot.core.plugin.StarBotComponent
@@ -18,8 +18,8 @@ class LiveReportSessionManager(
     private val recoveryProperties: LiveReportRecoveryProperties,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val active = ConcurrentHashMap<Long, ReportSession>()
-    private val completed = ConcurrentHashMap<Long, LiveReportSnapshot>()
+    private val active = ConcurrentHashMap<String, ReportSession>()
+    private val completed = ConcurrentHashMap<String, LiveReportSnapshot>()
 
     @PostConstruct
     fun restoreOpenSessions() {
@@ -27,7 +27,7 @@ class LiveReportSessionManager(
             snapshots.groupBy { it.uid }.forEach { (uid, sessions) ->
                 val ordered = sessions.sortedBy { it.startedAt }
                 ordered.dropLast(1).forEach { stale ->
-                    closeAbnormal(stale.sessionId, ordered.last().startedAt, "duplicate_open_session_recovered")
+                    closeAbnormalSession(stale.sessionId, ordered.last().startedAt, "duplicate_open_session_recovered")
                     log.warn("已异常收口重复的未完成直播报告 Session: uid={}, stale={}, retained={}",
                         uid, stale.sessionId, ordered.last().sessionId)
                 }
@@ -39,7 +39,7 @@ class LiveReportSessionManager(
 
     @Synchronized
     fun onLive(event: StarBotExternalBaseEvent): ReportSessionStartResult {
-        val uid = event.source.uid ?: 0
+        val uid = event.source.uid ?: "0"
         val eventStart = liveStart(event)
         active[uid]?.let { current ->
             val snapshot = driver.snapshot(current.sessionId)
@@ -52,11 +52,11 @@ class LiveReportSessionManager(
                 active[uid] = session(updated)
                 return ReportSessionStartResult(updated, false)
             }
-            closeAbnormal(current.sessionId, event.timestamp, "replaced_by_realtime_live_start")
+            closeAbnormalSession(current.sessionId, event.timestamp, "replaced_by_realtime_live_start")
         }
         val created = ReportSession(
             sessionId = "${event.platform}:$uid:$eventStart", platform = event.platform, uid = uid,
-            roomId = event.source.roomId ?: 0, uname = event.source.uname ?: "", startedAt = eventStart,
+            roomId = event.source.roomId ?: "0", uname = event.source.uname ?: "", startedAt = eventStart,
             collectionStartedAt = event.timestamp, baselineType = ReportBaselineType.FULL,
             apiLiveStartedAt = eventStart,
         )
@@ -79,7 +79,7 @@ class LiveReportSessionManager(
     }
 
     fun interactionSession(event: StarBotExternalBaseEvent): ReportSession {
-        val uid = event.source.uid ?: 0
+        val uid = event.source.uid ?: "0"
         active[uid]?.let { current ->
             if (driver.lifecycleState(current.sessionId) == ReportLifecycleState.PENDING_CLOSE) {
                 val resumed = driver.updateLifecycle(current.sessionId, SessionLifecycleUpdate(
@@ -95,7 +95,7 @@ class LiveReportSessionManager(
             val liveStart = liveDataService.getLiveStartTime(event.platform, uid).orElse(event.timestamp)
                 .takeIf { it > 0 && it <= event.timestamp } ?: event.timestamp
             val partial = ReportSession(
-                "${event.platform}:$uid:$liveStart", event.platform, uid, event.source.roomId ?: 0,
+                "${event.platform}:$uid:$liveStart", event.platform, uid, event.source.roomId ?: "0",
                 event.source.uname ?: "", liveStart, event.timestamp, ReportBaselineType.PARTIAL,
             )
             val snapshot = driver.createOrResume(partial)
@@ -109,7 +109,7 @@ class LiveReportSessionManager(
     fun completed(event: StarBotExternalBaseEvent): LiveReportSnapshot? =
         event.source.uid?.let { completed[it]?.copySafe() }
 
-    fun activeSnapshot(uid: Long): LiveReportSnapshot? = active[uid]?.let { driver.snapshot(it.sessionId) }
+    fun activeSnapshot(uid: String): LiveReportSnapshot? = active[uid]?.let { driver.snapshot(it.sessionId) }
     fun openSnapshots(): List<LiveReportSnapshot> = runCatching { driver.openSessions() }.getOrElse {
         log.warn("读取未收口报告 Session 失败: {}", it.toString()); emptyList()
     }
@@ -129,7 +129,7 @@ class LiveReportSessionManager(
 
     @Synchronized
     fun recoverLive(room: Room, observedAt: Long): LiveReportSnapshot {
-        val uid = room.uid ?: 0
+        val uid = room.uid ?: "0"
         val apiStart = room.getLiveStartTime()?.takeIf { it > 0 }
         active[uid]?.let { current ->
             val snapshot = driver.snapshot(current.sessionId)
@@ -145,10 +145,10 @@ class LiveReportSessionManager(
                 active[uid] = session(updated)
                 return updated
             }
-            closeAbnormal(current.sessionId, observedAt, "api_live_start_changed")
+            closeAbnormalSession(current.sessionId, observedAt, "api_live_start_changed")
         }
         val identityStart = apiStart ?: observedAt
-        val partial = ReportSession("bilibili:$uid:$identityStart", "bilibili", uid, room.roomId ?: 0,
+        val partial = ReportSession("bilibili:$uid:$identityStart", "bilibili", uid, room.roomId ?: "0",
             room.uname ?: "", identityStart, observedAt, ReportBaselineType.PARTIAL, apiStart)
         val snapshot = driver.createOrResume(partial)
         active[uid] = session(snapshot); completed.remove(uid)
@@ -158,7 +158,7 @@ class LiveReportSessionManager(
     }
 
     @Synchronized
-    fun observeOffline(uid: Long, observedAt: Long): LiveReportSnapshot? {
+    fun observeOffline(uid: String, observedAt: Long): LiveReportSnapshot? {
         val current = active[uid] ?: return null
         val snapshot = driver.snapshot(current.sessionId) ?: return null
         val update = SessionLifecycleUpdate(
@@ -170,7 +170,7 @@ class LiveReportSessionManager(
         return driver.updateLifecycle(current.sessionId, update)?.also { active[uid] = session(it) }
     }
 
-    fun markProbeFailure(uid: Long, reason: String): LiveReportSnapshot? {
+    fun markProbeFailure(uid: String, reason: String): LiveReportSnapshot? {
         val current = active[uid] ?: return null
         return driver.updateLifecycle(current.sessionId, SessionLifecycleUpdate(
             recoveryStatus = ReportRecoveryStatus.RECOVERY_FAILED, lastRecoveryReason = reason))
@@ -178,12 +178,12 @@ class LiveReportSessionManager(
     }
 
     @Synchronized
-    fun closeAbnormal(uid: Long, endedAt: Long, reason: String): LiveReportSnapshot? {
+    fun closeAbnormal(uid: String, endedAt: Long, reason: String): LiveReportSnapshot? {
         val current = active.remove(uid) ?: return null
-        return closeAbnormal(current.sessionId, endedAt, reason)?.also { completed[uid] = it }
+        return closeAbnormalSession(current.sessionId, endedAt, reason)?.also { completed[uid] = it }
     }
 
-    private fun closeAbnormal(sessionId: String, endedAt: Long, reason: String): LiveReportSnapshot? =
+    private fun closeAbnormalSession(sessionId: String, endedAt: Long, reason: String): LiveReportSnapshot? =
         driver.complete(sessionId, endedAt, ReportCloseDisposition.ABNORMAL, reason)
 
     fun sameLive(snapshot: LiveReportSnapshot, observedStart: Long): Boolean {

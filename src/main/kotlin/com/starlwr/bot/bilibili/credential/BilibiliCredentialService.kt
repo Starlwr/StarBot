@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSONObject
 import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger
 import com.starlwr.bot.bilibili.http.BilibiliHttpProperties
 import com.starlwr.bot.bilibili.http.configuredProxySelector
-import com.starlwr.bot.bilibili.model.Cookies
+import com.starlwr.bot.bilibili.account.Cookies
 import com.starlwr.bot.core.plugin.StarBotComponent
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired

@@ -40,9 +40,9 @@ class BilibiliDebugFileLoggerTest {
         properties.getNetwork().setFileDeduplicate(true);
 
         List<String> messages = capture("LiveMessageLogger", logger -> {
-            logger.live("ONLINE_RANK_V3", 100L, "rank");
-            logger.live("ONLINE_RANK_V3", 100L, "rank");
-            logger.live("ONLINE_RANK_V3", 100L, "rank");
+            logger.live("ONLINE_RANK_V3", "100", "rank");
+            logger.live("ONLINE_RANK_V3", "100", "rank");
+            logger.live("ONLINE_RANK_V3", "100", "rank");
         }, properties);
 
         assertEquals(1, messages.size());
@@ -55,8 +55,8 @@ class BilibiliDebugFileLoggerTest {
         properties.getNetwork().setFileCategories(Set.of("live:DANMU_MSG"));
 
         List<String> messages = capture("LiveMessageLogger", logger -> {
-            logger.live("ONLINE_RANK_V3", 100L, "rank");
-            logger.live("DANMU_MSG", 100L, "danmu");
+            logger.live("ONLINE_RANK_V3", "100", "rank");
+            logger.live("DANMU_MSG", "100", "danmu");
         }, properties);
 
         assertEquals(1, messages.size());

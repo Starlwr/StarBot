@@ -1,9 +1,9 @@
 package com.starlwr.bot.bilibili.event.live;
 
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.live.common.LikeEvent;
-import com.starlwr.bot.core.model.LiveStreamerInfo;
-import com.starlwr.bot.core.model.UserInfo;
+import com.starlwr.bot.core.event.model.LivePlatform;
+import com.starlwr.bot.core.event.model.LiveStreamerInfo;
+import com.starlwr.bot.core.event.model.UserInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -29,7 +29,7 @@ import java.time.Instant;
  *     </li>
  * </ol>
  * <h4>备注：</h4>
- * <p>无荣耀等级信息，无时间戳信息</p>
+ * <p>无点赞次数信息，无荣耀等级信息，无时间戳信息</p>
  */
 @Getter
 @Setter

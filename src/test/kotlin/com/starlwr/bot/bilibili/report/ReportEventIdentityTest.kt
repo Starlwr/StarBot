@@ -2,13 +2,13 @@ package com.starlwr.bot.bilibili.report
 
 import com.alibaba.fastjson2.JSONObject
 import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent
-import com.starlwr.bot.core.model.LiveStreamerInfo
-import com.starlwr.bot.core.model.UserInfo
+import com.starlwr.bot.core.event.model.LiveStreamerInfo
+import com.starlwr.bot.core.event.model.UserInfo
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class ReportEventIdentityTest {
-    private fun event() = BilibiliDanmuEvent(LiveStreamerInfo(1L, "test", 2L), UserInfo(3L, "sender"), "text")
+    private fun event() = BilibiliDanmuEvent(LiveStreamerInfo("1", "test", "2"), UserInfo("3", "sender"), "text")
     @Test fun `danmu packet identity uses upstream id_str`() {
         val primary = com.alibaba.fastjson2.JSONArray()
         repeat(15) { primary.add(0) }

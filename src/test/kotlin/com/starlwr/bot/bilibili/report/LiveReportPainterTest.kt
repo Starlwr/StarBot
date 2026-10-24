@@ -1,8 +1,8 @@
 package com.starlwr.bot.bilibili.report
 
 import com.starlwr.bot.core.config.StarBotCoreProperties
-import com.starlwr.bot.core.factory.StarBotCommonPainterFactory
-import com.starlwr.bot.core.util.FontUtil
+import com.starlwr.bot.core.painter.FontService
+import com.starlwr.bot.core.painter.StarBotCommonPainterFactory
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -21,12 +21,13 @@ class LiveReportPainterTest {
             paint.autoExpandHeight = 5_000
             paint.fonts = listOf("SansSerif")
         }
-        val fontUtil = FontUtil(DefaultResourceLoader(), properties).also { it.init() }
+        val fontService = FontService(DefaultResourceLoader(), properties)
+            .also { org.springframework.test.util.ReflectionTestUtils.invokeMethod<Unit>(it, "init") }
         val build = BuildProperties(Properties().apply { setProperty("version", "test") })
-        val painter = LiveReportPainter(StarBotCommonPainterFactory(build, properties, fontUtil))
+        val painter = LiveReportPainter(StarBotCommonPainterFactory(build, properties, fontService))
         val now = System.currentTimeMillis()
         val snapshot = LiveReportSnapshot(
-            sessionId = "paint-test", uid = 1, roomId = 2, uname = "测试主播",
+            sessionId = "paint-test", uid = "1", roomId = "2", uname = "测试主播",
             startedAt = now - 300_000, endedAt = now
         ).apply {
             apply(ReportDelta(ReportMetric.DANMU, 6, user = ReportUserDelta("1", "观众", count = 6),

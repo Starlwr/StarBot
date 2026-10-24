@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test
 import java.util.concurrent.*
 
 class BufferedLiveReportReliabilityTest {
-    private val session = ReportSession("buffer-test", "bilibili", 1, 2, "test", 1)
+    private val session = ReportSession("buffer-test", "bilibili", "1", "2", "test", 1)
     private val delta = ReportDelta(ReportMetric.DANMU, 1, occurredAt = 1000)
     private class FailingDriver(val memory: InMemoryLiveReportDataDriver = InMemoryLiveReportDataDriver()) : LiveReportDataDriver by memory {
         var fail = false

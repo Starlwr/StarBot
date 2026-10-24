@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.util;
 
+import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.credential.BilibiliBrowserIdentity;
 import com.starlwr.bot.bilibili.credential.BilibiliCredentialFileStore;
@@ -10,7 +11,7 @@ import com.starlwr.bot.bilibili.http.BilibiliBodyType;
 import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger;
 import com.starlwr.bot.bilibili.risk.BilibiliRiskProperties;
 import com.starlwr.bot.bilibili.risk.GaiaChallengeProvider;
-import com.starlwr.bot.core.util.HttpUtil;
+import com.starlwr.bot.core.support.http.HttpService;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -42,7 +43,7 @@ class BilibiliApiRetryTest {
                 "{\"code\":0,\"data\":{\"ok\":true}}".getBytes(), 1, 1);
         when(pipeline.get(anyString(), anyMap(), anyString())).thenReturn(timeout, success);
 
-        BilibiliApiUtil api = new BilibiliApiUtil(properties, mock(HttpUtil.class),
+        BilibiliApiService api = new BilibiliApiService(properties, mock(HttpService.class),
                 mock(BilibiliBrowserIdentity.class), new BilibiliNetworkLogger(properties), pipeline,
                 credentialStore, new BilibiliRiskProperties(), gaia);
         api.init();

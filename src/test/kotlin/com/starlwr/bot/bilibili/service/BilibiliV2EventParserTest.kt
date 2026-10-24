@@ -6,9 +6,11 @@ import com.starlwr.bot.bilibili.event.live.BilibiliEnterRoomEvent
 import com.starlwr.bot.bilibili.event.live.BilibiliRandomGiftEvent
 import com.starlwr.bot.bilibili.event.live.BilibiliRawLiveEvent
 import com.starlwr.bot.bilibili.log.BilibiliDebugFileLogger
-import com.starlwr.bot.bilibili.model.BilibiliUserInfo
-import com.starlwr.bot.bilibili.util.BilibiliApiUtil
-import com.starlwr.bot.core.model.LiveStreamerInfo
+import com.starlwr.bot.bilibili.api.model.BilibiliUserInfo
+import com.starlwr.bot.bilibili.api.BilibiliApiService
+import com.starlwr.bot.bilibili.live.gift.BilibiliGiftService
+import com.starlwr.bot.bilibili.live.protocol.BilibiliEventParser
+import com.starlwr.bot.core.event.model.LiveStreamerInfo
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
@@ -24,11 +26,11 @@ class BilibiliV2EventParserTest {
         private const val REAL_PAID_GIFT = "CNKUgLHHuqYGEgpDZXJpc2VsdW5lGkpodHRwczovL2kxLmhkc2xiLmNvbS9iZnMvZmFjZS80ZTg1NTllYjk1ODBjMDBjNzhjZGY0NmRiYTk4MTU2YTg4ODUxMDM5LmpwZ0IAUpcFCLzzARIP57KJ5Lid5Zui54Gv54mMGAEgAShkMGQ4ZEIEZ29sZEoTNDgxMjg4ODc1MTcyNDMzODE3NlCg8uTUBlgBYkViYXRjaDpnaWZ0OmNvbWJvX2lkOjM1NDY4Mzc1MTQ0NTU2MzQ6MTg5MzA2MjkyMjozMTE2NDoxNzg4NDI2NTI4LjYwNTdoCnBkeAWFAQAAgD+IAQGSAQbmipXlloLAAa+JEuoBFAoM5Y+v5Y+v5bCP5a6FEIqy14YHigLMAQiKsteGBxLDAQoM5Y+v5Y+v5bCP5a6FEkpodHRwczovL2kwLmhkc2xiLmNvbS9iZnMvZmFjZS9lNDRjYjIwMmJhZTdmNGU0ODhhNGRmNjdiMTQ2OTZmY2IyNDc0YzAyLmpwZzJaCgzlj6/lj6/lsI/lroUSSmh0dHBzOi8vaTAuaGRzbGIuY29tL2Jmcy9mYWNlL2U0NGNiMjAyYmFlN2Y0ZTQ4OGE0ZGY2N2IxNDY5NmZjYjI0NzRjMDIuanBnOgsg////////////AZICBwiM4NcCEAGaAuUBCkpodHRwczovL3MxLmhkc2xiLmNvbS9iZnMvbGl2ZS9lMDUxZGZkNDU1NzY3OGY4ZWRjYWM0OTkzZWQwMGEwOTM1Y2JkOWNjLnBuZxJLaHR0cHM6Ly9pMC5oZHNsYi5jb20vYmZzL2xpdmUvMzJiNzk5MTIwZTE2MTRmYTYyNzViNmQxNWRhN2E1MmIyMWRkMDE5ZC53ZWJwKkpodHRwczovL2kwLmhkc2xiLmNvbS9iZnMvbGl2ZS84MTZmOGI3YWEyMTMyODg4ZmNlOTI4Y2RmYjE3YjljZjIxY2MwODIzLmdpZqoCFAgBEgcI9bfwAhACEgcIjODXAhABWAFqAgggessBCNKUgLHHuqYGEr8BCgpDZXJpc2VsdW5lEkpodHRwczovL2kxLmhkc2xiLmNvbS9iZnMvZmFjZS80ZTg1NTllYjk1ODBjMDBjNzhjZGY0NmRiYTk4MTU2YTg4ODUxMDM5LmpwZzJYCgpDZXJpc2VsdW5lEkpodHRwczovL2kxLmhkc2xiLmNvbS9iZnMvZmFjZS80ZTg1NTllYjk1ODBjMDBjNzhjZGY0NmRiYTk4MTU2YTg4ODUxMDM5LmpwZzoLIP///////////wE="
     }
     private val properties = StarBotBilibiliProperties().also { it.live.isCompleteEvent = false }
-    private val api = mock(BilibiliApiUtil::class.java)
+    private val api = mock(BilibiliApiService::class.java)
     private val gifts = mock(BilibiliGiftService::class.java)
     private val parser = BilibiliEventParser(properties, api, gifts,
         mock(BilibiliDebugFileLogger::class.java))
-    private val source = LiveStreamerInfo(1000L, "streamer", 2000L)
+    private val source = LiveStreamerInfo("1000", "streamer", "2000")
 
     @Test
     fun `gift v2 accepts direct payload and switch false compatibility`() {
@@ -38,7 +40,7 @@ class BilibiliV2EventParserTest {
         assertEquals(2, events.size)
         val first = assertInstanceOf(BilibiliRandomGiftEvent::class.java, events[0])
         val sender = assertInstanceOf(BilibiliUserInfo::class.java, first.sender)
-        assertEquals(42L, sender.uid)
+        assertEquals("42", sender.uid)
         assertEquals("sender", sender.uname)
         assertEquals("face.png", sender.face)
         assertEquals(3, sender.guard.guardType.code)
@@ -91,7 +93,7 @@ class BilibiliV2EventParserTest {
         val event = assertInstanceOf(BilibiliEnterRoomEvent::class.java,
             parser.parseMany(command("INTERACT_WORD_V2", payload), source).single())
         val sender = assertInstanceOf(BilibiliUserInfo::class.java, event.sender)
-        assertEquals(42L, sender.uid)
+        assertEquals("42", sender.uid)
         assertEquals("face.png", sender.face)
         assertEquals("promotion", event.promotionSource)
         assertFalse(sender.fansMedal == null)
@@ -103,7 +105,7 @@ class BilibiliV2EventParserTest {
         val event = assertInstanceOf(BilibiliEnterRoomEvent::class.java,
             parser.parseMany(command("INTERACT_WORD_V2", REAL_INTERACT_ENTER), source).single())
 
-        assertEquals(12677205L, event.sender.uid)
+        assertEquals("12677205", event.sender.uid)
         assertEquals("PNEUMA373", event.sender.uname)
         assertFalse(event.isFromPromotion)
         assertEquals(1_788_425_934_000L, event.timestamp)
@@ -115,7 +117,7 @@ class BilibiliV2EventParserTest {
 
         assertEquals("BilibiliPaidGiftEvent", event.javaClass.simpleName)
         val paid = event as com.starlwr.bot.bilibili.event.live.BilibiliPaidGiftEvent
-        assertEquals(31164L, paid.giftInfo.id)
+        assertEquals("31164", paid.giftInfo.id)
         assertEquals(1, paid.giftInfo.count)
         assertEquals(0.1, paid.giftInfo.price)
         assertEquals(0.1, paid.value)

@@ -6,12 +6,12 @@ import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent
 import com.starlwr.bot.bilibili.event.live.BilibiliRandomGiftEvent
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent
 import com.starlwr.bot.core.event.live.common.RandomGiftEvent
-import com.starlwr.bot.core.handler.DefaultHandlerForEvent
-import com.starlwr.bot.core.handler.StarBotEventHandler
-import com.starlwr.bot.core.model.Message
-import com.starlwr.bot.core.model.PushMessage
+import com.starlwr.bot.core.push.handler.DefaultHandlerForEvent
+import com.starlwr.bot.core.push.handler.StarBotEventHandler
+import com.starlwr.bot.core.message.Message
+import com.starlwr.bot.core.push.model.PushMessage
 import com.starlwr.bot.core.plugin.StarBotComponent
-import com.starlwr.bot.core.sender.StarBotMessageSender
+import com.starlwr.bot.core.message.StarBotMessageSender
 
 @StarBotComponent
 @DefaultHandlerForEvent(event = "com.starlwr.bot.bilibili.event.live.BilibiliRandomGiftEvent")
