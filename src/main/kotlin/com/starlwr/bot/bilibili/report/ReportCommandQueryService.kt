@@ -44,9 +44,12 @@ class ReportCommandQueryService(private val dataSource: AbstractDataSource, priv
         }
         val boxes = snapshots.sumOf { it.counts["box"] ?: 0 }
         if (boxes == 0L) return BlindBoxResult.Stats("盲盒统计 ${range.label}\n暂无记录")
-        val cost = snapshots.sumOf { (it.values["box"] ?: 0.0) - (it.profits["box"] ?: 0.0) }
-        val value = snapshots.sumOf { it.values["box"] ?: 0.0 }
-        val profit = snapshots.sumOf { it.profits["box"] ?: 0.0 }
+        // 金额经 BigDecimal 累加与展示，避免 Double 聚合误差（对齐 Java painter 精度行为）
+        val cost = snapshots.fold(java.math.BigDecimal.ZERO) { acc, s ->
+            acc.add(java.math.BigDecimal.valueOf(s.values["box"] ?: 0.0)).subtract(java.math.BigDecimal.valueOf(s.profits["box"] ?: 0.0))
+        }
+        val value = snapshots.fold(java.math.BigDecimal.ZERO) { acc, s -> acc.add(java.math.BigDecimal.valueOf(s.values["box"] ?: 0.0)) }
+        val profit = snapshots.fold(java.math.BigDecimal.ZERO) { acc, s -> acc.add(java.math.BigDecimal.valueOf(s.profits["box"] ?: 0.0)) }
         val participants = snapshots.flatMap { it.users["box"].orEmpty().keys }.toSet().size
         val gifts = snapshots.flatMap { it.labels["box"].orEmpty().entries }.groupingBy { it.key }.fold(0L) { acc, entry -> acc + entry.value }
             .entries.sortedByDescending { it.value }.take(10).joinToString(", ") { "${it.key} x${it.value}" }.ifEmpty { "无" }
@@ -70,7 +73,8 @@ class ReportCommandQueryService(private val dataSource: AbstractDataSource, priv
 
     private data class Range(val start: LocalDate, val end: LocalDate, val label: String)
 
-    private fun format(value: Double) = java.text.DecimalFormat("0.##").format(value)
+    private fun format(value: java.math.BigDecimal): String =
+        value.setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
 
     companion object {
         const val HELP = "盲盒统计命令:\n盲盒统计 一周\n盲盒统计 一月\n盲盒统计 2026-07-10\n盲盒统计 2026-07-01 2026-07-10"

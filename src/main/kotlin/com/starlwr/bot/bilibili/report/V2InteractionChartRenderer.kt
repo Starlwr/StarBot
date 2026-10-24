@@ -166,7 +166,7 @@ internal object V2InteractionChartRenderer {
     }
 
     private fun format(value: Double): String = if (abs(value - value.toLong()) < 0.001) value.toLong().toString()
-        else java.text.DecimalFormat("0.##").format(value)
+        else java.math.BigDecimal.valueOf(value).setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
 
     private fun quality(g: Graphics2D) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)

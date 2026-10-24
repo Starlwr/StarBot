@@ -40,12 +40,14 @@ class BlindBoxLiveOffReportHandler(private val sender: StarBotMessageSender, pri
         if (count == 0L && params.getBooleanValue("only_when_non_empty", true)) return
 
         val raw = params.getString("message")
+        val value = java.math.BigDecimal.valueOf(stats?.values?.get("box") ?: 0.0)
+        val profit = java.math.BigDecimal.valueOf(stats?.profits?.get("box") ?: 0.0)
         val content = raw
             .replace("{uname}", stats?.uname ?: event.source.uname ?: "")
             .replace("{box_count}", count.toString())
-            .replace("{cost}", fmt((stats?.values?.get("box") ?: 0.0) - (stats?.profits?.get("box") ?: 0.0)))
-            .replace("{value}", fmt(stats?.values?.get("box") ?: 0.0))
-            .replace("{profit}", fmt(stats?.profits?.get("box") ?: 0.0))
+            .replace("{cost}", fmt(value.subtract(profit)))
+            .replace("{value}", fmt(value))
+            .replace("{profit}", fmt(profit))
             .replace("{user_count}", (stats?.users?.get("box")?.size ?: 0).toString())
             .replace("{top_gifts}", stats?.labels?.get("box")?.entries?.sortedByDescending { it.value }
                 ?.take(params.getIntValue("top_limit", 5))?.joinToString(", ") { "${it.key} x${it.value}" }?.ifEmpty { "无" } ?: "无")
@@ -59,5 +61,6 @@ class BlindBoxLiveOffReportHandler(private val sender: StarBotMessageSender, pri
         put("only_when_non_empty", true); put("top_limit", 5)
         put("message", "{uname} 本场盲盒统计\n盲盒次数: {box_count}\n盲盒成本: {cost}\n开出价值: {value}\n盈亏: {profit}\n参与人数: {user_count}\nTOP礼物: {top_gifts}")
     }
-    private fun fmt(value: Double) = java.text.DecimalFormat("0.##").format(value)
+    private fun fmt(value: java.math.BigDecimal): String =
+        value.setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
 }

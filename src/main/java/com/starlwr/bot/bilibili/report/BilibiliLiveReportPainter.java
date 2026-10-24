@@ -465,8 +465,8 @@ public class BilibiliLiveReportPainter {
      * 加载默认 B 站头像
      */
     private BufferedImage loadDefaultFace() {
-        try {
-            return ImageIO.read(resourceLoader.getResource("classpath:images/common/face.png").getInputStream());
+        try (InputStream input = resourceLoader.getResource("classpath:images/common/face.png").getInputStream()) {
+            return ImageIO.read(input);
         } catch (Exception e) {
             log.error("加载默认 B 站头像失败", e);
             return null;
@@ -1172,8 +1172,8 @@ public class BilibiliLiveReportPainter {
                     default -> null;
                 };
                 if (StringUtils.isNotBlank(resource)) {
-                    try {
-                        icons.put(type, ImageIO.read(resourceLoader.getResource(resource).getInputStream()));
+                    try (InputStream input = resourceLoader.getResource(resource).getInputStream()) {
+                        icons.put(type, ImageIO.read(input));
                     } catch (IOException e) {
                         log.error("加载 {} 大航海图标失败", type.getName(), e);
                     }

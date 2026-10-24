@@ -184,7 +184,7 @@ class LiveReportPainter(private val factory: StarBotCommonPainterFactory) {
         if (minutes > 0) append("$minutes 分钟 ")
         if (remaining > 0 || isEmpty()) append("$remaining 秒")
     }.trim()
-    private fun fmt(v:Double)=java.text.DecimalFormat("0.##").format(v)
+    private fun fmt(v:Double)=java.math.BigDecimal.valueOf(v).setScale(2,java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
     private fun title(m:ReportMetric)=mapOf(ReportMetric.DANMU to "弹幕",ReportMetric.BOX to "盲盒",ReportMetric.GIFT to "礼物",ReportMetric.SC to "SC",ReportMetric.GUARD to "大航海").getValue(m)
     private fun interactionTip(metric: ReportMetric) = when (metric) {
         ReportMetric.DANMU -> "收获弹幕数量在本场直播中的分布情况"
