@@ -28,7 +28,7 @@ public class BilibiliLiveLogFileAppender extends AppenderBase<ILoggingEvent> {
         FileAppender<ILoggingEvent> fileAppender = new FileAppender<>();
 
         fileAppender.setName("FILE-" + type);
-        fileAppender.setFile("LiveDebug/" + type + ".log");
+        fileAppender.setFile("debug/Live/" + type + ".log");
         fileAppender.setAppend(true);
 
         PatternLayoutEncoder encoder = new PatternLayoutEncoder();

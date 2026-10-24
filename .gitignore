@@ -1,10 +1,7 @@
 .idea/
 target/
 logs/
-LiveDebug/
-DynamicDebug/
-EventDebug/
-NetworkDebug/
+debug/
 data.json
 cookies.json
 datasource.json

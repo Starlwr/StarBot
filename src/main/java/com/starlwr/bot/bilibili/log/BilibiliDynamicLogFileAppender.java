@@ -28,7 +28,7 @@ public class BilibiliDynamicLogFileAppender extends AppenderBase<ILoggingEvent> 
         FileAppender<ILoggingEvent> fileAppender = new FileAppender<>();
 
         fileAppender.setName("FILE-" + type);
-        fileAppender.setFile("DynamicDebug/" + type + ".log");
+        fileAppender.setFile("debug/Dynamic/" + type + ".log");
         fileAppender.setAppend(true);
 
         PatternLayoutEncoder encoder = new PatternLayoutEncoder();

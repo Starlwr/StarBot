@@ -671,7 +671,7 @@ public class BilibiliLiveReportPainter {
                                 .forEach(entry -> debug.append(entry.getKey())
                                         .append("(").append(entry.getValue()).append(")").append("\n"));
 
-                        Path directory = Paths.get("WordCloudDebug");
+                        Path directory = Paths.get("debug", "WordCloud");
                         Files.createDirectories(directory);
                         DateTimeFormatter fileTimestamp = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
                         Path file = directory.resolve("word-cloud-debug-" + up.getUname() + "-" + fileTimestamp.format(LocalDateTime.now()) + ".log");

@@ -75,7 +75,7 @@ import static org.mockito.Mockito.when;
  * <p>
  * 覆盖：基础信息、数据变动（diff 三态）、弹幕分析（排行榜/曲线/分布/词云）、盲盒分析、礼物分析、
  * SC（醒目留言）分析、大航海分析、进房分析全部模块；报告图片输出至 TestLiveReport 目录，
- * 并验证词云分词调试文件（WordCloudDebug 目录）的生成与清理
+ * 并验证词云分词调试文件（debug/WordCloud 目录）的生成与清理
  */
 public class BilibiliLiveReportPainterTest {
     /**
@@ -140,7 +140,7 @@ public class BilibiliLiveReportPainterTest {
      * 大航海：含三种等级与续费记录
      * <p>
      * 验证：paint 返回 Base64 字符串；{@link #SAVE_IMAGE} 为 true 时额外保存图片并断言文件存在、非空、
-     * 可读取且尺寸有效；同时开启词云分词调试（wordCloudDebug），断言 WordCloudDebug 目录下生成
+     * 可读取且尺寸有效；同时开启词云分词调试（wordCloudDebug），断言 debug/WordCloud 目录下生成
      * word-cloud-debug-测试主播-时间戳.log，内容包含"切词"与"统计"行，并在测试结束后清理调试目录
      */
     @Test
@@ -256,7 +256,7 @@ public class BilibiliLiveReportPainterTest {
         }
 
         // 词云分词调试文件断言与清理
-        Path debugDirectory = Paths.get("WordCloudDebug");
+        Path debugDirectory = Paths.get("debug", "WordCloud");
         try (var stream = Files.list(debugDirectory)) {
             Path debugFile = stream.filter(path -> {
                         String name = path.getFileName().toString();
