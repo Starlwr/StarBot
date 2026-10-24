@@ -505,8 +505,9 @@ public class BilibiliApiService {
 
             cookies = loginCookies;
 
-            Path cookiePath = Path.of("cookies.json");
+            Path cookiePath = Path.of("data", "bilibili-cookies.json");
             try {
+                Files.createDirectories(cookiePath.getParent());
                 Files.writeString(cookiePath, JSON.toJSONString(cookies, JSONWriter.Feature.PrettyFormat), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             } catch (Exception e) {
                 log.error("保存登录凭据文件失败", e);

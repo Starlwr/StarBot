@@ -64,7 +64,7 @@ public class BilibiliAccountService {
     public void login() {
         updateBilibiliWebSign();
 
-        Path cookiePath = Path.of("cookies.json");
+        Path cookiePath = Path.of("data", "bilibili-cookies.json");
 
         try {
             if (!Files.exists(cookiePath)) {
