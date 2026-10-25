@@ -179,7 +179,7 @@ class BilibiliBrowserRuntime(
     private val lock = Any()
     @Volatile private var closed = false
     @Volatile private var process: Process? = null
-    @Volatile private var browser: CdpConnection? = null
+    @Volatile var browser: CdpConnection? = null
     @Volatile private var hydratedIdentityRevision: Long = -1
     @Volatile private var info: BrowserRuntimeInfo? = null
     @Volatile private var credentialPage: BrowserPage? = null

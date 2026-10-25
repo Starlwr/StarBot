@@ -23,6 +23,8 @@ class BilibiliRiskProperties {
     var maximumChallenges: Int = 2
     var gaiaEnabled: Boolean = true
     var gaiaBackoffSeconds: MutableList<Long> = mutableListOf(30, 120, 600)
+    /** 交互式 Gaia 验证（浏览器人工过码）最长等待秒数; 超时按失败退避 */
+    var gaiaInteractiveTimeoutSeconds: Long = 300
 }
 
 data class Http412Challenge(
@@ -118,7 +120,11 @@ data class GaiaChallenge(
 }
 
 interface GaiaChallengeProvider {
-    fun submit(challenge: GaiaChallenge): String?
+    /**
+     * 提交挑战并尝试解算。返回 null 表示本轮未能解算(浏览器缺席/超时/用户未完成),
+     * 调用方应退避等待; 返回 [GaiaResolution] 时按其载荷处理。
+     */
+    fun submit(challenge: GaiaChallenge): GaiaResolution?
 }
 
 /** Safe default: expose a replay-oriented challenge record, never synthesize a token. */
@@ -126,7 +132,7 @@ interface GaiaChallengeProvider {
 class ReportingGaiaChallengeProvider(private val properties: BilibiliRiskProperties) : GaiaChallengeProvider {
     private val log = LoggerFactory.getLogger(javaClass)
     private val reports = ConcurrentHashMap<String, Pair<Int, Long>>()
-    override fun submit(challenge: GaiaChallenge): String? {
+    override fun submit(challenge: GaiaChallenge): GaiaResolution? {
         val key = "${challenge.businessCode}|${challenge.originalUri.substringBefore('?')}"
         val now = System.currentTimeMillis()
         val previous = reports[key]

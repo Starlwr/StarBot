@@ -216,6 +216,23 @@ public class StarBotBilibiliProperties {
         /** Maximum room identifiers retained as incident samples. */
         private int disconnectSummarySampleLimit = 10;
 
+        /** getDanmuInfo 连续 -352 失败多少次后进入弹幕连接熔断(仅明确的 -352 计入, 网络错误/超时不计) */
+        private int danmu352Threshold = 3;
+
+        /** 弹幕 -352 熔断探测间隔阶梯, 单位: 毫秒; 默认 1m→5m→15m→30m, 末位为上限循环 */
+        private long[] danmu352ProbeIntervals = {60_000, 300_000, 900_000, 1_800_000};
+
+        public int getDanmu352Threshold() { return danmu352Threshold; }
+        public void setDanmu352Threshold(int value) { danmu352Threshold = value; }
+        public long[] getDanmu352ProbeIntervals() { return danmu352ProbeIntervals; }
+        public void setDanmu352ProbeIntervals(long[] value) { danmu352ProbeIntervals = value; }
+        public long[] danmu352ProbeIntervalsMillis() {
+            long[] configured = danmu352ProbeIntervals;
+            long[] safe = configured == null || configured.length == 0 ? new long[]{60_000} : configured.clone();
+            for (int i = 0; i < safe.length; i++) safe[i] = Math.max(1, safe[i]);
+            return safe;
+        }
+
         /**
          * 礼物数据缓存时间，单位：秒
          */

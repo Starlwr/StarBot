@@ -73,6 +73,25 @@ class BrowserRiskExecutor(
         }
     }
 
+    /**
+     * 在 CfT 浏览器内执行一次 GET 并返回响应（Chrome TLS 指纹 + 浏览器 cookie 通道）。
+     * 用于 Gaia -352 验证通过后的重试: token 绑定浏览器环境, 经 JVM 通道重发仍会被拒。
+     * 浏览器不可用时返回 null, 调用方回落 JVM 通道。
+     */
+    fun executeGetInBrowser(url: String): BilibiliHttpResponse? {
+        if (!gate.ensurePassed()) return null
+        return runCatching {
+            val page = runtime.createPage()
+            try {
+                navigate(page, url).toResponse(
+                    BilibiliHttpRequest("GET", URI.create(url)), System.nanoTime())
+            } finally {
+                runtime.closePage(page)
+            }
+        }.onFailure { log.warn("浏览器内执行 GET 失败: url={}, error={}", url, it.toString()) }
+            .getOrNull()
+    }
+
     private fun navigate(page: BrowserPage, url: String): BrowserNavigationResult {
         val document = navigator.navigate(page, url)
         return BrowserNavigationResult(document.status, document.responseHeaders, document.body)

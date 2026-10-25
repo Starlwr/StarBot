@@ -54,13 +54,14 @@ public class BilibiliLiveRoomConnectorFactory {
     private final StandardWebSocketClient webSocketClient;
 
     private final BilibiliFailureIncidentReporter incidentReporter;
+    private final Danmu352CircuitBreaker circuitBreaker;
 
     private final WebSocketContainer container;
 
     private final AtomicBoolean closed = new AtomicBoolean();
 
     @Autowired
-    public BilibiliLiveRoomConnectorFactory(@Qualifier("bilibiliThreadPool") ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiService bilibili, BilibiliNetworkLogger networkLog, DanmakuPacketCodec packetCodec, BilibiliFailureIncidentReporter incidentReporter) {
+    public BilibiliLiveRoomConnectorFactory(@Qualifier("bilibiliThreadPool") ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiService bilibili, BilibiliNetworkLogger networkLog, DanmakuPacketCodec packetCodec, BilibiliFailureIncidentReporter incidentReporter, Danmu352CircuitBreaker circuitBreaker) {
         this.executor = executor;
         this.taskScheduler = taskScheduler;
         this.eventPublisher = eventPublisher;
@@ -73,6 +74,7 @@ public class BilibiliLiveRoomConnectorFactory {
         this.networkLog = networkLog;
         this.packetCodec = packetCodec;
         this.incidentReporter = incidentReporter;
+        this.circuitBreaker = circuitBreaker;
         container = ContainerProvider.getWebSocketContainer();
         container.setDefaultMaxBinaryMessageBufferSize(properties.getLive().getWebSocketBufferSizeBytes());
         this.webSocketClient = new StandardWebSocketClient(container);
@@ -85,7 +87,7 @@ public class BilibiliLiveRoomConnectorFactory {
      */
     public BilibiliLiveRoomConnector create(Up up) {
         if (closed.get()) throw new IllegalStateException("WebSocket connector factory is closed");
-        return new BilibiliLiveRoomConnector(executor, taskScheduler, eventPublisher, properties, liveDataService, accountService, taskService, eventParser, bilibili, networkLog, packetCodec, webSocketClient, incidentReporter, up);
+        return new BilibiliLiveRoomConnector(executor, taskScheduler, eventPublisher, properties, liveDataService, accountService, taskService, eventParser, bilibili, networkLog, packetCodec, webSocketClient, incidentReporter, circuitBreaker, up);
     }
 
     @PreDestroy

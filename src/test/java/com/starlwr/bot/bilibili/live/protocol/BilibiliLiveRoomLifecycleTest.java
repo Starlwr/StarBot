@@ -188,7 +188,7 @@ class BilibiliLiveRoomLifecycleTest {
             });
             connector = new BilibiliLiveRoomConnector(executor, mock(TaskScheduler.class), mock(ApplicationEventPublisher.class),
                     new StarBotBilibiliProperties(), mock(LiveDataService.class), account, tasks, parser, api,
-                    networkLog, codec, client, incidents, up);
+                    networkLog, codec, client, incidents, mock(com.starlwr.bot.bilibili.live.connection.Danmu352CircuitBreaker.class), up);
         }
         void establish() { connector.connect(); workers.remove().run(); }
         Object context() { return ReflectionTestUtils.getField(connector, "activeConnection"); }

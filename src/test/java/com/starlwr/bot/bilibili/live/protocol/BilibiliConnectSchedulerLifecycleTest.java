@@ -18,7 +18,10 @@ class BilibiliConnectSchedulerLifecycleTest {
         when(connector.getUp()).thenReturn(new com.starlwr.bot.bilibili.api.model.Up("1","test","2"));
         Semaphore ran = new Semaphore(0);
         doAnswer(ignored -> { ran.release(); return null; }).when(connector).connect();
-        BilibiliLiveRoomConnectTaskService scheduler = new BilibiliLiveRoomConnectTaskService(properties);
+        com.starlwr.bot.bilibili.live.connection.Danmu352CircuitBreaker breaker =
+                mock(com.starlwr.bot.bilibili.live.connection.Danmu352CircuitBreaker.class);
+        when(breaker.tryAcquireExecutionSlot()).thenReturn(true);
+        BilibiliLiveRoomConnectTaskService scheduler = new BilibiliLiveRoomConnectTaskService(properties, breaker);
         try {
             scheduler.onStarBotDataSourceLoadCompleteEvent();
             for(int i=0;i<100;i++) {
@@ -30,7 +33,7 @@ class BilibiliConnectSchedulerLifecycleTest {
     }
 
     @Test void cancellingDelayedTasksRemovesThemFromTheTimerQueue() {
-        BilibiliLiveRoomConnectTaskService service = new BilibiliLiveRoomConnectTaskService(new StarBotBilibiliProperties());
+        BilibiliLiveRoomConnectTaskService service = new BilibiliLiveRoomConnectTaskService(new StarBotBilibiliProperties(), mock(com.starlwr.bot.bilibili.live.connection.Danmu352CircuitBreaker.class));
         try {
             service.onStarBotDataSourceLoadCompleteEvent();
             BilibiliLiveRoomConnector connector = mock(BilibiliLiveRoomConnector.class);

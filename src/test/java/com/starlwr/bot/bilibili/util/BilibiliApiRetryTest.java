@@ -45,7 +45,8 @@ class BilibiliApiRetryTest {
 
         BilibiliApiService api = new BilibiliApiService(properties, mock(HttpService.class),
                 mock(BilibiliBrowserIdentity.class), new BilibiliNetworkLogger(properties), pipeline,
-                credentialStore, new BilibiliRiskProperties(), gaia);
+                credentialStore, new BilibiliRiskProperties(), gaia,
+                mock(com.starlwr.bot.bilibili.risk.BrowserRiskExecutor.class));
         api.init();
 
         assertTrue(api.requestBilibiliApi(request.getUri().toString(), "GET", Map.of(), Map.of())

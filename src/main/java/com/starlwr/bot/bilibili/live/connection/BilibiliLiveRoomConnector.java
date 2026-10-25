@@ -82,6 +82,8 @@ public class BilibiliLiveRoomConnector {
 
     private final BilibiliFailureIncidentReporter incidentReporter;
 
+    private final Danmu352CircuitBreaker circuitBreaker;
+
     private final AtomicInteger addressCursor = new AtomicInteger();
 
     private final AtomicLong generationSequence = new AtomicLong();
@@ -113,7 +115,7 @@ public class BilibiliLiveRoomConnector {
         private long timestamp;
     }
 
-    public BilibiliLiveRoomConnector(ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiService bilibili, BilibiliNetworkLogger networkLog, DanmakuPacketCodec packetCodec, StandardWebSocketClient webSocketClient, BilibiliFailureIncidentReporter incidentReporter, Up up) {
+    public BilibiliLiveRoomConnector(ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiService bilibili, BilibiliNetworkLogger networkLog, DanmakuPacketCodec packetCodec, StandardWebSocketClient webSocketClient, BilibiliFailureIncidentReporter incidentReporter, Danmu352CircuitBreaker circuitBreaker, Up up) {
         this.executor = executor;
         this.taskScheduler = taskScheduler;
         this.eventPublisher = eventPublisher;
@@ -127,6 +129,7 @@ public class BilibiliLiveRoomConnector {
         this.packetCodec = packetCodec;
         this.webSocketClient = webSocketClient;
         this.incidentReporter = incidentReporter;
+        this.circuitBreaker = circuitBreaker;
 
         this.up = up;
 
@@ -248,6 +251,12 @@ public class BilibiliLiveRoomConnector {
 
             WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
             headers.add("User-Agent", properties.getNetwork().getUserAgent());
+            // 对齐浏览器 WS 行为: 携带 Cookie(会话/ticket/vtoken)与 Origin, 服务端校验连接上下文与 token 签发环境一致性
+            var apiHeaders = bilibili.getBilibiliHeaders();
+            var wsCookie = apiHeaders.get("Cookie");
+            if (wsCookie != null && !wsCookie.isBlank()) headers.add("Cookie", wsCookie);
+            headers.add("Origin", "https://live.bilibili.com");
+            headers.add("Referer", "https://live.bilibili.com/");
             handshakeTrace = networkLog.httpRequest("bilibili-live-ws-handshake", "GET", context.url,
                     headers.toSingleValueMap(), null);
 
@@ -288,6 +297,7 @@ public class BilibiliLiveRoomConnector {
                     if (!isUsable(context)) return;
                     status = ConnectStatus.ERROR;
                     requestReconnect(context, interval, "handshake-failure");
+                    circuitBreaker.onConnectFailure(e);
                     reportHandshakeFailure(context, e, interval);
                 }
             } finally { releaseConnection(context); }
@@ -600,6 +610,9 @@ public class BilibiliLiveRoomConnector {
 
     private void requestReconnect(ConnectionContext context, long delayMillis, String reason) {
         if (!isCurrent(context) || stopping || !context.reconnectGate.trySchedule()) return;
+        // 除握手失败外, 其余重连原因均意味着 getDanmuInfo 已通过(连接曾建立):
+        // 通知熔断器闭合, 恢复全量正常调度
+        if (!"handshake-failure".equals(reason)) circuitBreaker.onProbeOutcome(null);
         boolean scheduled = taskService.schedule(this, delayMillis);
         if (scheduled) {
             log.info("已安排直播间重连: room={}, host={}, generation={}, delayMs={}, reason={}",
@@ -955,6 +968,7 @@ public class BilibiliLiveRoomConnector {
                                     connector.latestDanmus.clear();
                                     connector.startDetectRisk(context);
                                 }
+                                connector.circuitBreaker.onConnectSuccess();
                                 log.info("已成功连接到 {} 的直播间 {}: host={}, generation={}",
                                         up.getUname(), up.getRoomId(), context.host, context.generation);
 

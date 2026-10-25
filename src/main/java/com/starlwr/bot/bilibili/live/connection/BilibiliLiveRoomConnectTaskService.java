@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class BilibiliLiveRoomConnectTaskService {
     private final StarBotBilibiliProperties properties;
     private final ScheduledThreadPoolExecutor scheduler;
+    private final Danmu352CircuitBreaker circuitBreaker;
     // Identity matters when an old connector and its replacement have the same UID.
     private final Map<BilibiliLiveRoomConnector, PendingConnection> pending = new IdentityHashMap<>();
     private final Set<BilibiliLiveRoomConnector> deferred = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -33,8 +34,10 @@ public class BilibiliLiveRoomConnectTaskService {
 
     private static final class PendingConnection { private ScheduledFuture<?> future; }
 
-    public BilibiliLiveRoomConnectTaskService(StarBotBilibiliProperties properties) {
+    public BilibiliLiveRoomConnectTaskService(StarBotBilibiliProperties properties,
+                                              Danmu352CircuitBreaker circuitBreaker) {
         this.properties = properties;
+        this.circuitBreaker = circuitBreaker;
         ThreadFactory factory = runnable -> {
             Thread thread = new Thread(runnable, "bilibili-connect-scheduler");
             thread.setDaemon(true);
@@ -67,11 +70,19 @@ public class BilibiliLiveRoomConnectTaskService {
         if (!started) return deferred.add(connector);
         if (pending.containsKey(connector)) return false;
         long now = System.currentTimeMillis();
-        long earliest = now + Math.max(0, minimumDelayMillis);
-        long interval = Math.max(1, properties.getLive().getLiveRoomConnectInterval());
-        long slot = nextConnectionSlotMillis.getAndUpdate(previous -> Math.max(previous + interval, earliest + interval));
-        long scheduledAt = Math.max(earliest, slot);
-        long delay = Math.max(0, scheduledAt - now);
+        long delay;
+        if (circuitBreaker.isOpen()) {
+            // 熔断期间: 任务保持排队, 绕过全局 slot 均摊(避免 100 房间×1s 的无界抖动),
+            // 直接等到下一次探测时刻, 房间间用哈希错开, 不取消/不重建任务
+            delay = circuitBreaker.nextRetryHintMillis()
+                    + Math.floorMod(connector.hashCode(), 5000);
+        } else {
+            long earliest = now + Math.max(0, minimumDelayMillis);
+            long interval = Math.max(1, properties.getLive().getLiveRoomConnectInterval());
+            long slot = nextConnectionSlotMillis.getAndUpdate(previous -> Math.max(previous + interval, earliest + interval));
+            long scheduledAt = Math.max(earliest, slot);
+            delay = Math.max(0, scheduledAt - now);
+        }
         PendingConnection task = new PendingConnection();
         task.future = scheduler.schedule(() -> {
             synchronized (this) {
@@ -80,6 +91,12 @@ public class BilibiliLiveRoomConnectTaskService {
                 pending.remove(connector);
             }
             if (!properties.getLive().isEnableConnectLiveRoom()) return;
+            // -352 熔断准入: 熔断开启期间任务保持排队等待(不取消/不重建); 探测时刻放行且仅放行一个
+            if (!circuitBreaker.tryAcquireExecutionSlot()) {
+                log.debug("弹幕 -352 熔断等待中, 连接任务保持排队: room={}", connector.getUp().getRoomIdString());
+                schedule(connector, circuitBreaker.nextRetryHintMillis());
+                return;
+            }
             Up up = connector.getUp();
             log.debug("执行直播间连接任务: uid={}, room={}, pending={}", up.getUid(), up.getRoomIdString(), pendingCount());
             connector.connect();

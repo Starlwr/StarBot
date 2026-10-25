@@ -24,7 +24,9 @@ import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger;
 import com.starlwr.bot.bilibili.api.model.*;
 import com.starlwr.bot.bilibili.risk.BilibiliRiskProperties;
 import com.starlwr.bot.bilibili.risk.GaiaChallenge;
+import com.starlwr.bot.bilibili.risk.BrowserRiskExecutor;
 import com.starlwr.bot.bilibili.risk.GaiaChallengeProvider;
+import com.starlwr.bot.bilibili.risk.GaiaResolution;
 import com.starlwr.bot.core.event.model.UserInfo;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 
@@ -48,6 +50,8 @@ import org.springframework.util.CollectionUtils;
 import java.awt.image.BufferedImage;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -89,6 +93,8 @@ public class BilibiliApiService {
 
     private final GaiaChallengeProvider gaiaChallengeProvider;
 
+    private final BrowserRiskExecutor browserRiskExecutor;
+
     private final AtomicLong webSignUpdatedAtMillis = new AtomicLong();
 
     private final AtomicBoolean webSignRefreshInProgress = new AtomicBoolean();
@@ -111,7 +117,8 @@ public class BilibiliApiService {
     public BilibiliApiService(StarBotBilibiliProperties properties, HttpService http,
                            BilibiliBrowserIdentity browserIdentity, BilibiliNetworkLogger networkLog,
                            BilibiliHttpPipeline httpPipeline, BilibiliCredentialFileStore credentialFileStore,
-                           BilibiliRiskProperties riskProperties, GaiaChallengeProvider gaiaChallengeProvider) {
+                           BilibiliRiskProperties riskProperties, GaiaChallengeProvider gaiaChallengeProvider,
+                           @org.springframework.lang.Nullable BrowserRiskExecutor browserRiskExecutor) {
         this.properties = properties;
         this.http = http;
         this.browserIdentity = browserIdentity;
@@ -120,6 +127,7 @@ public class BilibiliApiService {
         this.credentialFileStore = credentialFileStore;
         this.riskProperties = riskProperties;
         this.gaiaChallengeProvider = gaiaChallengeProvider;
+        this.browserRiskExecutor = browserRiskExecutor;
     }
 
     @PostConstruct
@@ -256,17 +264,72 @@ public class BilibiliApiService {
                 Object gaDataValue = challengeData == null ? null : challengeData.get("ga_data");
                 String gaData = gaDataValue == null ? null
                         : gaDataValue instanceof String value ? value : JSON.toJSONString(gaDataValue);
-                String token = gaiaChallengeProvider.submit(new GaiaChallenge(code, voucher, gaData, url));
-                if (StringUtils.isNotBlank(token) && gaiaRetryPerformed.compareAndSet(false, true)) {
-                    String encoded = URLEncoder.encode(token, StandardCharsets.UTF_8);
-                    String retryUrl = url + (url.contains("?") ? "&" : "?") + "gaia_vtoken=" + encoded;
-                    if (code == -401) retryUrl += "&token=" + encoded;
+                GaiaResolution resolution = gaiaChallengeProvider.submit(new GaiaChallenge(code, voucher, gaData, url));
+                if (resolution != null && resolution.getHarvestedEnvelope() != null
+                        && gaiaRetryPerformed.compareAndSet(false, true)) {
+                    // 浏览器环境自行通过: 直接带回完整响应, StarBot 不再自发请求
+                    log.info("Bilibili Gaia challenge 已由浏览器环境直接通过并带回响应: code={}, uri={}", code, url);
+                    result = resolution.getHarvestedEnvelope();
+                    code = result.getInteger("code");
+                } else if (resolution != null && StringUtils.isNotBlank(resolution.getVtoken())
+                        && gaiaRetryPerformed.compareAndSet(false, true)) {
+                    String token = resolution.getVtoken();
+                    // 网页端语义: WBI 签名请求(gaia_vtoken 进入 params 后重过签名中间件);
+                    // 非 WBI 端点保持追加语义。同时携带 header 与 Cookie 两条 vtoken 通道。
+                    String retryUrl;
+                    if (url.contains("w_rid=") && sign != null) {
+                        Map<String, Object> retryParams = new LinkedHashMap<>();
+                        URI originalUri = URI.create(url);
+                        if (originalUri.getRawQuery() != null) {
+                            for (String pair : originalUri.getRawQuery().split("&")) {
+                                int eq = pair.indexOf('=');
+                                String key = eq < 0 ? pair : pair.substring(0, eq);
+                                if (key.equals("wts") || key.equals("w_rid") || key.equals("gaia_vtoken") || key.equals("token")) continue;
+                                String value = eq < 0 ? "" : URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
+                                retryParams.put(key, value);
+                            }
+                        }
+                        retryParams.put("gaia_vtoken", token);
+                        if (code == -401) retryParams.put("token", token);
+                        retryUrl = "https://" + originalUri.getHost() + originalUri.getRawPath()
+                                + BilibiliWbiUtil.getWbiSign(retryParams, sign.getImgKey(), sign.getSubKey(),
+                                properties.getNetwork().isWbiEncodedQuery());
+                    } else {
+                        String encoded = URLEncoder.encode(token, StandardCharsets.UTF_8);
+                        retryUrl = url + (url.contains("?") ? "&" : "?") + "gaia_vtoken=" + encoded;
+                        if (code == -401) retryUrl += "&token=" + encoded;
+                    }
                     Map<String, String> retryHeaders = new HashMap<>(headers);
                     retryHeaders.put("x-bili-gaia-vtoken", token);
-                    log.info("Bilibili Gaia challenge 已由交互 provider 完成，原请求仅重试一次: code={}, uri={}", code, url);
-                    response = "GET".equalsIgnoreCase(method)
-                            ? httpPipeline.get(retryUrl, retryHeaders, "bilibili-api-gaia-retry")
-                            : httpPipeline.postForm(retryUrl, retryHeaders, params, "bilibili-api-gaia-retry");
+                    var browserSnapshot = credentialFileStore.snapshot();
+                    if (browserSnapshot != null) {
+                        String vtokenValue = browserSnapshot.getCookies().stream()
+                                .filter(cookie -> "x-bili-gaia-vtoken".equalsIgnoreCase(cookie.getName()))
+                                .map(com.starlwr.bot.bilibili.credential.StoredCookie::getValue)
+                                .filter(StringUtils::isNotBlank)
+                                .findFirst().orElse(null);
+                        if (StringUtils.isNotBlank(vtokenValue)) {
+                            String existingCookie = retryHeaders.get("Cookie");
+                            retryHeaders.put("Cookie", (existingCookie == null || existingCookie.isBlank()
+                                    ? "x-bili-gaia-vtoken=" + vtokenValue
+                                    : existingCookie + "; x-bili-gaia-vtoken=" + vtokenValue));
+                        }
+                    }
+                    log.info("Bilibili Gaia challenge 已由交互 provider 完成，重试一次: code={}, uri={}", code, url);
+                    // token 绑定浏览器验证环境: 优先经 CfT 通道执行重试(Chrome TLS + 浏览器 cookie,
+                    // 含 SDK 写入的 x-bili-gaia-vtoken); 浏览器不可用时回落 JVM 通道(header+query+cookie)
+                    response = null;
+                    if ("GET".equalsIgnoreCase(method) && browserRiskExecutor != null) {
+                        response = browserRiskExecutor.executeGetInBrowser(retryUrl);
+                        if (response != null) {
+                            log.info("Gaia 重试经浏览器通道执行: status={}", response.getStatus());
+                        }
+                    }
+                    if (response == null) {
+                        response = "GET".equalsIgnoreCase(method)
+                                ? httpPipeline.get(retryUrl, retryHeaders, "bilibili-api-gaia-retry")
+                                : httpPipeline.postForm(retryUrl, retryHeaders, params, "bilibili-api-gaia-retry");
+                    }
                     if (!response.successful()) throw new NetworkException(response.getStatus());
                     result = response.json();
                     code = result.getInteger("code");
