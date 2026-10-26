@@ -5,7 +5,6 @@ import com.alibaba.fastjson2.JSONException;
 import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.bilibili.api.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.api.model.Up;
-import com.starlwr.bot.bilibili.api.sign.WebSign;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.QrCodeUtil;
 import lombok.Getter;
@@ -169,7 +168,7 @@ public class BilibiliAccountService {
     @Scheduled(cron = "0 0 0 * * ?")
     public void updateBilibiliWebSign() {
         log.info("开始更新 Bilibili Web Api 签名");
-        WebSign sign = bilibili.generateBilibiliWebSign();
-        log.info("Bilibili Web Api 签名获取成功, ticket: {}, imgKey: {}, subKey: {}", sign.getTicket(), sign.getImgKey(), sign.getSubKey());
+        bilibili.generateBilibiliWebSign();
+        log.info("Bilibili Web Api 签名获取成功");
     }
 }
