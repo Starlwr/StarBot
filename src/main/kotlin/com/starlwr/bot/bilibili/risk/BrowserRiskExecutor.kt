@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON
 import com.alibaba.fastjson2.JSONObject
 import com.starlwr.bot.bilibili.browser.BilibiliBrowserRuntime
 import com.starlwr.bot.bilibili.browser.BrowserIdentityProbe
+import com.starlwr.bot.bilibili.browser.captureRequestIdentity
 import com.starlwr.bot.bilibili.browser.BrowserPageNavigator
 import com.starlwr.bot.bilibili.browser.BrowserPage
 import com.starlwr.bot.bilibili.credential.BilibiliCredentialFileStore
@@ -46,12 +47,13 @@ class BrowserRiskExecutor(
             val page = runtime.createPage()
             try {
                 var navigation = navigate(page, request.uri.toString())
-                if (navigation.status != 412) return@singleFlight navigation.toResponse(request, started)
+                if (navigation.status != 412) return@singleFlight navigation.toResponse(request.copy(identity = captureRequestIdentity(runtime, page,
+                    request.uri.toString(), "http412-response")), started)
                 runtime.synchronizeCookiesFromBrowser("http412-challenge")
-                val challengeCookie = credentialStore.snapshot()?.cookies
-                    ?.filter { it.name.equals("X-BILI-SEC-TOKEN", true) && it.transportScope == "browser" }
-                    ?.filter { request.uri.host.equals(it.domain.trimStart('.'), true) }
-                    ?.maxByOrNull { it.expiresAtEpochSeconds ?: Long.MAX_VALUE }
+                val challengeCookie = runtime.cookiesForRequest(request.uri)
+                    .filter { it.name.equals("X-BILI-SEC-TOKEN", true) && it.transportScope == "browser" }
+                    .filter { request.uri.host.equals(it.domain.trimStart('.'), true) }
+                    .maxByOrNull { it.expiresAtEpochSeconds ?: Long.MAX_VALUE }
                     ?: return@singleFlight null
                 val challenge = resolver.parse("X-BILI-SEC-TOKEN=${challengeCookie.value}; Path=${challengeCookie.path}")
                     ?: return@singleFlight null
@@ -68,7 +70,8 @@ class BrowserRiskExecutor(
                 ))
                 navigation = navigate(page, request.uri.toString())
                 runtime.synchronizeCookiesFromBrowser("http412-retry")
-                navigation.toResponse(request, started)
+                navigation.toResponse(request.copy(identity = captureRequestIdentity(runtime, page,
+                    request.uri.toString(), "http412-response")), started)
             } finally { runtime.closePage(page) }
         }
     }
@@ -78,13 +81,15 @@ class BrowserRiskExecutor(
      * 用于 Gaia -352 验证通过后的重试: token 绑定浏览器环境, 经 JVM 通道重发仍会被拒。
      * 浏览器不可用时返回 null, 调用方回落 JVM 通道。
      */
-    fun executeGetInBrowser(url: String): BilibiliHttpResponse? {
+    @JvmOverloads
+    fun executeGetInBrowser(url: String, sourceChallengeId: String = "browser-response"): BilibiliHttpResponse? {
         if (!gate.ensurePassed()) return null
         return runCatching {
             val page = runtime.createPage()
             try {
-                navigate(page, url).toResponse(
-                    BilibiliHttpRequest("GET", URI.create(url)), System.nanoTime())
+                val navigation = navigate(page, url)
+                navigation.toResponse(BilibiliHttpRequest("GET", URI.create(url),
+                    identity = captureRequestIdentity(runtime, page, url, sourceChallengeId)), System.nanoTime())
             } finally {
                 runtime.closePage(page)
             }

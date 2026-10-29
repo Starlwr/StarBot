@@ -9,6 +9,8 @@ import com.starlwr.bot.bilibili.credential.BilibiliBrowserIdentity
 import com.starlwr.bot.core.plugin.StarBotComponent
 import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicBoolean
+import java.net.URI
+import com.starlwr.bot.bilibili.browser.captureRequestIdentity
 
 /**
  * 交互式 Gaia 解算器（手动方案，Bilibili 页面逻辑自治）。
@@ -73,12 +75,7 @@ class BrowserGaiaVtokenProvider(
         val page = runtime.createPage()
         try {
             navigator.navigate(page, "https://live.bilibili.com/$roomId")
-            // 将 StarBot 身份(buvid*/SESSDATA/ticket)下发浏览器并刷新页面:
-            // 页面自身的 getDanmuInfo 因此绑定 StarBot 身份, 收割的 token 与 WS 认证体一致。
-            // 方向为 JVM→浏览器(StarBot 权威), 不会反向覆盖 StarBot 身份与 buvid*。
-            runCatching { runtime.refreshCanonicalIdentity() }
-                .onFailure { log.warn("身份下发失败(继续以浏览器现状验证): {}", it.toString()) }
-                .onSuccess { runCatching { navigator.navigate(page, "https://live.bilibili.com/$roomId") } }
+            // Keep the browser identity independent from the JVM canonical credentials.
         } catch (e: Exception) {
             log.warn("房间页导航失败: {}", e.toString())
             runtime.closePage(page)
@@ -99,12 +96,13 @@ class BrowserGaiaVtokenProvider(
                     val envelope = fetchGetDanmuEnvelopeInPage(page, challenge.originalUri)
                     if (envelope != null) {
                         log.info("Web 环境 getDanmuInfo 已通过, 直接带回响应: room={}", roomId)
-                        return GaiaResolution(harvestedEnvelope = envelope)
+                        return GaiaResolution(harvestedEnvelope = envelope,
+                            browserIdentity = captureRequestIdentity(runtime, page, challenge.originalUri, challenge.id))
                     }
                 }
 
                 // (c) Bilibili 验证逻辑写入的 vtoken cookie(遵循浏览器侧时效)
-                readVtokenCookie()?.let {
+                readVtokenCookie(challenge.originalUri)?.let {
                     log.info("Gaia 交互验证通过(vtoken cookie): id={}, tokenLen={}", challenge.id, it.length)
                     return GaiaResolution(vtoken = it)
                 }
@@ -154,10 +152,11 @@ class BrowserGaiaVtokenProvider(
                     if (envelope != null) {
                         log.info("Web 环境 getDanmuInfo 已通过, 直接带回响应: room={}",
                             challenge.originalUri.substringAfter("id=").substringBefore('&'))
-                        return GaiaResolution(harvestedEnvelope = envelope)
+                        return GaiaResolution(harvestedEnvelope = envelope,
+                            browserIdentity = captureRequestIdentity(runtime, page, challenge.originalUri, challenge.id))
                     }
                 }
-                readVtokenCookie()?.let {
+                readVtokenCookie(challenge.originalUri)?.let {
                     log.info("Gaia 交互验证通过(vtoken cookie): id={}, tokenLen={}", challenge.id, it.length)
                     return GaiaResolution(vtoken = it)
                 }
@@ -181,7 +180,7 @@ class BrowserGaiaVtokenProvider(
     private fun probeGetDanmuInPage(page: BrowserPage, url: String): Int? {
         val raw = runCatching {
             evaluate(page, """
-                fetch('$url', { credentials: 'include' })
+                fetch(${JSON.toJSONString(url)}, { credentials: 'include' })
                   .then(r => r.json()).then(j => String(j.code)).catch(() => 'error')
             """.trimIndent(), await = true)
         }.getOrNull() ?: return null
@@ -192,7 +191,7 @@ class BrowserGaiaVtokenProvider(
     private fun fetchGetDanmuEnvelopeInPage(page: BrowserPage, url: String): JSONObject? {
         val raw = runCatching {
             evaluate(page, """
-                fetch('$url', { credentials: 'include' }).then(r => r.json()).then(j => JSON.stringify(j)).catch(() => '')
+                fetch(${JSON.toJSONString(url)}, { credentials: 'include' }).then(r => r.json()).then(j => JSON.stringify(j)).catch(() => '')
             """.trimIndent(), await = true)
         }.getOrNull().orEmpty()
         if (raw.isBlank()) return null
@@ -247,13 +246,9 @@ class BrowserGaiaVtokenProvider(
         true
     }.getOrDefault(false)
 
-    /** 浏览器级 CDP 读 vtoken cookie, 不依赖页面 WS 存活, 不回写 StarBot 凭据库。 */
-    private fun readVtokenCookie(): String? = runCatching {
-        val connection = runtime.browser ?: return@runCatching null
-        val cookies = connection.call("Storage.getCookies").getJSONArray("cookies") ?: return@runCatching null
-        cookies.filterIsInstance<JSONObject>()
-            .filter { "x-bili-gaia-vtoken".equals(it.getString("name"), ignoreCase = true) }
-            .maxByOrNull { it.getLongValue("expires") }
-            ?.getString("value")
+    /** Scope reads to the actual request. Reading a token does not persist browser cookies. */
+    private fun readVtokenCookie(url: String): String? = runCatching {
+        runtime.cookiesForRequest(URI.create(url))
+            .firstOrNull { it.name.equals("x-bili-gaia-vtoken", ignoreCase = true) }?.value
     }.getOrNull()
 }

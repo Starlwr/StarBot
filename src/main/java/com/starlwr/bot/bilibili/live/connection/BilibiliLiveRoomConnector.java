@@ -1,4 +1,6 @@
 package com.starlwr.bot.bilibili.live.connection;
+
+import com.starlwr.bot.bilibili.credential.RequestIdentitySnapshot;
 import com.starlwr.bot.bilibili.live.BilibiliBackupLivePushService;
 import com.starlwr.bot.bilibili.account.BilibiliAccountService;
 import com.starlwr.bot.bilibili.live.gift.BilibiliGiftService;
@@ -250,9 +252,10 @@ public class BilibiliLiveRoomConnector {
                     context.hostIndex + 1, context.hostCount);
 
             WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
-            headers.add("User-Agent", properties.getNetwork().getUserAgent());
+            RequestIdentitySnapshot requestIdentity = context.connectInfo.getIdentity();
+            var apiHeaders = requestIdentity == null ? bilibili.getBilibiliHeaders() : requestIdentity.getHeaders();
+            headers.add("User-Agent", apiHeaders.getOrDefault("User-Agent", properties.getNetwork().getUserAgent()));
             // 对齐浏览器 WS 行为: 携带 Cookie(会话/ticket/vtoken)与 Origin, 服务端校验连接上下文与 token 签发环境一致性
-            var apiHeaders = bilibili.getBilibiliHeaders();
             var wsCookie = apiHeaders.get("Cookie");
             if (wsCookie != null && !wsCookie.isBlank()) headers.add("Cookie", wsCookie);
             headers.add("Origin", "https://live.bilibili.com");
@@ -364,11 +367,12 @@ public class BilibiliLiveRoomConnector {
      * 发送认证包
      */
     private void sendVerifyData(ConnectionContext context) {
+        RequestIdentitySnapshot identity = context.connectInfo.getIdentity();
         Map<String, Object> verifyData = Map.of(
-                "uid", accountService.getAccountInfo().getUid(),
+                "uid", identity == null || identity.getUid().isBlank() ? accountService.getAccountInfo().getUid() : identity.getUid(),
                 "roomid", up.getRoomId(),
                 "protover", 3,
-                "buvid", bilibili.getCookies().getBuvid3(),
+                "buvid", identity == null ? bilibili.getCookies().getBuvid3() : identity.getBuvid3(),
                 "support_ack", true,
                 "queue_uuid", randomQueueUuid(),
                 "scene", "room",

@@ -6,6 +6,7 @@ import com.starlwr.bot.bilibili.credential.BilibiliBrowserIdentity
 import com.starlwr.bot.bilibili.credential.BilibiliCredentialFileStore
 import com.starlwr.bot.bilibili.credential.BilibiliCredentialProperties
 import com.starlwr.bot.bilibili.credential.StoredCookie
+import com.starlwr.bot.bilibili.credential.RequestIdentitySnapshot
 import com.starlwr.bot.bilibili.log.BilibiliNetworkLogger
 import com.starlwr.bot.bilibili.risk.BrowserRiskExecutor
 import com.starlwr.bot.core.plugin.StarBotComponent
@@ -78,7 +79,7 @@ enum class BilibiliBodyType(val contentType: String?) {
     RAW("text/plain; charset=UTF-8"), MULTIPART(null)
 }
 
-data class BilibiliHttpRequest(
+data class BilibiliHttpRequest @JvmOverloads constructor(
     val method: String,
     val uri: URI,
     val headers: Map<String, String> = emptyMap(),
@@ -87,6 +88,7 @@ data class BilibiliHttpRequest(
     val channel: String = "bilibili-api",
     val transport: String = "jvm",
     val idempotent: Boolean = method.equals("GET", true) || method.equals("HEAD", true),
+    val identity: RequestIdentitySnapshot? = null,
 )
 
 data class BilibiliHttpResponse(
@@ -129,6 +131,16 @@ class BilibiliHttpPipeline(
     fun get(url: String, headers: Map<String, String> = emptyMap(), channel: String = "bilibili-api") =
         execute(BilibiliHttpRequest("GET", URI.create(url), headers, channel = channel))
 
+    fun snapshotJvmHeaders(url: String, headers: Map<String, String>): Map<String, String> {
+        val result = LinkedHashMap(browserIdentity.headers(accountProperties.userAgent))
+        result.putAll(headers)
+        result["Cookie"] = cookieHeader(URI.create(url), "jvm", headers.entries.firstOrNull { it.key.equals("cookie", true) }?.value)
+        return result.toMap()
+    }
+
+    fun getWithIdentity(url: String, identity: RequestIdentitySnapshot, channel: String): BilibiliHttpResponse =
+        execute(BilibiliHttpRequest("GET", URI.create(url), identity.headers, channel = channel, identity = identity))
+
     fun postForm(url: String, headers: Map<String, String>, params: Map<String, *> , channel: String = "bilibili-api") =
         execute(BilibiliHttpRequest("POST", URI.create(url), headers, encodeForm(params), BilibiliBodyType.FORM, channel, idempotent = false))
 
@@ -163,7 +175,7 @@ class BilibiliHttpPipeline(
         val started = System.nanoTime()
         while (true) {
             val response = sendWithRetries(request) { totalAttempts++ }
-            if (response.status == 412 && request.transport == "jvm") {
+            if (response.status == 412 && request.transport == "jvm" && request.identity?.isBrowser != true) {
                 browserRiskExecutor.resolve412(request)?.let { resolved ->
                     return resolved.copy(attempts = totalAttempts + resolved.attempts,
                         elapsedMillis = (System.nanoTime() - started) / 1_000_000)
@@ -174,6 +186,9 @@ class BilibiliHttpPipeline(
             }
             val location = header(response.headers, "location") ?: return response
             val target = request.uri.resolve(location)
+            require(request.identity == null || canReplayIdentityRedirect(request.uri, target)) {
+                "Refusing to forward a fixed identity to a different origin or cookie path"
+            }
             val method = if (response.status == 303 || ((response.status == 301 || response.status == 302) && request.method == "POST")) "GET" else request.method
             request = request.copy(method = method, uri = target,
                 body = if (method == "GET") ByteArray(0) else request.body,
@@ -207,13 +222,14 @@ class BilibiliHttpPipeline(
 
     private fun send(request: BilibiliHttpRequest, attempt: Int): BilibiliHttpResponse {
         val headers = linkedMapOf<String, String>()
-        headers.putAll(browserIdentity.headers(accountProperties.userAgent))
+        headers.putAll(request.identity?.headers ?: browserIdentity.headers(accountProperties.userAgent))
         headers.putIfAbsent("Accept", "application/json, text/plain, */*")
         headers.putIfAbsent("Accept-Language", "zh-CN,zh;q=0.8,en;q=0.7")
         headers.putIfAbsent("Accept-Encoding", "gzip, deflate, br")
         headers.putAll(request.headers.filterKeys { !it.equals("cookie", true) && !it.equals("content-length", true) })
         request.bodyType.contentType?.let { headers.putIfAbsent("Content-Type", it) }
-        val cookie = cookieHeader(request.uri, request.transport, request.headers.entries.firstOrNull { it.key.equals("cookie", true) }?.value)
+        val callerCookie = request.headers.entries.firstOrNull { it.key.equals("cookie", true) }?.value
+        val cookie = if (request.identity != null) callerCookie.orEmpty() else cookieHeader(request.uri, request.transport, callerCookie)
         if (cookie.isNotBlank()) headers["Cookie"] = cookie
         val builder = HttpRequest.newBuilder(request.uri)
             .timeout(Duration.ofSeconds(httpProperties.requestTimeoutSeconds.coerceAtLeast(1)))
@@ -229,7 +245,8 @@ class BilibiliHttpPipeline(
             require(decoded.size <= httpProperties.maximumResponseBytes) { "Bilibili response exceeds configured limit" }
             val response = BilibiliHttpResponse(request, raw.statusCode(), raw.headers().map(), decoded, attempt,
                 (System.nanoTime() - started) / 1_000_000)
-            mergeSetCookies(request, response)
+            // Isolated session responses must never mutate the canonical JVM credential store.
+            if (request.identity?.isBrowser != true) mergeSetCookies(request, response)
             networkLog.httpResponse(trace, response.status, response.headers, response.text())
             return response
         } catch (error: Exception) {
@@ -337,3 +354,7 @@ class BilibiliHttpPipeline(
 
     companion object { private val REDIRECT_STATUS = setOf(301, 302, 303, 307, 308) }
 }
+
+internal fun canReplayIdentityRedirect(source: URI, target: URI): Boolean =
+    source.scheme.equals(target.scheme, true) && source.host.equals(target.host, true) &&
+        source.port == target.port && source.rawPath == target.rawPath

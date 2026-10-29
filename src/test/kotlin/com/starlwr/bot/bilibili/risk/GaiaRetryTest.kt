@@ -46,6 +46,8 @@ class GaiaRetryTest {
             Mockito.mock(BrowserRiskExecutor::class.java),
         )
         api.init()
+        org.springframework.test.util.ReflectionTestUtils.setField(api, "webSignUpdatedAtMillis",
+            java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis()))
 
         val result = api.requestBilibiliApi(original.uri.toString(), "GET", emptyMap(), emptyMap())
 

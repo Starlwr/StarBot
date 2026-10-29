@@ -59,10 +59,13 @@ starbot:
       allow-address-family-split: true
       start-minimized: true
       headless: false
-      # jvm-authoritative (recommended): JVM alone owns login/refresh; browser drift is audit-only.
-      # validated-bidirectional: same-UID browser Cookie + localStorage refresh generations may be atomically promoted.
-      credential-sync-mode: jvm-authoritative
-      # Browser absence never blocks JVM startup. WARN is masked; DEBUG contains complete drift values for replay.
+      # isolated: JVM and browser own separate identities. Resolver observations never hydrate JVM credentials.
+      # Legacy opt-in: jvm-authoritative / validated-bidirectional enables account synchronization.
+      credential-sync-mode: isolated
+      # False keeps extracted overrides out of the JVM credential file, in this run's memory only.
+      # Chrome retains its own configured profile and login normally. StarBot never deletes that native profile.
+      persist-browser-state: false
+      # Browser absence never blocks JVM startup. Credential values are redacted at every log level.
       credential-audit-interval-seconds: 90
     http:
       connect-timeout-seconds: 10

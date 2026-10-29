@@ -56,7 +56,13 @@ class BilibiliBrowserProperties {
     var allowAddressFamilySplit: Boolean = false
     var startMinimized: Boolean = true
     var headless: Boolean = false
-    var credentialSyncMode: String = "jvm-authoritative"
+    // Browser identity is independent unless a user explicitly enables legacy synchronization.
+    var credentialSyncMode: String = "isolated"
+    // Opt-in export to the JVM credential file. Chrome keeps its own native profile/login independently.
+    var persistBrowserState: Boolean = false
+
+    fun permitsCredentialHydration(): Boolean = credentialSyncMode.trim().lowercase(Locale.ROOT) in
+        setOf("jvm-authoritative", "validated-bidirectional")
     var credentialAuditIntervalSeconds: Long = 90
     var downloadConnectTimeoutSeconds: Long = 15
     var downloadTimeoutSeconds: Long = 300

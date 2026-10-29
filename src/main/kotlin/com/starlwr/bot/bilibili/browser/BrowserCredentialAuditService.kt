@@ -53,7 +53,7 @@ class BrowserCredentialAuditService(
         initialDelayString = "#{\${starbot.bilibili.browser.credential-audit-interval-seconds:90} * 1000}",
     )
     fun audit() = synchronized(lock) {
-        if (!properties.enabled || runtime.runtimeInfo() == null) return
+        if (!properties.enabled || syncMode() == "isolated" || runtime.runtimeInfo() == null) return
         val browser = runCatching { runtime.observeCredentialSnapshot() }.getOrElse { error ->
             log.warn("Bilibili 浏览器 Credential 审计失败；JVM Credential 不受影响: {}", error.toString())
             log.debug("Browser Credential audit detail", error)
@@ -72,7 +72,6 @@ class BrowserCredentialAuditService(
         } else {
             if (fingerprint != lastWarningFingerprint) {
                 log.warn("Bilibili 浏览器 Credential 审计发现漂移（仅告警，不覆盖 JVM）:\n{}", summaryTable(differences))
-                log.debug("Bilibili 浏览器 Credential 漂移完整值:\n{}", rawTable(differences))
                 lastWarningFingerprint = fingerprint
             }
             persistAudit("DRIFT", fingerprint)
@@ -201,18 +200,8 @@ class BrowserCredentialAuditService(
         items.forEach { appendLine("${it.field} | ${it.scope} | ${summary(it.jvmValue)} | ${summary(it.browserValue)}") }
     }.trimEnd()
 
-    private fun rawTable(items: List<CredentialDifference>): String = buildString {
-        appendLine("field | JVM | browser")
-        appendLine("--- | --- | ---")
-        items.forEach { appendLine("${it.field} | ${it.jvmValue} | ${it.browserValue}") }
-    }.trimEnd()
-
-    private fun summary(value: String): String = when {
-        value.isEmpty() -> "<empty>"
-        value.length <= 4 -> "len=${value.length}, value=<masked>, sha=${hash(value)}"
-        value.length <= 12 -> "len=${value.length}, value=${value.take(2)}…${value.takeLast(2)}, sha=${hash(value)}"
-        else -> "len=${value.length}, value=${value.take(4)}…${value.takeLast(4)}, sha=${hash(value)}"
-    }
+    private fun summary(value: String): String =
+        if (value.isEmpty()) "<empty>" else "len=${value.length}, value=<redacted>"
 
     private fun differenceFingerprint(items: List<CredentialDifference>): String = hash(
         items.joinToString("\n") { "${it.field}\u0000${it.jvmValue}\u0000${it.browserValue}" }
@@ -227,6 +216,7 @@ class BrowserCredentialAuditService(
     )
 
     private fun persistAudit(status: String, fingerprint: String) {
+        if (!properties.persistBrowserState) return
         val current = credentialStore.snapshot()?.browser ?: return
         if (current.lastCredentialAuditStatus == status && current.lastCredentialAuditFingerprint == fingerprint) return
         credentialStore.update(critical = true) { envelope ->
@@ -244,16 +234,16 @@ class BrowserCredentialAuditService(
         if (configured in SUPPORTED_SYNC_MODES) return configured
         if (invalidModeWarning != configured) {
             log.warn(
-                "未知的浏览器 Credential 同步模式 '{}', 已安全回退到 jvm-authoritative",
+                "未知的浏览器 Credential 同步模式 '{}', 已安全回退到 isolated",
                 properties.credentialSyncMode,
             )
             invalidModeWarning = configured
         }
-        return "jvm-authoritative"
+        return "isolated"
     }
 
     private companion object {
-        val SUPPORTED_SYNC_MODES = setOf("jvm-authoritative", "validated-bidirectional")
+        val SUPPORTED_SYNC_MODES = setOf("isolated", "jvm-authoritative", "validated-bidirectional")
         val CORE_AUTH_FIELDS = setOf("SESSDATA", "bili_jct", "DedeUserID")
         val CORE_AUDIT_FIELDS = setOf("SESSDATA", "bili_jct", "DedeUserID", "buvid3", "buvid4")
     }

@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.risk
 
 import com.alibaba.fastjson2.JSONObject
+import com.starlwr.bot.bilibili.credential.RequestIdentitySnapshot
 
 /**
  * Gaia 挑战解算结果。
@@ -9,9 +10,10 @@ import com.alibaba.fastjson2.JSONObject
  * @property harvestedEnvelope 浏览器环境自行通过后直接带回的完整 API 响应
  *         ({code:0, data:{token, host_list}}), StarBot 无需再发自身请求
  */
-data class GaiaResolution(
+data class GaiaResolution @JvmOverloads constructor(
     val vtoken: String? = null,
     val harvestedEnvelope: JSONObject? = null,
+    val browserIdentity: RequestIdentitySnapshot? = null,
 ) {
     val resolved: Boolean
         get() = !vtoken.isNullOrBlank() || harvestedEnvelope != null
