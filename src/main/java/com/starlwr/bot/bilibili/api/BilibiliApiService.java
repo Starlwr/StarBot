@@ -767,10 +767,21 @@ public class BilibiliApiService {
         // 浏览器身份登记优先: 曾验证成功 → 直接走浏览器通道取回绑定该身份的连接信息;
         // 浏览器身份也被 -352 拒绝时清除登记, 落回 JVM 全流程(含 WBI 刷新与 Gaia 解算)
         RequestIdentitySnapshot verified = identityRegistry == null ? null : identityRegistry.lastVerified();
+        String danmuInfoPath = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo";
+        if (verified != null && browserRiskExecutor != null) {
+            // Bilibili Web 会自行轮换 ticket/jct/buvid*: 当前浏览器 jar 与登记快照的关键字段漂移时,
+            // 旧快照作废 → 回落 JVM 自维护身份; 其请求若再遇明确 -352, 会重新进入浏览器解算取回新身份
+            var currentBrowserCookies = browserRiskExecutor.currentBrowserCookies(danmuInfoPath);
+            if (verified.keyIdentityDrifted(currentBrowserCookies)) {
+                identityRegistry.clear();
+                log.info("浏览器凭据已自行刷新(buvid3/buvid4/ticket/jct 漂移), 登记身份作废, 回落 JVM 身份: room={}", roomId);
+                verified = null;
+            }
+        }
         if (verified != null && browserRiskExecutor != null) {
             Map<String, Object> stickyParams = new HashMap<>();
             stickyParams.put("id", roomId);
-            String stickyUrl = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo"
+            String stickyUrl = danmuInfoPath
                     + BilibiliWbiUtil.getWbiSign(stickyParams, sign.getImgKey(), sign.getSubKey(),
                     properties.getNetwork().isWbiEncodedQuery());
             var browserResponse = browserRiskExecutor.executeGetInBrowser(stickyUrl, "sticky-browser-identity");

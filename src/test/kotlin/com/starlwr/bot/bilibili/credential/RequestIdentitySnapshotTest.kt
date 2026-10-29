@@ -49,4 +49,28 @@ class RequestIdentitySnapshotTest {
         assertFalse(serialized.contains("secret-buvid"))
         assertFalse(serialized.contains("identity"))
     }
+
+    @Test
+    fun `browser identity is stale when bilibili rotates key cookies`() {
+        val snapshot = RequestIdentitySnapshot(
+            mapOf("Cookie" to "buvid3=old; buvid4=old4; bili_ticket=old-ticket; bili_jct=old-jct"),
+            "old", "42", "challenge-1")
+
+        // 关键字段一致 → 未漂移
+        assertFalse(snapshot.keyIdentityDrifted(mapOf(
+            "buvid3" to "old", "buvid4" to "old4", "bili_ticket" to "old-ticket", "bili_jct" to "old-jct")))
+        // 浏览器自行轮换任一关键字段 → 作废
+        assertTrue(snapshot.keyIdentityDrifted(mapOf(
+            "buvid3" to "new", "buvid4" to "old4", "bili_ticket" to "old-ticket", "bili_jct" to "old-jct")))
+        assertTrue(snapshot.keyIdentityDrifted(mapOf(
+            "buvid3" to "old", "buvid4" to "new4", "bili_ticket" to "old-ticket", "bili_jct" to "old-jct")))
+        // 登记时缺失的关键凭据在浏览器出现(ticket 首次下发) → 身份基础变化
+        val noTicket = RequestIdentitySnapshot(
+            mapOf("Cookie" to "buvid3=old; buvid4=old4"),
+            "old", "42", "challenge-1")
+        assertTrue(noTicket.keyIdentityDrifted(mapOf(
+            "buvid3" to "old", "buvid4" to "old4", "bili_ticket" to "fresh", "bili_jct" to "old-jct")))
+        // 无法读取浏览器 jar(空) → 无法判定, 保守沿用
+        assertFalse(snapshot.keyIdentityDrifted(emptyMap()))
+    }
 }

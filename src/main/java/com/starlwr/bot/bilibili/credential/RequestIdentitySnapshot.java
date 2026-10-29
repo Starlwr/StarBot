@@ -31,5 +31,30 @@ public final class RequestIdentitySnapshot {
     public String getUid() { return uid; }
     public String getSourceChallengeId() { return sourceChallengeId; }
     public boolean isBrowser() { return sourceChallengeId != null && !sourceChallengeId.isBlank(); }
+
+    /**
+     * 判定登记的浏览器身份是否已过期: Bilibili Web 会自行轮换 buvid3/buvid4/bili_ticket/bili_jct,
+     * 当前浏览器 jar 的任一关键字段与本快照不一致(轮换/新增)即视为旧快照作废, 应回落 JVM 身份。
+     * current 为空(浏览器不可用/读取失败)时无法判定, 保守沿用登记身份。
+     */
+    public boolean keyIdentityDrifted(Map<String, String> currentCookies) {
+        if (currentCookies == null || currentCookies.isEmpty()) return false;
+        Map<String, String> recorded = new java.util.HashMap<>();
+        for (String part : headers.getOrDefault("Cookie", "").split(";")) {
+            int eq = part.indexOf('=');
+            if (eq > 0) recorded.put(part.substring(0, eq).trim(), part.substring(eq + 1).trim());
+        }
+        for (String key : KEY_IDENTITY_COOKIES) {
+            String old = recorded.get(key);
+            String now = currentCookies.get(key);
+            if (old != null && now != null && !old.equals(now)) return true;
+            if (old == null && now != null && !now.isBlank()) return true;
+        }
+        return false;
+    }
+
+    private static final java.util.List<String> KEY_IDENTITY_COOKIES =
+            java.util.List.of("buvid3", "buvid4", "bili_ticket", "bili_jct");
+
     @Override public String toString() { return "RequestIdentitySnapshot[source=" + (isBrowser() ? "browser" : "jvm") + "]"; }
 }

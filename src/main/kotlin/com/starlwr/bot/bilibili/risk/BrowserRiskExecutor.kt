@@ -82,6 +82,11 @@ class BrowserRiskExecutor(
      * 浏览器不可用时返回 null, 调用方回落 JVM 通道。
      */
     @JvmOverloads
+    /** 只读当前浏览器 jar 中对该 URL 生效的 cookie(名称→值); 不做任何持久化或身份改写。 */
+    fun currentBrowserCookies(url: String): Map<String, String> = runCatching {
+        runtime.cookiesForRequest(URI.create(url)).associate { it.name to it.value }
+    }.onFailure { log.warn("读取浏览器 cookie 失败: {}", it.toString()) }.getOrDefault(emptyMap())
+
     fun executeGetInBrowser(url: String, sourceChallengeId: String = "browser-response"): BilibiliHttpResponse? {
         if (!gate.ensurePassed()) return null
         return runCatching {
