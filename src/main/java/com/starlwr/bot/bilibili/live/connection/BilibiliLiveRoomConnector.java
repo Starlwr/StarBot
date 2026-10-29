@@ -86,6 +86,9 @@ public class BilibiliLiveRoomConnector {
 
     private final Danmu352CircuitBreaker circuitBreaker;
 
+    /** 该会话曾以浏览器身份(-352 解算后)连接: 其重连继续沿用浏览器身份 */
+    private volatile boolean stickyBrowserIdentity;
+
     private final AtomicInteger addressCursor = new AtomicInteger();
 
     private final AtomicLong generationSequence = new AtomicLong();
@@ -195,7 +198,7 @@ public class BilibiliLiveRoomConnector {
      * @return 直播间连接地址
      */
     private ConnectTarget getConnectTarget() {
-        ConnectInfo connectInfo = bilibili.getLiveRoomConnectInfo(up.getRoomId());
+        ConnectInfo connectInfo = bilibili.getLiveRoomConnectInfo(up.getRoomId(), stickyBrowserIdentity);
         List<ConnectAddress> addresses = connectInfo.getAddresses();
         if (addresses == null || addresses.isEmpty()) {
             throw new IllegalStateException("getDanmuInfo returned no websocket hosts for room " + up.getRoomId());
@@ -973,6 +976,7 @@ public class BilibiliLiveRoomConnector {
                                     connector.startDetectRisk(context);
                                 }
                                 connector.circuitBreaker.onConnectSuccess();
+                                if (context.connectInfo.getIdentity() != null && context.connectInfo.getIdentity().isBrowser()) connector.stickyBrowserIdentity = true;
                                 log.info("已成功连接到 {} 的直播间 {}: host={}, generation={}",
                                         up.getUname(), up.getRoomId(), context.host, context.generation);
 

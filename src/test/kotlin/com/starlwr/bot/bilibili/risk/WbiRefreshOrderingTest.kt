@@ -26,7 +26,7 @@ class WbiRefreshOrderingTest {
     private val api = Mockito.spy(BilibiliApiService(properties, Mockito.mock(HttpService::class.java),
         Mockito.mock(BilibiliBrowserIdentity::class.java), BilibiliNetworkLogger(properties), pipeline,
         Mockito.mock(BilibiliCredentialFileStore::class.java), BilibiliRiskProperties(), provider,
-        Mockito.mock(BrowserRiskExecutor::class.java))).also { it.init() }
+        Mockito.mock(BrowserRiskExecutor::class.java), null)).also { it.init() }
     private val original = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id=1&wts=1&w_rid=old"
     private fun response(code: Int) = BilibiliHttpResponse(BilibiliHttpRequest("GET", URI.create(original)),
         200, emptyMap(), """{"code":$code,"data":{"ok":true}}""".toByteArray(), 1, 1)

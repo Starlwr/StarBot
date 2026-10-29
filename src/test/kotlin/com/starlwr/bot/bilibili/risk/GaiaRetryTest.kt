@@ -43,7 +43,7 @@ class GaiaRetryTest {
             properties, Mockito.mock(HttpService::class.java), Mockito.mock(BilibiliBrowserIdentity::class.java),
             BilibiliNetworkLogger(properties), pipeline, Mockito.mock(BilibiliCredentialFileStore::class.java),
             BilibiliRiskProperties(), provider,
-            Mockito.mock(BrowserRiskExecutor::class.java),
+            Mockito.mock(BrowserRiskExecutor::class.java), null,
         )
         api.init()
         org.springframework.test.util.ReflectionTestUtils.setField(api, "webSignUpdatedAtMillis",
@@ -83,7 +83,7 @@ class GaiaRetryTest {
             properties, Mockito.mock(HttpService::class.java), Mockito.mock(BilibiliBrowserIdentity::class.java),
             BilibiliNetworkLogger(properties), pipeline, store,
             BilibiliRiskProperties(), provider,
-            Mockito.mock(BrowserRiskExecutor::class.java),
+            Mockito.mock(BrowserRiskExecutor::class.java), null,
         )
         api.init()
         // 注入 WBI 状态以启用重签路径

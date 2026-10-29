@@ -97,6 +97,8 @@ public class BilibiliApiService {
 
     private final BrowserRiskExecutor browserRiskExecutor;
 
+    private final com.starlwr.bot.bilibili.risk.BrowserIdentityRegistry identityRegistry;
+
     private final AtomicLong webSignUpdatedAtMillis = new AtomicLong();
 
     private final AtomicBoolean webSignRefreshInProgress = new AtomicBoolean();
@@ -120,7 +122,8 @@ public class BilibiliApiService {
                            BilibiliBrowserIdentity browserIdentity, BilibiliNetworkLogger networkLog,
                            BilibiliHttpPipeline httpPipeline, BilibiliCredentialFileStore credentialFileStore,
                            BilibiliRiskProperties riskProperties, GaiaChallengeProvider gaiaChallengeProvider,
-                           @org.springframework.lang.Nullable BrowserRiskExecutor browserRiskExecutor) {
+                           @org.springframework.lang.Nullable BrowserRiskExecutor browserRiskExecutor,
+                           @org.springframework.lang.Nullable com.starlwr.bot.bilibili.risk.BrowserIdentityRegistry identityRegistry) {
         this.properties = properties;
         this.http = http;
         this.browserIdentity = browserIdentity;
@@ -130,6 +133,7 @@ public class BilibiliApiService {
         this.riskProperties = riskProperties;
         this.gaiaChallengeProvider = gaiaChallengeProvider;
         this.browserRiskExecutor = browserRiskExecutor;
+        this.identityRegistry = identityRegistry;
     }
 
     @PostConstruct
@@ -750,9 +754,49 @@ public class BilibiliApiService {
      * @return 直播间连接信息
      */
     public ConnectInfo getLiveRoomConnectInfo(@NonNull String roomId) {
+        return getLiveRoomConnectInfo(roomId, false);
+    }
+
+    /**
+     * preferBrowserIdentity: 该会话曾以浏览器身份连接成功(-352 后), 其重连继续沿用浏览器身份;
+     * 否则: -352 熔断激活期间或登记表中已有验证身份时优先浏览器通道, 常规情况优先 JVM 身份。
+     */
+    public ConnectInfo getLiveRoomConnectInfo(@NonNull String roomId, boolean preferBrowserIdentity) {
         RequestIdentitySnapshot initial = RequestIdentitySnapshot.jvm(httpPipeline.snapshotJvmHeaders(
                     "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo", getBilibiliHeaders()));
-        AtomicReference<RequestIdentitySnapshot> selected = new AtomicReference<>(initial);
+        // 浏览器身份登记优先: 曾验证成功 → 直接走浏览器通道取回绑定该身份的连接信息;
+        // 浏览器身份也被 -352 拒绝时清除登记, 落回 JVM 全流程(含 WBI 刷新与 Gaia 解算)
+        RequestIdentitySnapshot verified = identityRegistry == null ? null : identityRegistry.lastVerified();
+        if (verified != null && browserRiskExecutor != null) {
+            Map<String, Object> stickyParams = new HashMap<>();
+            stickyParams.put("id", roomId);
+            String stickyUrl = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo"
+                    + BilibiliWbiUtil.getWbiSign(stickyParams, sign.getImgKey(), sign.getSubKey(),
+                    properties.getNetwork().isWbiEncodedQuery());
+            var browserResponse = browserRiskExecutor.executeGetInBrowser(stickyUrl, "sticky-browser-identity");
+            if (browserResponse != null && browserResponse.successful()) {
+                var json = browserResponse.json();
+                var code = json.getInteger("code");
+                var observed = browserResponse.getRequest().getIdentity();
+                if (code != null && code == 0) {
+                    if (identityRegistry != null && observed != null && observed.isBrowser()) {
+                        identityRegistry.recordVerified(observed);
+                    }
+                    var data = json.getJSONObject("data");
+                    if (data != null) {
+                        List<ConnectAddress> harvested = data.getJSONArray("host_list")
+                                .toJavaList(ConnectAddress.class);
+                        ConnectInfo info = new ConnectInfo(data.getString("token"), harvested);
+                        info.setIdentity(observed != null ? observed : verified);
+                        return info;
+                    }
+                } else if (code != null && code == -352 && identityRegistry != null) {
+                    identityRegistry.clear();
+                }
+            }
+        }
+        RequestIdentitySnapshot selectedInitial = preferBrowserIdentity && verified != null ? verified : initial;
+        AtomicReference<RequestIdentitySnapshot> selected = new AtomicReference<>(selectedInitial);
         Map<String, Object> params = new HashMap<>();
         params.put("id", roomId);
 

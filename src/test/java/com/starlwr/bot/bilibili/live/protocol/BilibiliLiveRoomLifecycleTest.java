@@ -175,7 +175,8 @@ class BilibiliLiveRoomLifecycleTest {
             when(networkLog.httpRequest(anyString(), anyString(), anyString(), anyMap(), isNull()))
                     .thenReturn(new BilibiliNetworkLogger.HttpTrace(1L, "test", "live-ws", "GET", "https://example.invalid", System.nanoTime()));
             doAnswer(call -> { workers.add(call.getArgument(0)); return null; }).when(executor).execute(any(Runnable.class));
-            when(api.getLiveRoomConnectInfo("2")).thenReturn(new ConnectInfo("test", List.of(new ConnectAddress("example.invalid", 80, 443, 80))));
+            when(api.getLiveRoomConnectInfo("2", false)).thenReturn(new ConnectInfo("test", List.of(new ConnectAddress("example.invalid", 80, 443, 80))));
+            when(api.getLiveRoomConnectInfo("2", true)).thenReturn(new ConnectInfo("test", List.of(new ConnectAddress("example.invalid", 80, 443, 80))));
             when(session.isOpen()).thenAnswer(ignored -> open.get());
             doAnswer(ignored -> { open.set(false); return null; }).when(session).close(any(CloseStatus.class));
             when(tasks.schedule(any(), anyLong())).thenReturn(true);
