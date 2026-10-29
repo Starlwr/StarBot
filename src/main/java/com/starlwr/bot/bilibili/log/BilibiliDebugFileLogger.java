@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Locale;
 import java.util.Set;
 
-/** Structured raw capture for replay-oriented DynamicDebug and LiveDebug files. */
+/** Structured raw capture for replay-oriented debug/Dynamic and debug/Live files. */
 @StarBotComponent
 public class BilibiliDebugFileLogger {
     private static final Logger LOG = LoggerFactory.getLogger(BilibiliDebugFileLogger.class);

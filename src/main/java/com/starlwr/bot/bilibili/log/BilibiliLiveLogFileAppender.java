@@ -1,8 +1,8 @@
 package com.starlwr.bot.bilibili.log;
 
-/** Daily LiveDebug capture stream. */
+/** Daily live raw capture stream under debug/Live. */
 public class BilibiliLiveLogFileAppender extends AbstractBilibiliRollingLogFileAppender {
     public BilibiliLiveLogFileAppender() {
-        super("LiveDebug/%d{yyyy-MM,aux}/starbot-live-%d{yyyy-MM-dd}.log");
+        super("debug/Live/%d{yyyy-MM,aux}/starbot-live-%d{yyyy-MM-dd}.log");
     }
 }

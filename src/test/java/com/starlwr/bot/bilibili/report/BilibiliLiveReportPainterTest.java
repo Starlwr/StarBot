@@ -13,14 +13,21 @@ import com.starlwr.bot.core.painter.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.event.model.UserInfo;
 import com.starlwr.bot.core.painter.CommonPainter;
 import com.starlwr.bot.core.live.LiveDataService;
+import com.starlwr.bot.core.painter.ChartPainter;
 import com.starlwr.bot.core.painter.FontService;
+import com.starlwr.bot.core.painter.TextWithStyle;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.nio.file.Files;
@@ -33,6 +40,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
+import org.apache.commons.lang3.tuple.Pair;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -43,7 +53,12 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.RETURNS_SELF;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -55,7 +70,7 @@ import static org.mockito.Mockito.when;
  * <p>
  * 覆盖：基础信息、数据变动（diff 三态）、弹幕分析（排行榜/曲线/分布/词云）、盲盒分析、礼物分析、
  * SC（醒目留言）分析、大航海分析、进房分析、点赞分析、分享分析全部模块；报告图片输出至 TestLiveReport 目录，
- * 并验证词云分词调试文件（WordCloudDebug 目录）的生成与清理
+ * 并验证词云分词调试文件（debug/WordCloud 目录）的生成与清理
  */
 public class BilibiliLiveReportPainterTest {
     /**
@@ -120,7 +135,7 @@ public class BilibiliLiveReportPainterTest {
      * 大航海：含三种等级与续费记录
      * <p>
      * 验证：paint 返回 Base64 字符串；{@link #SAVE_IMAGE} 为 true 时额外保存图片并断言文件存在、非空、
-     * 可读取且尺寸有效；同时开启词云分词调试（wordCloudDebug），断言 WordCloudDebug 目录下生成
+     * 可读取且尺寸有效；同时开启词云分词调试（wordCloudDebug），断言 debug/WordCloud 目录下生成
      * word-cloud-debug-测试主播-时间戳.log，内容包含"切词"与"统计"行，并在测试结束后清理调试目录
      */
     @Test
@@ -244,7 +259,7 @@ public class BilibiliLiveReportPainterTest {
         }
 
         // 词云分词调试文件断言与清理
-        Path debugDirectory = Paths.get("WordCloudDebug");
+        Path debugDirectory = Paths.get("debug", "WordCloud");
         try (var stream = Files.list(debugDirectory)) {
             Path debugFile = stream.filter(path -> {
                         String name = path.getFileName().toString();
@@ -298,6 +313,82 @@ public class BilibiliLiveReportPainterTest {
         assertTrue(tokens.stream().anyMatch(token -> "测试".equals(token.word)), "正常汉字应保留");
         assertTrue(tokens.stream().anyMatch(token -> "666".equals(token.word)), "数字词条应保留");
         assertTrue(tokens.stream().anyMatch(token -> "✓".equals(token.word)), "完整符号（✓）应保留");
+    }
+
+    /**
+     * 测试大航海列表按用户和操作类型汇总月数，同一观众多次上舰不再重复成行，且不修改原始大航海记录
+     */
+    @Test
+    public void testGuardListAggregatesMonthsByUserAndOperateType() {
+        CommonPainter commonPainter = mock(CommonPainter.class, RETURNS_SELF);
+        when(commonPainter.getStringWidthAndHeight(anyString(), anyInt())).thenReturn(Pair.of(100, 30));
+        when(commonPainter.getWidth()).thenReturn(1000);
+        StarBotCommonPainterFactory guardFactory = mock(StarBotCommonPainterFactory.class);
+        when(guardFactory.create(anyInt(), anyInt(), anyBoolean())).thenReturn(commonPainter);
+
+        BilibiliApiService bilibili = mock(BilibiliApiService.class);
+        when(bilibili.getUserInfoByUids(anySet())).thenReturn(Map.of(
+                "1", new UserInfo("1", "测试观众", "face1"),
+                "2", new UserInfo("2", "测试观众", "face2")));
+        when(bilibili.asyncGetBilibiliImages(anyList())).thenAnswer(invocation -> {
+            List<String> urls = invocation.getArgument(0);
+            return CompletableFuture.completedFuture(urls.stream().map(url -> Optional.<BufferedImage>empty()).toList());
+        });
+
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        List<JSONObject> guards = List.of(
+                createGuard(1L, "1", "Captain", "ACTIVATION", 1, 138.0),
+                createGuard(2L, "2", "Captain", "ACTIVATION", 7, 138.0),
+                createGuard(3L, "1", "Captain", "ACTIVATION", 2, 138.0),
+                createGuard(4L, "1", "Captain", "RENEWAL", 4, 138.0),
+                createGuard(5L, "1", "Captain", "RENEWAL", 5, 138.0),
+                createGuard(6L, "1", "Commander", "ACTIVATION", 2, 1998.0),
+                createGuard(7L, "1", "Commander", "ACTIVATION", 4, 1998.0),
+                createGuard(8L, "1", "Commander", "RENEWAL", 8, 1998.0));
+        List<JSONObject> originalGuards = guards.stream().map(JSONObject::new).toList();
+        when(liveDataService.getMemberShip(PLATFORM, UID, JSONObject.class)).thenReturn(guards);
+
+        BilibiliLiveReportConfig config = new BilibiliLiveReportConfig();
+        config.setEnableGuardAnalysis(true);
+        config.setShowGuardList(true);
+        config.setShowGuardOperateTypeMonthDistributionChart(true);
+        config.setShowGuardOperateTypeUserDistributionChart(true);
+        BilibiliLiveReportPainter report = new BilibiliLiveReportPainter(coreProperties, new StarBotBilibiliProperties(), fontService,
+                bilibili, guardFactory, liveDataService, mock(BilibiliWordCloudService.class),
+                new Up(UID, "测试主播", ROOM_ID, "https://example.com/face.jpg"), config);
+
+        try (MockedStatic<ChartPainter> charts = mockStatic(ChartPainter.class)) {
+            charts.when(() -> ChartPainter.renderDistributionChart(anyList(), anyInt(), any(Font.class)))
+                    .thenReturn(Optional.empty());
+            ReflectionTestUtils.invokeMethod(report, "drawGuardAnalysis");
+
+            ArgumentCaptor<List<TextWithStyle>> texts = ArgumentCaptor.forClass(List.class);
+            verify(commonPainter, atLeastOnce()).drawTextWithStyle(texts.capture(), any(Point.class));
+            List<String> rendered = texts.getAllValues().stream().flatMap(List::stream).map(TextWithStyle::getText).toList();
+
+            // 月数文本: 提督 (观众1 开通 6 月)(观众1 续费 8 月) → 舰长 (观众1 开通 3 月)(观众2 开通 7 月)(观众1 续费 9 月)
+            assertEquals(List.of("6 月", "8 月", "3 月", "7 月", "9 月"),
+                    rendered.stream().filter(text -> text.matches("\\d+ 月")).toList());
+            // 徽章文本: 提督 开通/续费 → 舰长 开通/开通/续费
+            assertEquals(List.of("开通", "续费", "开通", "开通", "续费"),
+                    rendered.stream().filter(text -> "开通".equals(text) || "续费".equals(text)).toList());
+            // 用户名配色: 提督 2 行洋红, 舰长 3 行深天蓝
+            List<Color> unameColors = texts.getAllValues().stream().flatMap(List::stream)
+                    .filter(text -> "测试观众".equals(text.getText()))
+                    .map(TextWithStyle::getColor)
+                    .toList();
+            assertEquals(List.of(new Color(255, 0, 255), new Color(255, 0, 255),
+                    new Color(0, 191, 255), new Color(0, 191, 255), new Color(0, 191, 255)), unameColors);
+
+            // 分布图: 按月 [开通 16, 续费 17], 按人数 [开通 2, 续费 1]
+            ArgumentCaptor<List<ChartPainter.DistributionSlice>> slices = ArgumentCaptor.forClass(List.class);
+            charts.verify(() -> ChartPainter.renderDistributionChart(slices.capture(), anyInt(), any(Font.class)), times(2));
+            assertEquals(List.of(16.0, 17.0), slices.getAllValues().get(0).stream()
+                    .map(ChartPainter.DistributionSlice::getValue).toList());
+            assertEquals(List.of(2.0, 1.0), slices.getAllValues().get(1).stream()
+                    .map(ChartPainter.DistributionSlice::getValue).toList());
+        }
+        assertEquals(originalGuards, guards, "列表汇总不应修改原始大航海记录");
     }
 
     /**

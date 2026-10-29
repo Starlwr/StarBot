@@ -1,12 +1,8 @@
 .idea/
 target/
 logs/
-LiveDebug/
-DynamicDebug/
-EventDebug/
-NetworkDebug/
-data.json
-cookies.json
+debug/
+data/
 datasource.json
 config/*.sqlite3
 config/*.sqlite3-*

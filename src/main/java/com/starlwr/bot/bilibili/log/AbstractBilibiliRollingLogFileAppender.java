@@ -9,7 +9,7 @@ import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
 
 import java.nio.charset.StandardCharsets;
 
-/** Daily UTF-8 debug log stream matching the Core NetworkDebug/EventDebug layout. */
+/** Daily UTF-8 debug log stream matching the Core debug/Network and debug/Event layout. */
 abstract class AbstractBilibiliRollingLogFileAppender extends AppenderBase<ILoggingEvent> {
     private final String fileNamePattern;
     private AsyncAppender delegate;

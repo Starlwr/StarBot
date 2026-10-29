@@ -154,7 +154,7 @@ public class StarBotBilibiliProperties {
         /** Raw debug file categories. Supports all, dynamic, live, and category:type selectors. */
         private Set<String> fileCategories = new LinkedHashSet<>(List.of("all"));
 
-        /** Suppress repeated raw payloads in DynamicDebug and LiveDebug independently from the console. */
+        /** Suppress repeated raw payloads in debug/Dynamic and debug/Live independently from the console. */
         private boolean fileDeduplicate = true;
 
         /** Raw debug file duplicate suppression window in seconds. */
