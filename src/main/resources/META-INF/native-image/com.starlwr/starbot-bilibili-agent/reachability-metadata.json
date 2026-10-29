@@ -559,7 +559,7 @@
       ]
     },
     {
-      "type": "com.starlwr.bot.core.config.EventConfig",
+      "type": "com.starlwr.bot.core.event.multicaster.EventMulticasterConfig",
       "methods": [
         {
           "name": "applicationEventMulticaster",
@@ -568,7 +568,7 @@
       ]
     },
     {
-      "type": "com.starlwr.bot.core.config.EventConfig$$SpringCGLIB$$0",
+      "type": "com.starlwr.bot.core.event.multicaster.EventMulticasterConfig$$SpringCGLIB$$0",
       "fields": [
         {
           "name": "$$beanFactory"
@@ -594,7 +594,7 @@
       ]
     },
     {
-      "type": "com.starlwr.bot.core.config.EventConfig$$SpringCGLIB$$FastClass$$0",
+      "type": "com.starlwr.bot.core.event.multicaster.EventMulticasterConfig$$SpringCGLIB$$FastClass$$0",
       "methods": [
         {
           "name": "<init>",
@@ -605,7 +605,7 @@
       ]
     },
     {
-      "type": "com.starlwr.bot.core.config.EventConfig$$SpringCGLIB$$FastClass$$1",
+      "type": "com.starlwr.bot.core.event.multicaster.EventMulticasterConfig$$SpringCGLIB$$FastClass$$1",
       "methods": [
         {
           "name": "<init>",
@@ -5153,7 +5153,7 @@
       "glob": "com/starlwr/bot/core/config/DataSourceConfig.class"
     },
     {
-      "glob": "com/starlwr/bot/core/config/EventConfig.class"
+      "glob": "com/starlwr/bot/core/event/multicaster/EventMulticasterConfig.class"
     },
     {
       "glob": "com/starlwr/bot/core/config/RestTemplateConfig.class"
