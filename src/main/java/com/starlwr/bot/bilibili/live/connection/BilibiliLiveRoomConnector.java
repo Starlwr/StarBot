@@ -35,7 +35,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.socket.*;
-import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -80,7 +79,7 @@ public class BilibiliLiveRoomConnector {
 
     private final DanmakuPacketCodec packetCodec;
 
-    private final StandardWebSocketClient webSocketClient;
+    private final BilibiliLiveWsClient webSocketClient;
 
     private final BilibiliFailureIncidentReporter incidentReporter;
 
@@ -120,7 +119,7 @@ public class BilibiliLiveRoomConnector {
         private long timestamp;
     }
 
-    public BilibiliLiveRoomConnector(ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiService bilibili, BilibiliNetworkLogger networkLog, DanmakuPacketCodec packetCodec, StandardWebSocketClient webSocketClient, BilibiliFailureIncidentReporter incidentReporter, Danmu352CircuitBreaker circuitBreaker, Up up) {
+    public BilibiliLiveRoomConnector(ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiService bilibili, BilibiliNetworkLogger networkLog, DanmakuPacketCodec packetCodec, BilibiliLiveWsClient webSocketClient, BilibiliFailureIncidentReporter incidentReporter, Danmu352CircuitBreaker circuitBreaker, Up up) {
         this.executor = executor;
         this.taskScheduler = taskScheduler;
         this.eventPublisher = eventPublisher;
@@ -267,7 +266,7 @@ public class BilibiliLiveRoomConnector {
                     headers.toSingleValueMap(), null);
 
             BilibiliWebSocketHandler handler = new BilibiliWebSocketHandler(this, context);
-            sessionFuture = webSocketClient.execute(handler, headers, URI.create(context.url));
+            sessionFuture = webSocketClient.executeForRoom(up.getRoomId(), handler, headers, URI.create(context.url));
             sessionFuture.whenComplete((ignored, error) -> { if (error != null) handler.latch.countDown(); });
             synchronized (lifecycleLock) {
                 if (isUsable(context)) context.connectionFuture = sessionFuture;
@@ -631,6 +630,7 @@ public class BilibiliLiveRoomConnector {
     }
 
     private void reportHandshakeFailure(ConnectionContext context, Throwable error, int reconnectInterval) {
+        if (hasTlsCause(error)) webSocketClient.noteTlsAbnormal(up.getRoomId());
         BilibiliFailureIncidentReporter.Decision decision = incidentReporter.record(
                 observation(BilibiliFailureIncidentReporter.Category.WS_HANDSHAKE_FAILURE, context, error));
         if (!decision.suppressWarning()) {
@@ -691,6 +691,9 @@ public class BilibiliLiveRoomConnector {
             category = BilibiliFailureIncidentReporter.Category.WS_ABNORMAL_CLOSE;
             status = ConnectStatus.ERROR;
         }
+        if (category == BilibiliFailureIncidentReporter.Category.WS_TLS_ABNORMAL_CLOSE) {
+            webSocketClient.noteTlsAbnormal(up.getRoomId());
+        }
         requestReconnect(context, reconnectInterval, category.name());
         BilibiliFailureIncidentReporter.Decision decision = incidentReporter.record(observation(category, context, error));
         if (!decision.suppressWarning()) {
@@ -724,6 +727,16 @@ public class BilibiliLiveRoomConnector {
     private long uptimeMillis(ConnectionContext context) {
         Instant started = context.connectedAt == null ? context.attemptStartedAt : context.connectedAt;
         return Math.max(0, Duration.between(started, Instant.now()).toMillis());
+    }
+
+    private static boolean hasTlsCause(Throwable error) {
+        Throwable current = error;
+        int depth = 0;
+        while (current != null && depth++ < 12) {
+            if (current instanceof javax.net.ssl.SSLException) return true;
+            current = current.getCause();
+        }
+        return false;
     }
 
     private long heartbeatAckAgeMillis(ConnectionContext context) {

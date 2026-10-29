@@ -192,6 +192,17 @@ public class StarBotBilibiliProperties {
         private boolean onlyConnectNecessaryRooms = false;
 
         /**
+         * 弹幕 WebSocket 传输通道: jvm(JVM TLS 直连) / browser(浏览器桥,复用受控 Chrome 的真实 TLS 栈) /
+         * auto(默认 JVM, 出现 TLS 层异常断开后该房间自动改走浏览器桥)
+         */
+        private String wsTransport = "jvm";
+
+        /**
+         * 浏览器桥事件/帧泵的轮询间隔(毫秒)
+         */
+        private int browserWsPollIntervalMillis = 100;
+
+        /**
          * 连接两个直播间之间的时间间隔，单位：毫秒
          */
         private int liveRoomConnectInterval = 1000;

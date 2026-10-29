@@ -12,7 +12,7 @@ import static org.mockito.Mockito.*;
 class BilibiliWebSocketContainerLifecycleTest {
     @Test void factoryReleasesOwnedTomcatContainerOnceAndRejectsFurtherConnectors() throws Exception {
         BilibiliLiveRoomConnectorFactory factory = new BilibiliLiveRoomConnectorFactory(null,null,null,
-                new StarBotBilibiliProperties(),null,null,null,null,null,null,null,null,null);
+                new StarBotBilibiliProperties(),null,null,null,null,null,null,null,null,null,null);
         WsWebSocketContainer actual = (WsWebSocketContainer)ReflectionTestUtils.getField(factory,"container");
         actual.destroy();
         WsWebSocketContainer owned = mock(WsWebSocketContainer.class);

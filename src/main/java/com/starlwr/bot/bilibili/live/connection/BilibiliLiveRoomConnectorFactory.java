@@ -51,7 +51,7 @@ public class BilibiliLiveRoomConnectorFactory {
 
     private final DanmakuPacketCodec packetCodec;
 
-    private final StandardWebSocketClient webSocketClient;
+    private final BilibiliLiveWsClient webSocketClient;
 
     private final BilibiliFailureIncidentReporter incidentReporter;
     private final Danmu352CircuitBreaker circuitBreaker;
@@ -61,7 +61,7 @@ public class BilibiliLiveRoomConnectorFactory {
     private final AtomicBoolean closed = new AtomicBoolean();
 
     @Autowired
-    public BilibiliLiveRoomConnectorFactory(@Qualifier("bilibiliThreadPool") ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiService bilibili, BilibiliNetworkLogger networkLog, DanmakuPacketCodec packetCodec, BilibiliFailureIncidentReporter incidentReporter, Danmu352CircuitBreaker circuitBreaker) {
+    public BilibiliLiveRoomConnectorFactory(@Qualifier("bilibiliThreadPool") ThreadPoolTaskExecutor executor, TaskScheduler taskScheduler, ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, LiveDataService liveDataService, BilibiliAccountService accountService, BilibiliLiveRoomConnectTaskService taskService, BilibiliEventParser eventParser, BilibiliApiService bilibili, BilibiliNetworkLogger networkLog, DanmakuPacketCodec packetCodec, BilibiliFailureIncidentReporter incidentReporter, Danmu352CircuitBreaker circuitBreaker, BrowserLiveWsClient browserLiveWsClient) {
         this.executor = executor;
         this.taskScheduler = taskScheduler;
         this.eventPublisher = eventPublisher;
@@ -77,7 +77,7 @@ public class BilibiliLiveRoomConnectorFactory {
         this.circuitBreaker = circuitBreaker;
         container = ContainerProvider.getWebSocketContainer();
         container.setDefaultMaxBinaryMessageBufferSize(properties.getLive().getWebSocketBufferSizeBytes());
-        this.webSocketClient = new StandardWebSocketClient(container);
+        this.webSocketClient = new BilibiliLiveWsClient(new StandardWebSocketClient(container), browserLiveWsClient, properties);
     }
 
     /**

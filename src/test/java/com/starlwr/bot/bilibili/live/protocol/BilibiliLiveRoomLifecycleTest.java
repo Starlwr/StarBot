@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.account.BilibiliAccountService;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.live.connection.BilibiliLiveRoomConnector;
+import com.starlwr.bot.bilibili.live.connection.BilibiliLiveWsClient;
 import com.starlwr.bot.bilibili.live.connection.BilibiliLiveRoomService;
 import com.starlwr.bot.bilibili.live.connection.BilibiliLiveRoomConnectTaskService;
 import com.starlwr.bot.bilibili.live.connection.ConnectAddress;
@@ -139,7 +140,7 @@ class BilibiliLiveRoomLifecycleTest {
         for(int i=0;i<100;i++) f.connector.connect();
         assertEquals(1, f.workers.size());
         f.connector.disconnect(); f.workers.remove().run();
-        verifyNoInteractions(f.api, f.client);
+        verifyNoInteractions(f.api, f.jvmClient);
     }
 
     @Test void closedGenerationCannotResurrectAfterReplacement() throws Exception {
@@ -161,7 +162,8 @@ class BilibiliLiveRoomLifecycleTest {
         final BilibiliApiService api = mock(BilibiliApiService.class);
         final BilibiliAccountService account = mock(BilibiliAccountService.class);
         final BilibiliEventParser parser = mock(BilibiliEventParser.class);
-        final StandardWebSocketClient client = mock(StandardWebSocketClient.class);
+        final StandardWebSocketClient jvmClient = mock(StandardWebSocketClient.class);
+        final BilibiliLiveWsClient client = new BilibiliLiveWsClient(jvmClient, null, new StarBotBilibiliProperties());
         final BilibiliNetworkLogger networkLog = mock(BilibiliNetworkLogger.class);
         final WebSocketSession session = mock(WebSocketSession.class);
         final AtomicBoolean open = new AtomicBoolean(true);
@@ -182,7 +184,7 @@ class BilibiliLiveRoomLifecycleTest {
             when(tasks.schedule(any(), anyLong())).thenReturn(true);
             BilibiliFailureIncidentReporter incidents = mock(BilibiliFailureIncidentReporter.class);
             when(incidents.record(any())).thenReturn(new BilibiliFailureIncidentReporter.Decision(false, false));
-            when(client.execute(any(WebSocketHandler.class), any(WebSocketHttpHeaders.class), any(URI.class))).thenAnswer(call -> {
+            when(jvmClient.execute(any(WebSocketHandler.class), any(WebSocketHttpHeaders.class), any(URI.class))).thenAnswer(call -> {
                 handler = call.getArgument(0); future = new CompletableFuture<>();
                 if(autoEstablish) { handler.afterConnectionEstablished(session); future.complete(session); }
                 return future;
