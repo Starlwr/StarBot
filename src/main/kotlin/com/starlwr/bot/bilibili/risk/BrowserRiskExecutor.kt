@@ -34,8 +34,12 @@ class BrowserRiskExecutor(
     private val navigator: BrowserPageNavigator,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+    private val requestPageLock = Any()
+    private var requestPage: BrowserPage? = null
+    private var requestOriginReady = false
 
     fun resolve412(request: BilibiliHttpRequest): BilibiliHttpResponse? {
+        runtime.enterResolverIdentity()
         if (!request.method.equals("GET", true) || !gate.ensurePassed()) return null
         val snapshot = credentialStore.snapshot() ?: return null
         val partition = listOf(
@@ -87,19 +91,71 @@ class BrowserRiskExecutor(
         runtime.cookiesForRequest(URI.create(url)).associate { it.name to it.value }
     }.onFailure { log.warn("读取浏览器 cookie 失败: {}", it.toString()) }.getOrDefault(emptyMap())
 
-    fun executeGetInBrowser(url: String, sourceChallengeId: String = "browser-response"): BilibiliHttpResponse? {
+    fun executeGetInBrowser(url: String, sourceChallengeId: String = "browser-response"): BilibiliHttpResponse? = synchronized(requestPageLock) {
+        runtime.enterResolverIdentity()
         if (!gate.ensurePassed()) return null
         return runCatching {
-            val page = runtime.createPage()
-            try {
-                val navigation = navigate(page, url)
-                navigation.toResponse(BilibiliHttpRequest("GET", URI.create(url),
-                    identity = captureRequestIdentity(runtime, page, url, sourceChallengeId)), System.nanoTime())
-            } finally {
-                runtime.closePage(page)
+            val page = requestPage?.takeIf { it.connection.isOpen } ?: runtime.createPage().also {
+                requestPage = it; requestOriginReady = false
             }
-        }.onFailure { log.warn("浏览器内执行 GET 失败: url={}, error={}", url, it.toString()) }
+            try {
+                if (URI.create(url).host == "api.live.bilibili.com") {
+                    // Preserve the live-page Origin/Referer and browser request
+                    // context, rather than navigating a new tab to an API URL.
+                    val room = Regex("[?&]id=([0-9]+)").find(url)?.groupValues?.get(1)
+                    if (!requestOriginReady) {
+                        navigator.navigate(page, "https://live.bilibili.com/${room.orEmpty()}")
+                        requestOriginReady = true
+                    }
+                    val observer = com.starlwr.bot.bilibili.browser.BrowserRequestObserver(page, room.orEmpty(), "starbot-browser-get.js")
+                    try {
+                        observer.enable()
+                        val navigation = fetchInPage(page, url)
+                        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+                        var observed = observer.poll()
+                        while (observed == null && System.nanoTime() < deadline) {
+                            Thread.sleep(10); observed = observer.poll()
+                        }
+                        val captured = observed?.takeIf { it.url == url }?.identity
+                            ?: error("Browser request omitted exact CDP identity")
+                        val identity = com.starlwr.bot.bilibili.credential.RequestIdentitySnapshot(captured.headers,
+                            captured.buvid3, captured.uid, sourceChallengeId)
+                        navigation.toResponse(BilibiliHttpRequest("GET", URI.create(url), identity = identity), System.nanoTime())
+                    } finally { observer.close() }
+                } else {
+                    val navigation = navigate(page, url)
+                    requestOriginReady = false
+                    navigation.toResponse(BilibiliHttpRequest("GET", URI.create(url),
+                        identity = captureRequestIdentity(runtime, page, url, sourceChallengeId)), System.nanoTime())
+                }
+            } catch (error: Exception) {
+                requestPage = null; requestOriginReady = false
+                runCatching { runtime.closePage(page) }
+                throw error
+            }
+        }.onFailure { log.warn("浏览器内执行 GET 失败: endpoint={}, reason={}", url.substringBefore('?'), it.javaClass.simpleName) }
             .getOrNull()
+    }
+
+    @jakarta.annotation.PreDestroy
+    fun shutdown() = synchronized(requestPageLock) {
+        requestPage?.let { runCatching { runtime.closePage(it) } }
+        requestPage = null; requestOriginReady = false
+    }
+
+    internal fun fetchInPage(page: BrowserPage, url: String): BrowserNavigationResult {
+        val raw = evaluate(page.connection, """
+            (async () => {
+              const response = await fetch(${JSON.toJSONString(url)}, {credentials: 'include'});
+              return JSON.stringify({status: response.status,
+                headers: Object.fromEntries(response.headers.entries()), body: await response.text()});
+            })()
+            //# sourceURL=starbot-browser-get.js
+        """.trimIndent())
+        val result = JSON.parseObject(raw)
+        val headers = result.getJSONObject("headers")?.mapValues { listOf(it.value.toString()) }.orEmpty()
+        return BrowserNavigationResult(result.getIntValue("status"), headers,
+            result.getString("body").orEmpty().toByteArray(StandardCharsets.UTF_8))
     }
 
     private fun navigate(page: BrowserPage, url: String): BrowserNavigationResult {

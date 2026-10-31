@@ -75,6 +75,35 @@ class BrowserLifecycleTest {
                 assertEquals("ready", bridge.evaluateOnPage(page, script))
                 val rejected = bridge.evaluateOnPage(page, "window.__starbotWsBridge.dial(1, 'invalid-url')") as com.alibaba.fastjson2.JSONObject
                 assertFalse(rejected.getBooleanValue("ok"))
+                // Real Network ExtraInfo and Runtime.evaluate initiator identity,
+                // exercised against loopback without contacting Bilibili.
+                val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1",0),0)
+                server.createContext("/") { exchange ->
+                    val api = exchange.requestURI.path.contains("getDanmuInfo")
+                    val body = if (api) """{"code":0,"data":{"token":"local-token"}}""" else "<html><body>local audit</body></html>"
+                    exchange.responseHeaders.add("Content-Type", if (api) "application/json" else "text/html")
+                    if (!api) exchange.responseHeaders.add("Set-Cookie","buvid3=loopback-request; Path=/")
+                    exchange.sendResponseHeaders(200,body.toByteArray().size.toLong())
+                    exchange.responseBody.use { it.write(body.toByteArray()) }
+                }
+                server.start()
+                try {
+                    val origin = "http://127.0.0.1:${server.address.port}"
+                    BrowserPageNavigator().navigate(page,"$origin/")
+                    val endpoint = java.net.URI.create("$origin/xlive/web-room/v1/index/getDanmuInfo")
+                    BrowserRequestObserver(page,"1","starbot-browser-get.js",endpoint).use { observer ->
+                        observer.enable()
+                        page.connection.call("Runtime.evaluate",mapOf("expression" to
+                            "fetch('$endpoint?id=1',{credentials:'include'}).then(r=>r.json())\n//# sourceURL=starbot-browser-get.js",
+                            "awaitPromise" to true,"returnByValue" to true))
+                        val until = System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(3)
+                        var observed = observer.poll()
+                        while (observed == null && System.nanoTime()<until) { Thread.sleep(10); observed=observer.poll() }
+                        assertNotNull(observed,"Real CDP initiator marker must identify our fetch")
+                        assertEquals("loopback-request",observed!!.identity!!.buvid3)
+                        assertEquals("local-token",observed.envelope.getJSONObject("data").getString("token"))
+                    }
+                } finally { server.stop(0) }
             } finally {
                 bridge.shutdown()
                 runtime.closePage(page)
