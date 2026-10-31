@@ -16,6 +16,20 @@ import java.util.concurrent.CompletableFuture
 class BilibiliLiveWsClientTest {
     private val uri = URI.create("wss://broadcastlv.chat.bilibili.com:2245/sub")
     private val headers = WebSocketHttpHeaders()
+    @Test fun `browser identity forces bridge in jvm mode`() {
+        val browser = browserClient(true)
+        val jvm = jvmStub()
+        val router = BilibiliLiveWsClient(jvm, browser, StarBotBilibiliProperties())
+        router.executeForRoom("1", Mockito.mock(WebSocketHandler::class.java), headers, uri, true).join()
+        assertTrue(browser.invoked)
+        Mockito.verifyNoInteractions(jvm)
+    }
+    @Test fun `browser identity never falls back to JVM if bridge unavailable`() {
+        val jvm = jvmStub()
+        val router = BilibiliLiveWsClient(jvm, browserClient(false), StarBotBilibiliProperties())
+        assertTrue(router.executeForRoom("1", Mockito.mock(WebSocketHandler::class.java), headers, uri, true).isCompletedExceptionally)
+        Mockito.verifyNoInteractions(jvm)
+    }
 
     private fun jvmStub(): WebSocketClient {
         val jvm = Mockito.mock(WebSocketClient::class.java)

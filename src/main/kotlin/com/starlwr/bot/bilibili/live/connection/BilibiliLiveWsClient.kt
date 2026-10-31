@@ -27,13 +27,17 @@ class BilibiliLiveWsClient(
     private val log = LoggerFactory.getLogger(javaClass)
     private val preferBrowser = ConcurrentHashMap.newKeySet<String>()
 
-    fun executeForRoom(roomId: String, handler: WebSocketHandler, headers: WebSocketHttpHeaders, uri: URI): CompletableFuture<WebSocketSession> {
+    @JvmOverloads
+    fun executeForRoom(roomId: String, handler: WebSocketHandler, headers: WebSocketHttpHeaders, uri: URI, browserIdentity: Boolean = false): CompletableFuture<WebSocketSession> {
         val mode = properties.getLive().getWsTransport().trim().lowercase()
-        val browserUsable = browserClient?.usable() == true
-        val wantBrowser = when (mode) {
+        val wantBrowser = browserIdentity || when (mode) {
             "browser" -> true
             "auto" -> preferBrowser.contains(roomId)
             else -> false
+        }
+        val browserUsable = wantBrowser && browserClient?.usable() == true
+        if (browserIdentity && !browserUsable) {
+            return CompletableFuture.failedFuture(BrowserWsHandshakeException("Browser identity requires BrowserDialer; JVM fallback prohibited"))
         }
         if (wantBrowser && !browserUsable) {
             log.warn("浏览器桥不可用(ws-transport={}, 浏览器模块={}), 房间 {} 回落 JVM 直连", mode, browserClient != null, roomId)
