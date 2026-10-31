@@ -18,11 +18,15 @@ class CompositeGaiaChallengeProvider(
     private val reportingProvider: ReportingGaiaChallengeProvider,
 ) : GaiaChallengeProvider {
     private val log = LoggerFactory.getLogger(javaClass)
+    override fun hasPendingBrowserVerification(): Boolean = browserProvider.hasPendingBrowserVerification()
 
     override fun submit(challenge: GaiaChallenge): GaiaResolution? {
-        val resolution = runCatching { browserProvider.submit(challenge) }
-            .onFailure { log.warn("浏览器 Gaia 解算异常, 转入退避等待: {}", it.toString()) }
-            .getOrNull()
+        val resolution = try { browserProvider.submit(challenge) }
+            catch (e: BrowserRecoveryPendingException) { throw e }
+            catch (e: Exception) {
+                log.warn("浏览器 Gaia 解算异常, 转入退避等待: {}", e.javaClass.simpleName)
+                null
+            }
         if (resolution?.resolved == true) return resolution
         return reportingProvider.submit(challenge)
     }

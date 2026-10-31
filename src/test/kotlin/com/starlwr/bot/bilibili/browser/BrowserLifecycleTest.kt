@@ -75,6 +75,16 @@ class BrowserLifecycleTest {
                 assertEquals("ready", bridge.evaluateOnPage(page, script))
                 val rejected = bridge.evaluateOnPage(page, "window.__starbotWsBridge.dial(1, 'invalid-url')") as com.alibaba.fastjson2.JSONObject
                 assertFalse(rejected.getBooleanValue("ok"))
+                // A manual CAPTCHA can take minutes: dispatch must return at
+                // once, while its eventual SDK promise result stays observable.
+                val provider = com.starlwr.bot.bilibili.risk.BrowserGaiaVtokenProvider(runtime, BrowserPageNavigator(),
+                    com.starlwr.bot.bilibili.risk.BilibiliRiskProperties(),
+                    mock(com.starlwr.bot.bilibili.credential.BilibiliBrowserIdentity::class.java))
+                val challenge = com.starlwr.bot.bilibili.risk.GaiaChallenge(-352, "test-voucher", null,
+                    "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id=1")
+                bridge.evaluateOnPage(page, "window.CaptchaLoader = {load: async () => async (params) => params.riskParams.v_voucher + '-result'}")
+                assertEquals("started", bridge.evaluateOnPage(page, provider.buildNativeCaptchaScript(challenge)))
+                assertEquals("test-voucher-result", provider.currentChallengeToken(page, challenge, null))
                 // Real Network ExtraInfo and Runtime.evaluate initiator identity,
                 // exercised against loopback without contacting Bilibili.
                 val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1",0),0)
@@ -90,6 +100,17 @@ class BrowserLifecycleTest {
                 try {
                     val origin = "http://127.0.0.1:${server.address.port}"
                     BrowserPageNavigator().navigate(page,"$origin/")
+                    val readiness = com.starlwr.bot.bilibili.risk.BrowserGaiaVtokenProvider.NATIVE_READINESS_SCRIPT
+                    bridge.evaluateOnPage(page,"window._loadLogicPromise_ = new Promise(r => window.__resolveNativeTest = r)")
+                    val pending = com.alibaba.fastjson2.JSON.parseObject(bridge.evaluateOnPage(page,readiness) as String)
+                    assertTrue(pending.getBooleanValue("bootstrapPending"))
+                    bridge.evaluateOnPage(page,"window.__resolveNativeTest()")
+                    val settled = com.alibaba.fastjson2.JSON.parseObject(bridge.evaluateOnPage(page,readiness) as String)
+                    assertFalse(settled.getBooleanValue("bootstrapPending"))
+                    bridge.evaluateOnPage(page,"document.body.insertAdjacentHTML('beforeend','<div class=geetest_panel style=display:none></div>')")
+                    val hidden = com.alibaba.fastjson2.JSON.parseObject(bridge.evaluateOnPage(page,readiness) as String)
+                    assertTrue(hidden.getBooleanValue("panelPresent"))
+                    assertFalse(hidden.getBooleanValue("panelVisible"))
                     val endpoint = java.net.URI.create("$origin/xlive/web-room/v1/index/getDanmuInfo")
                     BrowserRequestObserver(page,"1","starbot-browser-get.js",endpoint).use { observer ->
                         observer.enable()

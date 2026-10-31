@@ -25,6 +25,9 @@ class BilibiliRiskProperties {
     var gaiaBackoffSeconds: MutableList<Long> = mutableListOf(30, 120, 600)
     /** 交互式 Gaia 验证（浏览器人工过码）最长等待秒数; 超时按失败退避 */
     var gaiaInteractiveTimeoutSeconds: Long = 300
+    /** Observation grace after an actual Web -352, followed by continuous SDK/DOM/network quiet. */
+    var gaiaNativeGraceMillis: Long = 1_000
+    var gaiaNativeQuietMillis: Long = 2_000
 }
 
 data class Http412Challenge(
@@ -120,6 +123,7 @@ data class GaiaChallenge(
 }
 
 interface GaiaChallengeProvider {
+    fun hasPendingBrowserVerification(): Boolean = false
     /**
      * 提交挑战并尝试解算。返回 null 表示本轮未能解算(浏览器缺席/超时/用户未完成),
      * 调用方应退避等待; 返回 [GaiaResolution] 时按其载荷处理。

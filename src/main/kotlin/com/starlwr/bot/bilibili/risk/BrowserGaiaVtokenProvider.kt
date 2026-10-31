@@ -37,179 +37,182 @@ class BrowserGaiaVtokenProvider(
 
     private val log = LoggerFactory.getLogger(javaClass)
     private val inFlight = AtomicBoolean(false)
+    private val pageLock = Any()
+    private data class Session(val page: BrowserPage, val observer: com.starlwr.bot.bilibili.browser.BrowserRequestObserver,
+                               val roomId: String, val gate: GaiaNativeInvocationGate, var nativeInvoked: Boolean = false,
+                               var challengeId: String? = null,
+                               var generation: Long = -1,
+                               var successfulResponse: com.starlwr.bot.bilibili.browser.BrowserRequestObserver.Response? = null)
+    private var session: Session? = null
+    @Volatile private var awaitingProof = false
+    override fun hasPendingBrowserVerification(): Boolean = awaitingProof
 
     override fun submit(challenge: GaiaChallenge): GaiaResolution? {
         if (!properties.gaiaEnabled) return null
-        if (!inFlight.compareAndSet(false, true)) {
-            log.info("Gaia 交互验证已在进行中, 本次挑战 (code={}) 等待既有会话完成: uri={}",
-                challenge.businessCode, challenge.originalUri.substringBefore('?'))
+        if (!inFlight.compareAndSet(false, true)) throw BrowserRecoveryPendingException("Official verification already pending")
+        try { return resolve(challenge).also { if (it != null) awaitingProof = false } }
+        catch (e: BrowserRecoveryPendingException) { throw e }
+        catch (e: InterruptedException) { Thread.currentThread().interrupt(); return null }
+        catch (e: Exception) {
+            log.warn("Gaia 浏览器会话未完成: id={}, reason={}", challenge.id, e.javaClass.simpleName)
             return null
-        }
-        try {
-            return resolve(challenge)
-        } catch (e: Exception) {
-            log.warn("Gaia 交互验证失败, 回退至退避等待: code={}, uri={}, reason={}",
-                challenge.businessCode, challenge.originalUri.substringBefore('?'), e.toString())
-            return null
-        } finally {
-            inFlight.set(false)
-        }
+        } finally { inFlight.set(false) }
     }
 
     private fun resolve(challenge: GaiaChallenge): GaiaResolution? {
-        val roomId = Regex("[?&]id=([0-9]+)").find(challenge.originalUri)?.groupValues?.get(1)
-            ?: return null.also { log.warn("挑战 URI 无房间号, 无法打开房间页: id={}", challenge.id) }
-
-        log.info("启动浏览器交互式 Gaia 验证: id={}, code={}, room={}, 等待 Bilibili 页面逻辑与人工验证 (最长 {} 秒)",
-            challenge.id, challenge.businessCode, roomId, properties.gaiaInteractiveTimeoutSeconds)
-
-        val ua = identity.headers(null)["User-Agent"] ?: return null.also {
-            log.warn("无法确定浏览器 UA, Gaia 交互验证跳过: id={}", challenge.id)
+        val requestedRoomId = Regex("[?&]id=([0-9]+)").find(challenge.originalUri)?.groupValues?.get(1) ?: return null
+        val ua = identity.headers(null)["User-Agent"] ?: return null
+        runtime.enterResolverIdentity()
+        if (runtime.start(ua) == null) return null
+        // Once resolving risk, browser-owned login/device state is autonomous.
+        val initialVtoken = readVtokenCookie(challenge.originalUri)
+        val existing = synchronized(pageLock) { session }
+        // The queue head may change while a human is solving a previous room's challenge.
+        // Resume that shared session; its proof authorizes fresh issuance for the requested room,
+        // never reuse its room token or navigate away from the unfinished challenge.
+        val roomId = existing?.takeIf { it.page.connection.isOpen &&
+            (it.nativeInvoked || it.observer.officialVerificationStarted() || it.successfulResponse != null) }?.roomId ?: requestedRoomId
+        val current = synchronized(pageLock) {
+            session?.takeIf { it.page.connection.isOpen && it.roomId == roomId } ?: run {
+                val page = session?.page?.takeIf { it.connection.isOpen } ?: runtime.createPage()
+                session?.observer?.close()
+                val observer = com.starlwr.bot.bilibili.browser.BrowserRequestObserver(page, roomId)
+                val created = Session(page, observer, roomId,
+                    GaiaNativeInvocationGate(properties.gaiaNativeGraceMillis, properties.gaiaNativeQuietMillis))
+                session = created
+                observer.enable()
+                navigator.navigate(page, "https://live.bilibili.com/$roomId")
+                created
+            }
         }
-        if (runtime.start(ua) == null) {
-            log.warn("CfT 浏览器运行时不可用, Gaia 交互验证跳过: id={}", challenge.id)
-            return null
-        }
-
-        // 整轮会话仅一个页面; 先建空白页再经 CDP 导航(createPage 直接带 URL 会在跨进程导航时关闭 WS)
-        val page = runtime.createPage()
-        try {
-            navigator.navigate(page, "https://live.bilibili.com/$roomId")
-            // Keep the browser identity independent from the JVM canonical credentials.
-        } catch (e: Exception) {
-            log.warn("房间页导航失败: {}", e.toString())
-            runtime.closePage(page)
-            return null
-        }
-
         val deadline = System.currentTimeMillis() + properties.gaiaInteractiveTimeoutSeconds * 1000
-        var nativeCaptchaInvoked = false
-        try {
-            while (System.currentTimeMillis() < deadline) {
-                Thread.sleep(3000)
-
-                // (a) 页内 fetch 探测: Web 自身环境的 getDanmuInfo 结果(无任何页面创建)
-                val probeCode = probeGetDanmuInPage(page, challenge.originalUri)
-
-                // (b) code=0 → Web 环境已通过, 直接带回完整响应, StarBot 不再自发请求
-                if (probeCode == 0) {
-                    val envelope = fetchGetDanmuEnvelopeInPage(page, challenge.originalUri)
-                    if (envelope != null) {
-                        log.info("Web 环境 getDanmuInfo 已通过, 直接带回响应: room={}", roomId)
-                        return GaiaResolution(harvestedEnvelope = envelope,
-                            browserIdentity = captureRequestIdentity(runtime, page, challenge.originalUri, challenge.id))
-                    }
-                }
-
-                // (c) Bilibili 验证逻辑写入的 vtoken cookie(遵循浏览器侧时效)
-                readVtokenCookie(challenge.originalUri)?.let {
-                    log.info("Gaia 交互验证通过(vtoken cookie): id={}, tokenLen={}", challenge.id, it.length)
-                    return GaiaResolution(vtoken = it)
-                }
-
-                // (d) 页内明确 -352 且验证码面板未出现 → 主动走 B 站原生验证码流程(仅一次, 注入挑战参数)
-                if (probeCode == -352 && !nativeCaptchaInvoked && !captchaPanelVisible(page)) {
-                    nativeCaptchaInvoked = true
-                    log.info("Web 自身 getDanmu -352 且验证码未自行触发, 注入参数走 Bilibili 原生验证码流程: room={}", roomId)
-                    runCatching { evaluate(page, buildNativeCaptchaScript(challenge.voucher), await = true) }
-                        .onFailure { log.warn("原生验证码流程调用失败: {}", it.toString()) }
-                }
-
-                // (e) 页面 WS 断开(反爬/重载) → 宁静重建一次, 不与其他逻辑混用页面
-                if (!pageAlive(page)) {
-                    log.info("房间页连接断开, 重建页面继续等待: room={}", roomId)
-                    runCatching { runtime.closePage(page) }
-                    val replacement = runtime.createPage()
-                    try {
-                        navigator.navigate(replacement, "https://live.bilibili.com/$roomId")
-                        // 重建后允许再次注入原生流程(新页面 Bilibili 逻辑可能需要重新辅助)
-                        nativeCaptchaInvoked = false
-                        return waitOnPage(replacement, challenge, deadline)
-                    } catch (e: Exception) {
-                        log.warn("重建页面导航失败: {}", e.toString())
-                        runtime.closePage(replacement)
-                        return null
-                    }
-                }
+        awaitingProof = true
+        var riskResponse: com.starlwr.bot.bilibili.browser.BrowserRequestObserver.Response? = null
+        log.info("Gaia 观察官方页面请求，复用验证页且不重发成功响应: room={}, id={}", roomId, challenge.id)
+        while (System.currentTimeMillis() < deadline && current.page.connection.isOpen) {
+            if (current.generation != current.observer.documentGeneration()) {
+                current.generation = current.observer.documentGeneration()
+                current.gate.reset(); riskResponse = null; current.successfulResponse = null
+                current.nativeInvoked = false; current.challengeId = null
             }
-        } finally {
-            runCatching { runtime.closePage(page) }
+            var observed = current.observer.poll()
+            while (observed != null) {
+                if (observed.generation != current.generation) { observed = current.observer.poll(); continue }
+                val code = observed.envelope.getInteger("code")
+                if (code == 0 && observed.identity != null) {
+                    current.gate.reset()
+                    current.successfulResponse = observed
+                }
+                if (code == -352) {
+                    current.successfulResponse = null
+                    riskResponse = observed
+                    current.gate.observedRisk(System.currentTimeMillis())
+                }
+                if (code == 0 && observed.identity == null) log.warn("官方响应通过但缺少同一 requestId 的身份证据，未导出 Overlay: room={}", roomId)
+                observed = current.observer.poll()
+            }
+            val success = current.successfulResponse
+            if (success != null && current.observer.officialSocketAuthenticated(success.envelope.getJSONObject("data")?.getString("token").orEmpty())) {
+                val captured = success.identity!!
+                log.info("官方 getDanmu 与 WS op8 均成功，带回临时身份证据，官方 socket 保留: room={}", roomId)
+                return GaiaResolution(harvestedEnvelope = success.envelope,
+                    browserIdentity = com.starlwr.bot.bilibili.credential.RequestIdentitySnapshot(
+                        captured.headers, captured.buvid3, captured.uid, challenge.id), officialWsAuthenticated = true)
+            }
+            if (!current.observer.officialVerificationStarted() || current.nativeInvoked)
+              currentChallengeToken(current.page, challenge.copy(id = current.challengeId ?: challenge.id), initialVtoken)?.let {
+                log.info("取得 Gaia 临时令牌，等待一次带签名重试确认: id={}, tokenLen={}", challenge.id, it.length)
+                return GaiaResolution(vtoken = it)
+            }
+            // The grace is only a lower bound: pending SDK promises, hidden
+            // panels and recent network activity extend observation indefinitely.
+            val readiness = if (riskResponse != null && !current.nativeInvoked) nativeCaptchaReadiness(current.page) else null
+            if (riskResponse != null && !current.nativeInvoked && readiness != null && current.gate.mayInvoke(
+                    System.currentTimeMillis(), readiness, current.observer.captchaLoading(), current.observer.captchaLastActivityMillis(),
+                    current.observer.officialVerificationStarted()) && !riskResponse.voucher.isNullOrBlank()
+                    && riskResponse.generation == current.observer.documentGeneration()) {
+                current.nativeInvoked = true; current.challengeId = challenge.id
+                val webChallenge = GaiaChallenge(-352, riskResponse.voucher,
+                    challenge.gaData, riskResponse.url)
+                evaluate(current.page, buildNativeCaptchaScript(challenge, webChallenge.voucher), await = false)
+                log.info("官方页面明确 -352，原生 SDK/DOM/网络已连续安静且无面板，调用原生验证码 function: id={}, graceMs={}, quietMs={}",
+                    challenge.id, properties.gaiaNativeGraceMillis, properties.gaiaNativeQuietMillis)
+            }
+            Thread.sleep(500)
         }
-        log.warn("Gaia 交互验证等待超时 ({} 秒), 用户未完成验证: id={}",
-            properties.gaiaInteractiveTimeoutSeconds, challenge.id)
-        return null
+        log.warn("Gaia 等待结束，保留页面和原生验证码状态供后续继续: id={}", challenge.id)
+        throw BrowserRecoveryPendingException("Official verification pending; page retained")
     }
 
-    /** 页面重建后的等待循环(与主循环同语义, 页面不再触发重建递归)。 */
-    private fun waitOnPage(page: BrowserPage, challenge: GaiaChallenge, deadline: Long): GaiaResolution? {
-        var nativeInvoked = false
-        try {
-            while (System.currentTimeMillis() < deadline) {
-                Thread.sleep(3000)
-                val probeCode = probeGetDanmuInPage(page, challenge.originalUri)
-                if (probeCode == 0) {
-                    val envelope = fetchGetDanmuEnvelopeInPage(page, challenge.originalUri)
-                    if (envelope != null) {
-                        log.info("Web 环境 getDanmuInfo 已通过, 直接带回响应: room={}",
-                            challenge.originalUri.substringAfter("id=").substringBefore('&'))
-                        return GaiaResolution(harvestedEnvelope = envelope,
-                            browserIdentity = captureRequestIdentity(runtime, page, challenge.originalUri, challenge.id))
-                    }
-                }
-                readVtokenCookie(challenge.originalUri)?.let {
-                    log.info("Gaia 交互验证通过(vtoken cookie): id={}, tokenLen={}", challenge.id, it.length)
-                    return GaiaResolution(vtoken = it)
-                }
-                if (probeCode == -352 && !nativeInvoked && !captchaPanelVisible(page)) {
-                    nativeInvoked = true
-                    log.info("重建页面后 Web getDanmu 仍 -352 且无验证码, 注入参数走原生流程: id={}", challenge.id)
-                    runCatching { evaluate(page, buildNativeCaptchaScript(challenge.voucher), await = true) }
-                }
-                if (!pageAlive(page)) {
-                    log.warn("重建后的页面再次断开, 本轮会话终止等待: id={}", challenge.id)
-                    return null
-                }
-            }
-        } finally {
-            runCatching { runtime.closePage(page) }
-        }
-        return null
+    private fun nativeCaptchaReadiness(page: BrowserPage): GaiaNativeInvocationGate.State? = runCatching {
+        val j = JSON.parseObject(evaluate(page, NATIVE_READINESS_SCRIPT, await = false))
+        GaiaNativeInvocationGate.State(j.getBooleanValue("documentReady"), j.getBooleanValue("panelPresent"),
+            j.getBooleanValue("panelVisible"), j.getBooleanValue("bootstrapPending"), j.getBooleanValue("nativePending"),
+            j.getBooleanValue("coverageComplete"))
+    }.getOrNull()
+
+    @jakarta.annotation.PreDestroy
+    fun shutdown() = synchronized(pageLock) {
+        session?.observer?.close()
+        session?.page?.let { runCatching { runtime.closePage(it) } }
+        session = null
+        awaitingProof = false
     }
 
-    /** 页内 fetch 探测(只取 code): 返回 null 表示探测不可用(不算 -352, 不触发注入)。 */
-    private fun probeGetDanmuInPage(page: BrowserPage, url: String): Int? {
-        val raw = runCatching {
-            evaluate(page, """
-                fetch(${JSON.toJSONString(url)}, { credentials: 'include' })
-                  .then(r => r.json()).then(j => String(j.code)).catch(() => 'error')
-            """.trimIndent(), await = true)
+    /** Single explicit fetch helper; never used to re-fetch a successful observed response. */
+    internal fun fetchGetDanmuEnvelopeInPage(page: BrowserPage, url: String): JSONObject? {
+        val raw = runCatching { evaluate(page,
+            "fetch(${JSON.toJSONString(url)}, {credentials:'include'}).then(r=>r.json()).then(j=>JSON.stringify(j))", await = true)
         }.getOrNull() ?: return null
-        return raw.toIntOrNull()
-    }
-
-    /** 页内 fetch 拉取完整响应体。 */
-    private fun fetchGetDanmuEnvelopeInPage(page: BrowserPage, url: String): JSONObject? {
-        val raw = runCatching {
-            evaluate(page, """
-                fetch(${JSON.toJSONString(url)}, { credentials: 'include' }).then(r => r.json()).then(j => JSON.stringify(j)).catch(() => '')
-            """.trimIndent(), await = true)
-        }.getOrNull().orEmpty()
-        if (raw.isBlank()) return null
         return runCatching { JSON.parseObject(raw) }.getOrNull()
     }
 
-    /** 验证码面板是否已由 Bilibili 自身逻辑触发。 */
-    private fun captchaPanelVisible(page: BrowserPage): Boolean = runCatching {
-        evaluate(page,
-            "!!document.querySelector('.risk-captcha,[class*=risk-captcha],.geetest_panel,iframe[src*=captcha]')",
-            await = false) == "true"
-    }.getOrDefault(false)
+    internal companion object {
+        // Observe SDK promises without replacing CaptchaLoader.load, its cached
+        // promises, native functions or their arguments/return values.
+        val NATIVE_READINESS_SCRIPT = """
+            (() => {
+              const watch = window.__starbotNativeCaptchaObserver ||
+                (window.__starbotNativeCaptchaObserver = {seen: new WeakSet(), pending: 0});
+              for (const key of ['_loadConfigPromise_', '_loadLogicPromise_', '_loadSourcePromise_']) {
+                const p = window[key];
+                if (p && typeof p.then === 'function' && !watch.seen.has(p)) {
+                  watch.seen.add(p); watch.pending++;
+                  Promise.resolve(p).then(() => {watch.pending--;}, () => {watch.pending--;});
+                }
+              }
+              const panels = []; let coverageComplete = true;
+              const selector = 'div.risk-captcha,div[class*=risk-captcha],.geetest_panel,.geetest_holder,' +
+                '.geetest_captcha,.geetest_box,.geetest_popup_wrap,.geetest_mask,.geetest_bind_box,iframe[src*=captcha],iframe[src*=geetest]';
+              const scan = root => {
+                panels.push(...root.querySelectorAll(selector));
+                for (const e of root.querySelectorAll('*')) {
+                  if (e.shadowRoot) scan(e.shadowRoot);
+                  if (e.tagName === 'IFRAME') {
+                    try { if (e.contentDocument) scan(e.contentDocument); else coverageComplete = false; }
+                    catch (_) { coverageComplete = false; }
+                  }
+                }
+              };
+              scan(document);
+              return JSON.stringify({documentReady: document.readyState === 'complete',
+                coverageComplete,
+                panelPresent: panels.length > 0,
+                panelVisible: panels.some(e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length)),
+                bootstrapPending: watch.pending > 0,
+                nativePending: window.__starbotGaiaChallenge?.status === 'pending' || !!window.CaptchaLoader});
+            })()
+        """.trimIndent()
+    }
 
     /** 调用 Bilibili 原生验证码 function(CaptchaLoader → useCaptcha), 仅注入挑战参数, 不改其流程。 */
-    private fun buildNativeCaptchaScript(voucher: String?): String {
+    internal fun buildNativeCaptchaScript(challenge: GaiaChallenge, voucher: String? = challenge.voucher): String {
         val voucherJson = JSON.toJSONString(voucher)
+        val challengeJson = JSON.toJSONString(challenge.id)
         return """
-            (async () => {
+            (() => {
+              const state = window.__starbotGaiaChallenge = {id: $challengeJson, status: 'pending', token: null};
+              (async () => {
               try {
                 const loader = window.CaptchaLoader ||
                   await new Promise((resolve, reject) => {
@@ -222,11 +225,16 @@ class BrowserGaiaVtokenProvider(
                   });
                 const instance = await loader.load();
                 const riskParams = $voucherJson ? { riskParams: { v_voucher: $voucherJson } } : {};
-                instance(riskParams);
+                const token = await instance(riskParams);
+                if (typeof token !== 'string' || !token.trim()) throw new Error('Captcha returned no token');
+                state.token = token;
+                state.status = 'resolved';
               } catch (e) {
-                console.log('[gaia-native] 调用失败: ' + ((e && e.message) || e));
+                state.status = 'failed';
               }
-            })();
+              })();
+              return 'started';
+            })()
         """.trimIndent()
     }
 
@@ -236,6 +244,7 @@ class BrowserGaiaVtokenProvider(
             mapOf("expression" to script, "returnByValue" to true, "awaitPromise" to await),
             25
         )
+        result.getJSONObject("exceptionDetails")?.let { error("Gaia page script failed") }
         return result.getJSONObject("result")?.getString("value")
             ?: result["value"]?.toString()
             ?: ""
@@ -251,4 +260,22 @@ class BrowserGaiaVtokenProvider(
         runtime.cookiesForRequest(URI.create(url))
             .firstOrNull { it.name.equals("x-bili-gaia-vtoken", ignoreCase = true) }?.value
     }.getOrNull()
+
+    internal fun currentChallengeToken(page: BrowserPage, challenge: GaiaChallenge, initialVtoken: String?): String? {
+        val state = runCatching { JSON.parseObject(evaluate(page,
+            "JSON.stringify(window.__starbotGaiaChallenge || {})", await = false)) }.getOrNull()
+        if (state?.getString("id") == challenge.id) {
+            if (state.getString("status") == "resolved") {
+                state.getString("token")?.takeIf { it.isNotBlank() }?.let {
+                    evaluate(page, "delete window.__starbotGaiaChallenge.token; window.__starbotGaiaChallenge.status = 'consumed'", await = false)
+                    return it
+                }
+            }
+            if (state.getString("status") == "failed" && !state.getBooleanValue("reported")) {
+                log.warn("Bilibili 原生验证码流程未返回令牌: id={}，请检查页面验证码或关闭/失败状态", challenge.id)
+                runCatching { evaluate(page, "window.__starbotGaiaChallenge.reported = true", await = false) }
+            }
+        }
+        return readVtokenCookie(challenge.originalUri)?.takeIf { it.isNotBlank() && it != initialVtoken }
+    }
 }

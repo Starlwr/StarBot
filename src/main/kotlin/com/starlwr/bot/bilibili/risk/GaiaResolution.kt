@@ -14,6 +14,7 @@ data class GaiaResolution @JvmOverloads constructor(
     val vtoken: String? = null,
     val harvestedEnvelope: JSONObject? = null,
     val browserIdentity: RequestIdentitySnapshot? = null,
+    val officialWsAuthenticated: Boolean = false,
 ) {
     val resolved: Boolean
         get() = !vtoken.isNullOrBlank() || harvestedEnvelope != null
