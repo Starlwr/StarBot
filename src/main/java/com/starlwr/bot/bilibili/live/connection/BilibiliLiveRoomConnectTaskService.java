@@ -1,124 +1,86 @@
 package com.starlwr.bot.bilibili.live.connection;
 
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
-import com.starlwr.bot.bilibili.api.model.Up;
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
-
 import java.util.*;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.*;
 
-/**
- * Account-level connection/reconnection scheduler. It spreads a 1000-room
- * startup or outage across time and never sleeps a live-room worker thread.
- */
+/** One dispatcher; waiting entries retain their identity, deadline and order. */
 @Slf4j
 @StarBotComponent
 public class BilibiliLiveRoomConnectTaskService {
     private final StarBotBilibiliProperties properties;
-    private final ScheduledThreadPoolExecutor scheduler;
     private final Danmu352CircuitBreaker circuitBreaker;
-    // Identity matters when an old connector and its replacement have the same UID.
+    private final ScheduledThreadPoolExecutor scheduler;
     private final Map<BilibiliLiveRoomConnector, PendingConnection> pending = new IdentityHashMap<>();
-    private final Set<BilibiliLiveRoomConnector> deferred = Collections.newSetFromMap(new IdentityHashMap<>());
-    private final AtomicLong nextConnectionSlotMillis = new AtomicLong();
-    private volatile boolean started;
-
-    private static final class PendingConnection { private ScheduledFuture<?> future; }
-
-    public BilibiliLiveRoomConnectTaskService(StarBotBilibiliProperties properties,
-                                              Danmu352CircuitBreaker circuitBreaker) {
-        this.properties = properties;
-        this.circuitBreaker = circuitBreaker;
-        ThreadFactory factory = runnable -> {
-            Thread thread = new Thread(runnable, "bilibili-connect-scheduler");
-            thread.setDaemon(true);
-            return thread;
-        };
-        this.scheduler = new ScheduledThreadPoolExecutor(2, factory);
-        this.scheduler.setRemoveOnCancelPolicy(true);
+    private final PriorityQueue<PendingConnection> queue = new PriorityQueue<>(Comparator
+            .comparingLong((PendingConnection p) -> p.readyAt).thenComparingLong(p -> p.order));
+    private ScheduledFuture<?> wakeup;
+    private long wakeupAt = Long.MAX_VALUE, sequence, nextSlot;
+    private boolean started;
+    private record PendingConnection(BilibiliLiveRoomConnector connector, long readyAt, long order) {}
+    public BilibiliLiveRoomConnectTaskService(StarBotBilibiliProperties properties, Danmu352CircuitBreaker breaker) {
+        this.properties = properties; circuitBreaker = breaker;
+        scheduler = new ScheduledThreadPoolExecutor(1, runnable -> {
+            Thread thread = new Thread(runnable, "bilibili-connect-scheduler"); thread.setDaemon(true); return thread;
+        });
+        scheduler.setRemoveOnCancelPolicy(true);
     }
-
-    @Order(0)
-    @EventListener(StarBotDataSourceLoadCompleteEvent.class)
+    @Order(0) @EventListener(StarBotDataSourceLoadCompleteEvent.class)
     public synchronized void onStarBotDataSourceLoadCompleteEvent() {
-        if (!properties.getLive().isEnableConnectLiveRoom()) {
-            log.warn("未启用直播间连接, 将不会连接到直播间, 数据抓取等服务不可用");
-            return;
-        }
-        started = true;
-        deferred.forEach(connector -> schedule(connector, 0));
-        deferred.clear();
-        log.info("Bilibili 全局连接调度器已启动: pending={}, intervalMs={}",
-                pending.size(), properties.getLive().getLiveRoomConnectInterval());
+        if (!properties.getLive().isEnableConnectLiveRoom() || scheduler.isShutdown()) return;
+        started = true; arm(); log.info("Bilibili 全局连接调度器已启动: pending={}", pending.size());
     }
-
-    public boolean add(BilibiliLiveRoomConnector connector) {
-        return schedule(connector, 0);
+    public boolean add(BilibiliLiveRoomConnector connector) { return schedule(connector, 0); }
+    public synchronized boolean schedule(BilibiliLiveRoomConnector connector, long delay) {
+        if (scheduler.isShutdown() || pending.containsKey(connector)) return false;
+        PendingConnection entry = new PendingConnection(connector, System.currentTimeMillis() + Math.max(0, delay), sequence++);
+        pending.put(connector, entry); queue.add(entry); arm(); return true;
     }
-
-    public synchronized boolean schedule(BilibiliLiveRoomConnector connector, long minimumDelayMillis) {
-        if (scheduler.isShutdown()) return false;
-        if (!started) return deferred.add(connector);
-        if (pending.containsKey(connector)) return false;
-        long now = System.currentTimeMillis();
-        long delay;
-        if (circuitBreaker.isOpen()) {
-            // 熔断期间: 任务保持排队, 绕过全局 slot 均摊(避免 100 房间×1s 的无界抖动),
-            // 直接等到下一次探测时刻, 房间间用哈希错开, 不取消/不重建任务
-            delay = circuitBreaker.nextRetryHintMillis()
-                    + Math.floorMod(connector.hashCode(), 5000);
-        } else {
-            long earliest = now + Math.max(0, minimumDelayMillis);
-            long interval = Math.max(1, properties.getLive().getLiveRoomConnectInterval());
-            long slot = nextConnectionSlotMillis.getAndUpdate(previous -> Math.max(previous + interval, earliest + interval));
-            long scheduledAt = Math.max(earliest, slot);
-            delay = Math.max(0, scheduledAt - now);
+    /** A verified browser lane can become available before the next JVM probe. */
+    public synchronized void refreshAdmission() {
+        if (wakeup != null) wakeup.cancel(false);
+        wakeup = null; wakeupAt = Long.MAX_VALUE; arm();
+    }
+    private void arm() {
+        if (!started || queue.isEmpty() || scheduler.isShutdown()) return;
+        long at = Math.max(queue.peek().readyAt, nextSlot);
+        if (circuitBreaker.isOpen()) at = Math.max(at, System.currentTimeMillis() + circuitBreaker.nextRetryHintMillis());
+        if (wakeup != null && !wakeup.isDone() && wakeupAt <= at) return;
+        if (wakeup != null) wakeup.cancel(false);
+        wakeupAt = at;
+        wakeup = scheduler.schedule(this::dispatch, Math.max(0, at - System.currentTimeMillis()), TimeUnit.MILLISECONDS);
+    }
+    private void dispatch() {
+        BilibiliLiveRoomConnector connector;
+        synchronized (this) {
+            wakeup = null; wakeupAt = Long.MAX_VALUE;
+            if (scheduler.isShutdown() || queue.isEmpty() || !properties.getLive().isEnableConnectLiveRoom()) return;
+            if (Math.max(queue.peek().readyAt, nextSlot) > System.currentTimeMillis()
+                    || !circuitBreaker.tryAcquireExecutionSlot()) { arm(); return; }
+            PendingConnection entry = queue.remove(); pending.remove(entry.connector);
+            connector = entry.connector;
+            nextSlot = System.currentTimeMillis() + Math.max(1, properties.getLive().getLiveRoomConnectInterval());
+            arm();
         }
-        PendingConnection task = new PendingConnection();
-        task.future = scheduler.schedule(() -> {
-            synchronized (this) {
-                // Registration completes under this same lock before a zero-delay task can run.
-                if (pending.get(connector) != task || scheduler.isShutdown()) return;
-                pending.remove(connector);
-            }
-            if (!properties.getLive().isEnableConnectLiveRoom()) return;
-            // -352 熔断准入: 熔断开启期间任务保持排队等待(不取消/不重建); 探测时刻放行且仅放行一个
-            if (!circuitBreaker.tryAcquireExecutionSlot()) {
-                log.debug("弹幕 -352 熔断等待中, 连接任务保持排队: room={}", connector.getUp().getRoomIdString());
-                schedule(connector, circuitBreaker.nextRetryHintMillis());
-                return;
-            }
-            Up up = connector.getUp();
-            log.debug("执行直播间连接任务: uid={}, room={}, pending={}", up.getUid(), up.getRoomIdString(), pendingCount());
-            connector.connect();
-        }, delay, TimeUnit.MILLISECONDS);
-        pending.put(connector, task);
+        try { connector.connect(); }
+        catch (RuntimeException error) { log.warn("提交直播间连接任务失败", error); }
+    }
+    public synchronized boolean remove(BilibiliLiveRoomConnector connector) {
+        PendingConnection entry = pending.remove(connector);
+        if (entry == null) return false;
+        queue.remove(entry);
+        if (queue.isEmpty() && wakeup != null) { wakeup.cancel(false); wakeup = null; wakeupAt = Long.MAX_VALUE; }
         return true;
     }
-
-    public synchronized boolean remove(BilibiliLiveRoomConnector connector) {
-        boolean removedDeferred = deferred.remove(connector);
-        PendingConnection task = pending.remove(connector);
-        boolean cancelled = task != null && task.future.cancel(false);
-        return removedDeferred || cancelled;
-    }
-
     public synchronized int pendingCount() { return pending.size(); }
-
-    @PreDestroy
-    public synchronized void close() {
-        pending.values().forEach(task -> task.future.cancel(false));
-        pending.clear();
-        deferred.clear();
-        scheduler.shutdownNow();
+    @PreDestroy public synchronized void close() {
+        if (wakeup != null) wakeup.cancel(false);
+        queue.clear(); pending.clear(); scheduler.shutdownNow();
     }
 }

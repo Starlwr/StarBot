@@ -87,6 +87,7 @@ public class BilibiliLiveRoomConnector {
 
     /** 该会话曾以浏览器身份(-352 解算后)连接: 其重连继续沿用浏览器身份 */
     private volatile boolean stickyBrowserIdentity;
+    private volatile RequestIdentitySnapshot stickyBrowserSnapshot;
 
     private final AtomicInteger addressCursor = new AtomicInteger();
 
@@ -155,6 +156,8 @@ public class BilibiliLiveRoomConnector {
         private final Object sendLock = new Object();
         private final AtomicBoolean heartbeatQueued = new AtomicBoolean();
         private final AtomicBoolean riskQueued = new AtomicBoolean();
+        private final CompletableFuture<Void> healthProof = new CompletableFuture<>();
+        private volatile boolean authenticated;
         private volatile Instant connectedAt;
         private volatile Instant lastHeartbeatSentAt;
         private volatile Instant lastHeartbeatAckAt = Instant.now();
@@ -197,6 +200,9 @@ public class BilibiliLiveRoomConnector {
      * @return 直播间连接地址
      */
     private ConnectTarget getConnectTarget() {
+        if (stickyBrowserIdentity && stickyBrowserSnapshot != null && !bilibili.browserIdentityCurrent(stickyBrowserSnapshot)) {
+            stickyBrowserIdentity = false; stickyBrowserSnapshot = null;
+        }
         ConnectInfo connectInfo = bilibili.getLiveRoomConnectInfo(up.getRoomId(), stickyBrowserIdentity);
         List<ConnectAddress> addresses = connectInfo.getAddresses();
         if (addresses == null || addresses.isEmpty()) {
@@ -213,10 +219,17 @@ public class BilibiliLiveRoomConnector {
      */
     public void connect() {
         FutureTask<Void> task;
+        AtomicBoolean admissionReleased = new AtomicBoolean();
         synchronized (lifecycleLock) {
-            if (stopping || status == ConnectStatus.CONNECTING || status == ConnectStatus.CONNECTED) return;
+            if (stopping || status == ConnectStatus.CONNECTING || status == ConnectStatus.CONNECTED) {
+                circuitBreaker.onExecutionSkipped(); return;
+            }
             status = ConnectStatus.CONNECTING;
-            task = new FutureTask<>(() -> { connectAttempt(); return null; });
+            task = new FutureTask<>(() -> { connectAttempt(admissionReleased); return null; }) {
+                @Override protected void done() {
+                    if (isCancelled() && admissionReleased.compareAndSet(false, true)) circuitBreaker.onExecutionSkipped();
+                }
+            };
             connectTask = task;
         }
         try { executor.execute(task); }
@@ -232,14 +245,21 @@ public class BilibiliLiveRoomConnector {
         }
     }
 
-    private void connectAttempt() {
-        if (stopping) return;
+    private void connectAttempt(AtomicBoolean admissionReleased) {
+        if (stopping) {
+            if (admissionReleased.compareAndSet(false, true)) circuitBreaker.onExecutionSkipped();
+            return;
+        }
         int interval = properties.getLive().getLiveRoomReconnectInterval();
         ConnectionContext context = null;
         CompletableFuture<WebSocketSession> sessionFuture = null;
         BilibiliNetworkLogger.HttpTrace handshakeTrace = null;
+        boolean deferredAdmission = false;
         try {
             ConnectTarget target = getConnectTarget();
+            boolean browserIdentity = target.connectInfo().getIdentity() != null && target.connectInfo().getIdentity().isBrowser();
+            boolean healthProofRequired = circuitBreaker.requiresHealthProof(browserIdentity);
+            if (!healthProofRequired && admissionReleased.compareAndSet(false, true)) circuitBreaker.onIdentityOutcome(browserIdentity);
             context = new ConnectionContext(generationSequence.incrementAndGet(), target.connectInfo(),
                     target.url(), target.host(), target.hostIndex(), target.hostCount());
             ConnectionContext previous;
@@ -266,7 +286,8 @@ public class BilibiliLiveRoomConnector {
                     headers.toSingleValueMap(), null);
 
             BilibiliWebSocketHandler handler = new BilibiliWebSocketHandler(this, context);
-            sessionFuture = webSocketClient.executeForRoom(up.getRoomId(), handler, headers, URI.create(context.url));
+            sessionFuture = webSocketClient.executeForRoom(up.getRoomId(), handler, headers, URI.create(context.url),
+                    requestIdentity != null && requestIdentity.isBrowser());
             sessionFuture.whenComplete((ignored, error) -> { if (error != null) handler.latch.countDown(); });
             synchronized (lifecycleLock) {
                 if (isUsable(context)) context.connectionFuture = sessionFuture;
@@ -275,6 +296,25 @@ public class BilibiliLiveRoomConnector {
 
             if (handler.awaitConnection()) {
                 sessionFuture.get(3, TimeUnit.SECONDS);
+                if (healthProofRequired) {
+                    // Do not occupy the same executor needed by auth and heartbeat callbacks.
+                    deferredAdmission = true;
+                    ConnectionContext recoveryContext = context;
+                    context.healthProof.orTimeout(35, TimeUnit.SECONDS).whenComplete((ignored, failure) -> {
+                        if (admissionReleased.compareAndSet(false, true)) {
+                            if (failure == null) {
+                                circuitBreaker.onIdentityOutcome(browserIdentity);
+                                log.info("恢复通道首个 WS 已认证且心跳应答正常: room={}, browser={}", up.getRoomId(), browserIdentity);
+                            } else {
+                                if (browserIdentity) bilibili.suspendBrowserRecovery(recoveryContext.connectInfo.getIdentity());
+                                circuitBreaker.onConnectFailure(failure);
+                            }
+                            taskService.refreshAdmission();
+                        }
+                        if (failure != null) finishConnection(recoveryContext, CloseStatus.SESSION_NOT_RELIABLE, failure);
+                    });
+                }
+                taskService.refreshAdmission();
                 try { networkLog.httpResponse(handshakeTrace, 101, Collections.emptyMap(), "<websocket-upgrade>"); }
                 catch (RuntimeException diagnosticFailure) { log.debug("WebSocket 握手诊断记录失败", diagnosticFailure); }
             } else {
@@ -302,12 +342,13 @@ public class BilibiliLiveRoomConnector {
                     if (!isUsable(context)) return;
                     status = ConnectStatus.ERROR;
                     requestReconnect(context, interval, "handshake-failure");
-                    circuitBreaker.onConnectFailure(e);
+                    if (admissionReleased.compareAndSet(false, true)) circuitBreaker.onConnectFailure(e);
                     reportHandshakeFailure(context, e, interval);
                 }
             } finally { releaseConnection(context); }
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
         } finally {
+            if (!deferredAdmission && admissionReleased.compareAndSet(false, true)) circuitBreaker.onExecutionSkipped();
             if (context != null) context.connectionFuture = null;
         }
     }
@@ -343,6 +384,7 @@ public class BilibiliLiveRoomConnector {
 
     /** Detach transport resources before closing; callbacks can arrive synchronously or much later. */
     private void releaseConnection(ConnectionContext context) {
+        context.healthProof.completeExceptionally(new IllegalStateException("Recovery socket released"));
         WebSocketSession session;
         CompletableFuture<WebSocketSession> future;
         synchronized (lifecycleLock) {
@@ -356,6 +398,7 @@ public class BilibiliLiveRoomConnector {
     }
 
     private void finishConnection(ConnectionContext context, CloseStatus closeStatus, Throwable error) {
+        context.healthProof.completeExceptionally(error == null ? new IllegalStateException("Socket closed before recovery proof") : error);
         try {
             synchronized (lifecycleLock) {
                 if (!context.closeObserved.compareAndSet(false, true)) return;
@@ -370,9 +413,11 @@ public class BilibiliLiveRoomConnector {
      */
     private void sendVerifyData(ConnectionContext context) {
         RequestIdentitySnapshot identity = context.connectInfo.getIdentity();
+        if (identity != null && identity.isBrowser() && !bilibili.browserIdentityCurrent(identity))
+            throw new IllegalStateException("Browser identity changed before WS authentication; retain recovery task");
         Map<String, Object> verifyData = Map.of(
-                "uid", identity == null || identity.getUid().isBlank() ? accountService.getAccountInfo().getUid() : identity.getUid(),
-                "roomid", up.getRoomId(),
+                "uid", Long.parseLong(identity == null || identity.getUid().isBlank() ? accountService.getAccountInfo().getUid() : identity.getUid()),
+                "roomid", Long.parseLong(up.getRoomId()),
                 "protover", 3,
                 "buvid", identity == null ? bilibili.getCookies().getBuvid3() : identity.getBuvid3(),
                 "support_ack", true,
@@ -618,7 +663,6 @@ public class BilibiliLiveRoomConnector {
         if (!isCurrent(context) || stopping || !context.reconnectGate.trySchedule()) return;
         // 除握手失败外, 其余重连原因均意味着 getDanmuInfo 已通过(连接曾建立):
         // 通知熔断器闭合, 恢复全量正常调度
-        if (!"handshake-failure".equals(reason)) circuitBreaker.onProbeOutcome(null);
         boolean scheduled = taskService.schedule(this, delayMillis);
         if (scheduled) {
             log.info("已安排直播间重连: room={}, host={}, generation={}, delayMs={}, reason={}",
@@ -965,6 +1009,7 @@ public class BilibiliLiveRoomConnector {
                                 }
                             } else if (dataPackType == DataPackType.HEARTBEAT_RESPONSE.getCode()) {
                                 context.lastHeartbeatAckAt = Instant.now();
+                                if (context.authenticated) context.healthProof.complete(null);
                             } else if (dataPackType == DataPackType.VERIFY_SUCCESS_RESPONSE.getCode()) {
                                 int code = data == null || data.isEmpty() ? 0 : data.getIntValue("code", 0);
                                 if (code == -101) {
@@ -981,6 +1026,7 @@ public class BilibiliLiveRoomConnector {
                                 }
                                 synchronized (connector.lifecycleLock) {
                                     if (!connector.isUsable(context)) return;
+                                    context.authenticated = true;
                                     connector.status = ConnectStatus.CONNECTED;
                                     context.lastHeartbeatAckAt = Instant.now();
                                     connector.startHeartBeat(context);
@@ -988,8 +1034,9 @@ public class BilibiliLiveRoomConnector {
                                     connector.latestDanmus.clear();
                                     connector.startDetectRisk(context);
                                 }
-                                connector.circuitBreaker.onConnectSuccess();
-                                if (context.connectInfo.getIdentity() != null && context.connectInfo.getIdentity().isBrowser()) connector.stickyBrowserIdentity = true;
+                                connector.stickyBrowserIdentity = context.connectInfo.getIdentity() != null
+                                        && context.connectInfo.getIdentity().isBrowser();
+                                connector.stickyBrowserSnapshot = connector.stickyBrowserIdentity ? context.connectInfo.getIdentity() : null;
                                 log.info("已成功连接到 {} 的直播间 {}: host={}, generation={}",
                                         up.getUname(), up.getRoomId(), context.host, context.generation);
 

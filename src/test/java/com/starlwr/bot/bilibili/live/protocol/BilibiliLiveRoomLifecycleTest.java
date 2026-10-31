@@ -36,6 +36,65 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class BilibiliLiveRoomLifecycleTest {
+    @Test void failedFirstBrowserSocketSuspendsBatchInsteadOfReleasingAllWaitingRooms() throws Exception {
+        Fixture f = new Fixture();
+        var identity = new com.starlwr.bot.bilibili.credential.RequestIdentitySnapshot(Map.of(), "browser", "42", "verified");
+        ConnectInfo info = new ConnectInfo("fresh", List.of(new ConnectAddress("example.invalid",80,443,80)));
+        info.setIdentity(identity);
+        when(f.api.getLiveRoomConnectInfo("2",false)).thenReturn(info);
+        when(f.breaker.requiresHealthProof(true)).thenReturn(true);
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(2), f::establish);
+        f.handler.handleTransportError(f.session, new java.io.IOException("first browser socket failed"));
+        verify(f.api, times(1)).suspendBrowserRecovery(identity);
+        verify(f.breaker, times(1)).onConnectFailure(any());
+        verify(f.breaker, never()).onIdentityOutcome(true);
+        f.connector.disconnect();
+    }
+    @Test void recoveryAdmissionWaitsForAuthAndHeartbeatWithoutBlockingTheCallbackExecutor() throws Exception {
+        Fixture f = new Fixture();
+        when(f.breaker.requiresHealthProof(false)).thenReturn(true);
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(2), f::establish);
+        verify(f.breaker, never()).onIdentityOutcome(anyBoolean());
+        f.workers.clear(); // Authentication send itself is covered separately.
+        f.handler.handleMessage(f.session, new BinaryMessage(f.codec.encode(8, "{\"code\":0}".getBytes(StandardCharsets.UTF_8), 1, 1)));
+        f.workers.remove().run();
+        verify(f.breaker, never()).onIdentityOutcome(anyBoolean());
+        f.handler.handleMessage(f.session, new BinaryMessage(f.codec.encode(3, ByteBuffer.allocate(4).putInt(1).array(), 1, 1)));
+        f.workers.remove().run();
+        verify(f.breaker, times(1)).onIdentityOutcome(false);
+        f.connector.disconnect();
+    }
+    @Test void cancellingRecoveryBeforeHeartbeatReleasesAdmissionExactlyOnce() throws Exception {
+        Fixture f = new Fixture(); when(f.breaker.requiresHealthProof(false)).thenReturn(true);
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(2), f::establish);
+        f.connector.disconnect();
+        f.handler.afterConnectionClosed(f.session, CloseStatus.NORMAL);
+        verify(f.breaker, times(1)).onConnectFailure(any());
+        verify(f.breaker, never()).onIdentityOutcome(anyBoolean());
+    }
+    @Test void cancellingQueuedAttemptReleasesItsAdmissionExactlyOnce() throws Exception {
+        Fixture f = new Fixture();
+        f.connector.connect(); f.connector.disconnect();
+        verify(f.breaker,times(1)).onExecutionSkipped();
+        verify(f.breaker,never()).onConnectFailure(any());
+    }
+    @Test void authenticationUsesNumericIdsAndTheConnectionIdentity() throws Exception {
+        Fixture f = new Fixture();
+        ConnectInfo info = new ConnectInfo("request-token", List.of(new ConnectAddress("example.invalid",80,443,80)));
+        info.setIdentity(new com.starlwr.bot.bilibili.credential.RequestIdentitySnapshot(
+                Map.of("Cookie","buvid3=from-observed-request","User-Agent","test"), "from-observed-request", "42", "challenge"));
+        when(f.api.getLiveRoomConnectInfo("2",false)).thenReturn(info);
+        f.establish(); f.workers.remove().run();
+        var capture = org.mockito.ArgumentCaptor.forClass(BinaryMessage.class);
+        verify(f.session).sendMessage(capture.capture());
+        var frame = f.codec.decode(capture.getValue().getPayload().array()).get(0);
+        assertEquals(7,frame.getOperation()); assertEquals(1,frame.getVersion());
+        var auth = com.alibaba.fastjson2.JSON.parseObject(new String(frame.getBody(), StandardCharsets.UTF_8));
+        assertInstanceOf(Number.class,auth.get("uid")); assertInstanceOf(Number.class,auth.get("roomid"));
+        assertEquals(42L,auth.getLongValue("uid")); assertEquals("from-observed-request",auth.getString("buvid"));
+        assertEquals("request-token",auth.getString("key"));
+        f.connector.disconnect();
+    }
     @Test void failedSendDetachesAndReconnectsEvenWithoutTransportCallbacks() throws Exception {
         Fixture f = new Fixture(); f.establish(); Object context = f.context();
         doThrow(new java.io.IOException("send failure")).when(f.session).sendMessage(any());
@@ -163,17 +222,21 @@ class BilibiliLiveRoomLifecycleTest {
         final BilibiliAccountService account = mock(BilibiliAccountService.class);
         final BilibiliEventParser parser = mock(BilibiliEventParser.class);
         final StandardWebSocketClient jvmClient = mock(StandardWebSocketClient.class);
-        final BilibiliLiveWsClient client = new BilibiliLiveWsClient(jvmClient, null, new StarBotBilibiliProperties());
+        final com.starlwr.bot.bilibili.live.connection.BrowserLiveWsClient browserClient = mock(com.starlwr.bot.bilibili.live.connection.BrowserLiveWsClient.class);
+        final BilibiliLiveWsClient client = new BilibiliLiveWsClient(jvmClient, browserClient, new StarBotBilibiliProperties());
         final BilibiliNetworkLogger networkLog = mock(BilibiliNetworkLogger.class);
         final WebSocketSession session = mock(WebSocketSession.class);
         final AtomicBoolean open = new AtomicBoolean(true);
         final Up up = new Up("1", "test", "2");
         final DanmakuPacketCodec codec = new DanmakuPacketCodec();
+        final com.starlwr.bot.bilibili.live.connection.Danmu352CircuitBreaker breaker = mock(com.starlwr.bot.bilibili.live.connection.Danmu352CircuitBreaker.class);
         final BilibiliLiveRoomConnector connector;
         WebSocketHandler handler;
         CompletableFuture<WebSocketSession> future;
         boolean autoEstablish = true;
         Fixture() throws Exception {
+            when(browserClient.usable()).thenReturn(true);
+            when(api.browserIdentityCurrent(any())).thenReturn(true);
             when(networkLog.httpRequest(anyString(), anyString(), anyString(), anyMap(), isNull()))
                     .thenReturn(new BilibiliNetworkLogger.HttpTrace(1L, "test", "live-ws", "GET", "https://example.invalid", System.nanoTime()));
             doAnswer(call -> { workers.add(call.getArgument(0)); return null; }).when(executor).execute(any(Runnable.class));
@@ -189,9 +252,14 @@ class BilibiliLiveRoomLifecycleTest {
                 if(autoEstablish) { handler.afterConnectionEstablished(session); future.complete(session); }
                 return future;
             });
+            when(browserClient.execute(any(WebSocketHandler.class), any(WebSocketHttpHeaders.class), any(URI.class))).thenAnswer(call -> {
+                handler = call.getArgument(0); future = new CompletableFuture<>();
+                if (autoEstablish) { handler.afterConnectionEstablished(session); future.complete(session); }
+                return future;
+            });
             connector = new BilibiliLiveRoomConnector(executor, mock(TaskScheduler.class), mock(ApplicationEventPublisher.class),
                     new StarBotBilibiliProperties(), mock(LiveDataService.class), account, tasks, parser, api,
-                    networkLog, codec, client, incidents, mock(com.starlwr.bot.bilibili.live.connection.Danmu352CircuitBreaker.class), up);
+                    networkLog, codec, client, incidents, breaker, up);
         }
         void establish() { connector.connect(); workers.remove().run(); }
         Object context() { return ReflectionTestUtils.getField(connector, "activeConnection"); }

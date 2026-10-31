@@ -99,6 +99,9 @@ public class BilibiliApiService {
 
     private final com.starlwr.bot.bilibili.risk.BrowserIdentityRegistry identityRegistry;
 
+    @Autowired(required = false)
+    private com.starlwr.bot.bilibili.live.connection.Danmu352CircuitBreaker danmuCircuitBreaker;
+
     private final AtomicLong webSignUpdatedAtMillis = new AtomicLong();
 
     private final AtomicBoolean webSignRefreshInProgress = new AtomicBoolean();
@@ -274,7 +277,7 @@ public class BilibiliApiService {
                 if (observed == null || !observed.isBrowser()
                         || (requestIdentity != null && !requestIdentity.getUid().isBlank()
                             && !requestIdentity.getUid().equals(observed.getUid()))) {
-                    throw new ResponseCodeException(-352, "Browser response identity is unavailable or belongs to another account");
+                    throw new IllegalStateException("Browser response identity is unavailable or belongs to another account");
                 }
                 selectedIdentity.set(observed);
             }
@@ -296,6 +299,32 @@ public class BilibiliApiService {
                     log.info("Bilibili API 返回 -352，但已有 WBI 重算任务正在进行，本请求不再重复触发");
                 }
             }
+            if (code == -352 && selectedIdentity != null && requestIdentity != null && !requestIdentity.isBrowser()
+                    && danmuCircuitBreaker != null) danmuCircuitBreaker.observeJvmRejection();
+            // Normal requests remain JVM-first. A verified run-only overlay is
+            // eligible only after this request still explicitly failed -352.
+            if (code == -352 && selectedIdentity != null && requestIdentity != null && !requestIdentity.isBrowser()
+                    && identityRegistry != null && browserRiskExecutor != null) {
+                var overlay = identityRegistry.lastVerified();
+                if (overlay != null && overlay.keyIdentityDrifted(browserRiskExecutor.currentBrowserCookies(url))) {
+                    identityRegistry.clear(); overlay = null;
+                }
+                if (overlay != null) {
+                    var browserResponse = browserRiskExecutor.executeGetInBrowser(url, "overlay-after-explicit-352");
+                    if (browserResponse != null && browserResponse.successful()) {
+                        var envelope = browserResponse.json();
+                        var observed = browserResponse.getRequest().getIdentity();
+                        if (envelope.getIntValue("code", -1) == -352) {
+                            identityRegistry.clear();
+                            throw new ResponseCodeException(-352, "BrowserOverlay also returned -352");
+                        }
+                        if (envelope.getIntValue("code", -1) == 0 && observed != null && observed.isBrowser()
+                                && (requestIdentity.getUid().isBlank() || requestIdentity.getUid().equals(observed.getUid()))) {
+                            result = envelope; code = 0; selectedIdentity.set(observed);
+                        }
+                    }
+                }
+            }
             if ((code == -352 || code == -401) && riskProperties.getGaiaEnabled()) {
                 JSONObject challengeData = result.getJSONObject("data");
                 String voucher = responseHeader(response, "x-bili-gaia-vvoucher");
@@ -310,20 +339,35 @@ public class BilibiliApiService {
                 GaiaResolution resolution = gaiaChallengeProvider.submit(challenge);
                 if (resolution != null && resolution.getHarvestedEnvelope() != null
                         && gaiaRetryPerformed.compareAndSet(false, true)) {
-                    // 浏览器环境自行通过: 直接带回完整响应, StarBot 不再自发请求
-                    log.info("Bilibili Gaia challenge 已由浏览器环境直接通过并带回响应: code={}, uri={}", code, url);
+                    // The official page owns its socket/token. Use its success as identity evidence,
+                    // then independently issue this room's token for the StarBot-owned BrowserDialer.
+                    log.info("Bilibili 官方页面已恢复，取回临时身份证据；独立签发 BrowserDialer 连接信息");
                     result = resolution.getHarvestedEnvelope();
                     code = result.getInteger("code");
                     RequestIdentitySnapshot verified = resolution.getBrowserIdentity();
                     if (selectedIdentity != null && code != null && code == 0) {
                         if (verified == null || !challenge.getId().equals(verified.getSourceChallengeId())) {
-                            throw new ResponseCodeException(-352, "Browser response omitted matching session identity");
+                            throw new IllegalStateException("Browser response omitted matching session identity");
                         }
                         if (requestIdentity != null && !requestIdentity.getUid().isBlank()
                                 && !requestIdentity.getUid().equals(verified.getUid())) {
-                            throw new ResponseCodeException(-352, "Browser account does not match the requested account");
+                            throw new IllegalStateException("Browser account does not match the requested account");
                         }
                         selectedIdentity.set(verified);
+                        if (resolution.getOfficialWsAuthenticated()) {
+                            var independent = browserRiskExecutor == null ? null
+                                    : browserRiskExecutor.executeGetInBrowser(resignWbiUrl(url), challenge.getId());
+                            if (independent == null || !independent.successful()) {
+                                throw new com.starlwr.bot.bilibili.risk.BrowserRecoveryPendingException("Independent browser issuance unavailable");
+                            }
+                            result = independent.json(); code = result.getInteger("code");
+                            var actual = independent.getRequest().getIdentity();
+                            if (code != null && code == 0) {
+                                if (actual == null || !actual.isBrowser() || !actual.getUid().equals(verified.getUid()))
+                                    throw new IllegalStateException("Independent browser issuance identity mismatch");
+                                selectedIdentity.set(actual);
+                            }
+                        }
                     }
                 } else if (resolution != null && StringUtils.isNotBlank(resolution.getVtoken())
                         && gaiaRetryPerformed.compareAndSet(false, true)) {
@@ -376,10 +420,14 @@ public class BilibiliApiService {
                     if ("GET".equalsIgnoreCase(method) && browserRiskExecutor != null) {
                         response = browserRiskExecutor.executeGetInBrowser(retryUrl, challenge.getId());
                         if (response != null) {
-                            log.info("Gaia 重试经浏览器通道执行: status={}", response.getStatus());
+                            log.info("Gaia 重试经浏览器通道执行: httpStatus={}, businessCode={}",
+                                    response.getStatus(), response.json().getInteger("code"));
                         }
                     }
                     if (response == null) {
+                        if (selectedIdentity != null) {
+                            throw new com.starlwr.bot.bilibili.risk.BrowserRecoveryPendingException("Browser Gaia retry unavailable; retain browser recovery");
+                        }
                         response = "GET".equalsIgnoreCase(method)
                                 ? (requestIdentity == null ? httpPipeline.get(retryUrl, retryHeaders, "bilibili-api-gaia-retry")
                                     : httpPipeline.getWithIdentity(retryUrl, new RequestIdentitySnapshot(retryHeaders,
@@ -398,7 +446,7 @@ public class BilibiliApiService {
                         if (observed == null || !challenge.getId().equals(observed.getSourceChallengeId())
                                 || (requestIdentity != null && !requestIdentity.getUid().isBlank()
                                     && !requestIdentity.getUid().equals(observed.getUid()))) {
-                            throw new ResponseCodeException(-352, "Browser response identity is unavailable or belongs to another account");
+                            throw new IllegalStateException("Browser response identity is unavailable or belongs to another account");
                         }
                         selectedIdentity.set(observed);
                     }
@@ -757,10 +805,20 @@ public class BilibiliApiService {
         return getLiveRoomConnectInfo(roomId, false);
     }
 
-    /**
-     * preferBrowserIdentity: 该会话曾以浏览器身份连接成功(-352 后), 其重连继续沿用浏览器身份;
-     * 否则: -352 熔断激活期间或登记表中已有验证身份时优先浏览器通道, 常规情况优先 JVM 身份。
-     */
+    public boolean browserIdentityCurrent(RequestIdentitySnapshot identity) {
+        boolean current = identity != null && identity.isBrowser() && browserRiskExecutor != null
+                && !identity.keyIdentityDrifted(browserRiskExecutor.currentBrowserCookies(
+                "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo"));
+        if (!current && identityRegistry != null) identityRegistry.clearIf(identity);
+        return current;
+    }
+
+    /** Suspend batch admission after the first BrowserDialer fails its health proof. */
+    public void suspendBrowserRecovery(RequestIdentitySnapshot identity) {
+        if (identityRegistry != null && identity != null) identityRegistry.clearIf(identity);
+    }
+
+    /** Sticky sessions and risk recovery prefer the verified run-only browser lane. */
     public ConnectInfo getLiveRoomConnectInfo(@NonNull String roomId, boolean preferBrowserIdentity) {
         RequestIdentitySnapshot initial = RequestIdentitySnapshot.jvm(httpPipeline.snapshotJvmHeaders(
                     "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo", getBilibiliHeaders()));
@@ -778,9 +836,12 @@ public class BilibiliApiService {
                 verified = null;
             }
         }
-        if (verified != null && browserRiskExecutor != null) {
+        boolean mayPreferOverlay = preferBrowserIdentity || (danmuCircuitBreaker != null && danmuCircuitBreaker.isOpen());
+        if (mayPreferOverlay && verified != null && browserRiskExecutor != null) {
             Map<String, Object> stickyParams = new HashMap<>();
             stickyParams.put("id", roomId);
+            stickyParams.put("type", 0);
+            stickyParams.put("web_location", "444.8");
             String stickyUrl = danmuInfoPath
                     + BilibiliWbiUtil.getWbiSign(stickyParams, sign.getImgKey(), sign.getSubKey(),
                     properties.getNetwork().isWbiEncodedQuery());
@@ -790,7 +851,11 @@ public class BilibiliApiService {
                 var code = json.getInteger("code");
                 var observed = browserResponse.getRequest().getIdentity();
                 if (code != null && code == 0) {
-                    if (identityRegistry != null && observed != null && observed.isBrowser()) {
+                    if (observed == null || !observed.isBrowser() || (!initial.getUid().isBlank()
+                            && !initial.getUid().equals(observed.getUid()))) {
+                        throw new IllegalStateException("BrowserOverlay omitted matching request identity");
+                    }
+                    if (identityRegistry != null) {
                         identityRegistry.recordVerified(observed);
                     }
                     var data = json.getJSONObject("data");
@@ -798,27 +863,63 @@ public class BilibiliApiService {
                         List<ConnectAddress> harvested = data.getJSONArray("host_list")
                                 .toJavaList(ConnectAddress.class);
                         ConnectInfo info = new ConnectInfo(data.getString("token"), harvested);
-                        info.setIdentity(observed != null ? observed : verified);
+                        info.setIdentity(observed);
                         return info;
                     }
                 } else if (code != null && code == -352 && identityRegistry != null) {
                     identityRegistry.clear();
+                    throw new ResponseCodeException(-352, "BrowserOverlay also returned -352");
                 }
             }
+            // A failed browser attempt must not immediately hit the rejected JVM lane.
+            throw new com.starlwr.bot.bilibili.risk.BrowserRecoveryPendingException("Browser lane unavailable; retain queued recovery");
         }
-        RequestIdentitySnapshot selectedInitial = preferBrowserIdentity && verified != null ? verified : initial;
-        AtomicReference<RequestIdentitySnapshot> selected = new AtomicReference<>(selectedInitial);
+        AtomicReference<RequestIdentitySnapshot> selected = new AtomicReference<>(initial);
         Map<String, Object> params = new HashMap<>();
         params.put("id", roomId);
+        params.put("type", 0);
+        params.put("web_location", "444.8");
 
         String api = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo" +
                 BilibiliWbiUtil.getWbiSign(params, sign.getImgKey(), sign.getSubKey(), properties.getNetwork().isWbiEncodedQuery());
+        if (gaiaChallengeProvider.hasPendingBrowserVerification()) {
+            GaiaChallenge resumed = new GaiaChallenge(-352, null, null, api);
+            GaiaResolution resolution = gaiaChallengeProvider.submit(resumed);
+            if (resolution == null || browserRiskExecutor == null)
+                throw new com.starlwr.bot.bilibili.risk.BrowserRecoveryPendingException("Official verification remains pending");
+            if (StringUtils.isNotBlank(resolution.getVtoken())) params.put("gaia_vtoken", resolution.getVtoken());
+            else if (!resolution.getOfficialWsAuthenticated() || resolution.getBrowserIdentity() == null
+                    || !initial.getUid().equals(resolution.getBrowserIdentity().getUid()))
+                throw new IllegalStateException("Resumed official session omitted matching WS/identity proof");
+            String freshUrl = danmuInfoPath + BilibiliWbiUtil.getWbiSign(params, sign.getImgKey(), sign.getSubKey(),
+                    properties.getNetwork().isWbiEncodedQuery());
+            var fresh = browserRiskExecutor.executeGetInBrowser(freshUrl, resumed.getId());
+            if (fresh == null || !fresh.successful())
+                throw new com.starlwr.bot.bilibili.risk.BrowserRecoveryPendingException("Resumed browser issuance unavailable");
+            var envelope = fresh.json();
+            int businessCode = envelope.getIntValue("code", -1);
+            if (businessCode != 0) throw new ResponseCodeException(businessCode, "Resumed browser issuance rejected");
+            var actual = fresh.getRequest().getIdentity();
+            if (actual == null || !actual.isBrowser() || !initial.getUid().equals(actual.getUid()))
+                throw new IllegalStateException("Resumed browser issuance identity mismatch");
+            var data = envelope.getJSONObject("data");
+            ConnectInfo info = new ConnectInfo(data.getString("token"), data.getJSONArray("host_list").toJavaList(ConnectAddress.class));
+            info.setIdentity(actual);
+            identityRegistry.recordVerified(actual);
+            return info;
+        }
+        if (danmuCircuitBreaker != null && !danmuCircuitBreaker.jvmProbeDue())
+            throw new com.starlwr.bot.bilibili.risk.BrowserRecoveryPendingException("JVM identity is paused; wait for the admitted probe");
         JSONObject result = requestBilibiliApi(api, "GET", initial.getHeaders(), Collections.emptyMap(), selected);
 
         String token = result.getString("token");
         List<ConnectAddress> addresses = result.getJSONArray("host_list").toJavaList(ConnectAddress.class);
         ConnectInfo connectInfo = new ConnectInfo(token, addresses);
         connectInfo.setIdentity(selected.get());
+        if (selected.get().isBrowser() && !browserIdentityCurrent(selected.get())) {
+            throw new IllegalStateException("BrowserOverlay changed after getDanmuInfo; retry with JVM identity");
+        }
+        if (identityRegistry != null && selected.get().isBrowser()) identityRegistry.recordVerified(selected.get());
         return connectInfo;
     }
 

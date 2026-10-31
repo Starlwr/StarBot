@@ -23,6 +23,7 @@ import jakarta.websocket.WebSocketContainer;
 import jakarta.annotation.PreDestroy;
 import org.apache.tomcat.websocket.WsWebSocketContainer;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.LoggerFactory;
 
 /**
  * Bilibili 直播间连接器工厂
@@ -78,6 +79,8 @@ public class BilibiliLiveRoomConnectorFactory {
         container = ContainerProvider.getWebSocketContainer();
         container.setDefaultMaxBinaryMessageBufferSize(properties.getLive().getWebSocketBufferSizeBytes());
         this.webSocketClient = new BilibiliLiveWsClient(new StandardWebSocketClient(container), browserLiveWsClient, properties);
+        LoggerFactory.getLogger(getClass()).info("弹幕 WebSocket 传输配置: ws-transport={}, browserBridge={}",
+                properties.getLive().getWsTransport(), browserLiveWsClient != null);
     }
 
     /**

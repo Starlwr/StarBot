@@ -31,4 +31,6 @@ public class BrowserIdentityRegistry {
     public void clear() {
         lastVerified.set(null);
     }
+
+    public void clearIf(RequestIdentitySnapshot identity) { lastVerified.compareAndSet(identity, null); }
 }
