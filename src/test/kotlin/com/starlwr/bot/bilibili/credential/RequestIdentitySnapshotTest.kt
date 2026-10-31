@@ -70,7 +70,8 @@ class RequestIdentitySnapshotTest {
             "old", "42", "challenge-1")
         assertTrue(noTicket.keyIdentityDrifted(mapOf(
             "buvid3" to "old", "buvid4" to "old4", "bili_ticket" to "fresh", "bili_jct" to "old-jct")))
-        // 无法读取浏览器 jar(空) → 无法判定, 保守沿用
-        assertFalse(snapshot.keyIdentityDrifted(emptyMap()))
+        // Missing/deleted credentials cannot validate an old overlay.
+        assertTrue(snapshot.keyIdentityDrifted(emptyMap()))
+        assertTrue(snapshot.keyIdentityDrifted(mapOf("buvid3" to "old", "buvid4" to "old4")))
     }
 }
