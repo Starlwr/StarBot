@@ -90,6 +90,9 @@ class CdpConnection(private val socket: WebSocket) : AutoCloseable {
     private val sequence = AtomicLong()
     private val pending = ConcurrentHashMap<Long, CompletableFuture<JSONObject>>()
     private val listeners = CopyOnWriteArrayList<Consumer<JSONObject>>()
+    private val sendLock = Any()
+    @Volatile var isOpen: Boolean = true
+        private set
 
     fun call(method: String, params: Any? = null, timeoutSeconds: Long = 20): JSONObject {
         val id = sequence.incrementAndGet()
@@ -98,7 +101,12 @@ class CdpConnection(private val socket: WebSocket) : AutoCloseable {
         val future = CompletableFuture<JSONObject>()
         pending[id] = future
         val response = try {
-            socket.sendText(request.toJSONString(), true).join()
+            // JDK WebSocket permits only one outstanding text send. The bridge
+            // pump, heartbeats and room dialers share this connection.
+            synchronized(sendLock) {
+                check(isOpen) { "CDP connection closed" }
+                socket.sendText(request.toJSONString(), true).get(timeoutSeconds, TimeUnit.SECONDS)
+            }
             future.get(timeoutSeconds, TimeUnit.SECONDS)
         } finally {
             pending.remove(id, future)
@@ -119,13 +127,15 @@ class CdpConnection(private val socket: WebSocket) : AutoCloseable {
     }
 
     internal fun fail(error: Throwable) {
+        isOpen = false
         pending.values.forEach { it.completeExceptionally(error) }
         pending.clear()
     }
 
     override fun close() {
-        runCatching { socket.sendClose(WebSocket.NORMAL_CLOSURE, "StarBot shutdown").get(3, TimeUnit.SECONDS) }
         fail(IllegalStateException("CDP connection closed"))
+        runCatching { socket.sendClose(WebSocket.NORMAL_CLOSURE, "StarBot shutdown").get(3, TimeUnit.SECONDS) }
+        socket.abort()
     }
 }
 
@@ -166,6 +176,8 @@ private class CdpListener : WebSocket.Listener {
     }
 }
 
+private class BrowserVersionMismatchException(message: String) : IllegalStateException(message)
+
 /** One account-level browser process. It is a resolver/capability host, never a room-per-tab browser farm. */
 @StarBotComponent
 class BilibiliBrowserRuntime(
@@ -185,10 +197,20 @@ class BilibiliBrowserRuntime(
     @Volatile private var credentialPage: BrowserPage? = null
     private val credentialPageLock = Any()
     @Volatile private var observedCookies: List<StoredCookie> = emptyList()
+    private var retryAfterNanos: Long = 0
+    @Volatile private var resolverIdentity = false
+
+    /** Resolver overlays must observe browser-owned state, never rehydrate it. */
+    fun enterResolverIdentity() { resolverIdentity = true }
+    fun resolverIdentityActive(): Boolean = resolverIdentity
 
     fun start(userAgent: String): BrowserRuntimeInfo? = synchronized(lock) {
         if (closed) return null
-        info?.let { return it }
+        info?.let {
+            if (process?.isAlive == true && browser?.isOpen == true) return it
+            process?.let(::cleanupFailedLaunch)
+        }
+        if (System.nanoTime() < retryAfterNanos) return null
         val executable = manager.resolve(userAgent) ?: return null
         val port = freePort()
         val expectedMajor = executable.expectedVersion?.substringBefore('.')
@@ -231,8 +253,8 @@ class BilibiliBrowserRuntime(
             val version = waitForVersion(port, launched)
                 ?: error("Chrome DevTools endpoint did not become ready")
             val product = version.getString("Browser").orEmpty()
-            require(browserVersionMatches(product, executable.expectedVersion)) {
-                "Chrome CDP version mismatch: expected=${executable.expectedVersion} actual=$product"
+            if (!browserVersionMatches(product, executable.expectedVersion)) {
+                throw BrowserVersionMismatchException("Chrome CDP version mismatch: expected=${executable.expectedVersion} actual=$product")
             }
             val browserConnection = connect(version.getString("webSocketDebuggerUrl"))
             browser = browserConnection
@@ -242,7 +264,7 @@ class BilibiliBrowserRuntime(
                 version.getString("User-Agent").orEmpty(), version.getString("V8-Version").orEmpty(), profile, port
             )
             info = runtimeInfo
-            if (properties.persistBrowserState) credentialStore.update(critical = true) { envelope ->
+            if (properties.permitsBrowserPersistence()) credentialStore.update(critical = true) { envelope ->
                 envelope.browser.executablePath = executable.path.toString()
                 envelope.browser.profileDirectory = profile.toString()
                 envelope.browser.installedVersion = executable.expectedVersion.orEmpty()
@@ -261,15 +283,24 @@ class BilibiliBrowserRuntime(
             runtimeInfo
         } catch (error: Exception) {
             cleanupFailedLaunch(launched)
-            manager.reportLaunchFailure(executable, error)
-            if (closed) null else start(userAgent)
+            if (error is BrowserVersionMismatchException) {
+                manager.reportLaunchFailure(executable, error)
+                return if (closed) null else start(userAgent)
+            }
+            // Endpoint/profile/CDP failures do not prove the binary is broken.
+            // A permanent blacklist here disabled Gaia for the whole JVM run.
+            retryAfterNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+            log.warn("Chrome 浏览器环境初始化失败，10 秒后可重试: executable={}, profile={}, error={}。请检查是否有遗留浏览器占用此 profile",
+                executable.path, profile, error.toString())
+            log.debug("Chrome runtime initialization failure", error)
+            null
         }
     }
 
     fun runtimeInfo(): BrowserRuntimeInfo? = info
 
     fun refreshCanonicalIdentity(): Boolean = synchronized(lock) {
-        if (!properties.permitsCredentialHydration()) return false
+        if (resolverIdentity || !properties.permitsCredentialHydration()) return false
         val connection = browser ?: return false
         runCatching {
             hydrateCookies(connection)
@@ -336,7 +367,7 @@ class BilibiliBrowserRuntime(
             .map { it.copy(transportScope = "browser", source = source) }
         val changed = observedCookies != stored
         observedCookies = stored.map { it.copy() }
-        if (properties.persistBrowserState) {
+        if (!resolverIdentity && properties.permitsBrowserPersistence()) {
             val export = stored.filterNot { it.name.lowercase(Locale.ROOT) in BROWSER_AUTHORITATIVE_BLOCKLIST }
             credentialStore.mergeCookies(export, critical = true, projectAccount = false)
         }
@@ -347,13 +378,13 @@ class BilibiliBrowserRuntime(
         val connection = browser ?: error("Browser runtime is not started")
         connection.call("Storage.setCookies", mapOf("cookies" to listOf(cdpCookieParam(cookie))))
         verifyHydratedCookies(connection, listOf(cookie))
-        if (properties.persistBrowserState) credentialStore.mergeCookies(listOf(cookie), critical = true, projectAccount = false)
+        if (!resolverIdentity && properties.permitsBrowserPersistence()) credentialStore.mergeCookies(listOf(cookie), critical = true, projectAccount = false)
     }
 
     fun hydrateWebStorage(page: BrowserPage): String {
         val origin = evaluateString(page.connection, "location.origin")
         if (origin.isBlank() || origin == "null") return origin
-        if (!properties.persistBrowserState) return origin
+        if (resolverIdentity || !properties.permitsBrowserPersistence()) return origin
         val values = credentialStore.snapshot()?.webStorage?.get(origin).orEmpty()
             .filterKeys(::isPersistentStorageKey)
         if (values.isNotEmpty()) {
@@ -366,7 +397,7 @@ class BilibiliBrowserRuntime(
     }
 
     fun synchronizeWebStorageFromPage(page: BrowserPage, source: String = "browser"): Boolean {
-        if (!properties.persistBrowserState) return false
+        if (resolverIdentity || !properties.permitsBrowserPersistence()) return false
         val origin = evaluateString(page.connection, "location.origin")
         if (origin.isBlank() || origin == "null") return false
         val raw = evaluateString(page.connection,
@@ -385,7 +416,7 @@ class BilibiliBrowserRuntime(
     }
 
     private fun hydrateCookies(connection: CdpConnection) {
-        if (!properties.permitsCredentialHydration()) return
+        if (resolverIdentity || !properties.permitsCredentialHydration()) return
         val snapshot = credentialStore.snapshot() ?: credentialStore.load() ?: return
         val desired = snapshot.cookies.filter {
             !it.isExpired() && !it.name.equals("b_lsid", true) && !it.name.equals("ac_time_value", true) &&
@@ -474,7 +505,9 @@ class BilibiliBrowserRuntime(
 
     private fun credentialInspectionPage(): BrowserPage = synchronized(credentialPageLock) {
         credentialPage?.let { return it }
-        val page = createPage("https://www.bilibili.com/robots.txt")
+        val page = createPage()
+        page.connection.call("Page.enable")
+        page.connection.call("Page.navigate", mapOf("url" to "https://www.bilibili.com/robots.txt"))
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
         while (System.nanoTime() < deadline) {
             val origin = runCatching { evaluateString(page.connection, "location.origin") }.getOrDefault("")
@@ -494,7 +527,7 @@ class BilibiliBrowserRuntime(
     }
 
     private fun synchronizeCredentialStorage() {
-        if (!properties.permitsCredentialHydration()) return
+        if (resolverIdentity || !properties.permitsCredentialHydration()) return
         val connection = browser ?: return
         runCatching {
             connection.call("Storage.deleteCookies", mapOf("name" to "ac_time_value", "domain" to ".bilibili.com"), 5)
@@ -528,7 +561,7 @@ class BilibiliBrowserRuntime(
 
     private fun waitForVersion(port: Int, launched: Process): JSONObject? {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
-        while (System.nanoTime() < deadline && launched.isAlive) {
+        while (!closed && System.nanoTime() < deadline && launched.isAlive) {
             runCatching { queryJson("http://127.0.0.1:$port/json/version") as JSONObject }.getOrNull()?.let { return it }
             Thread.sleep(100)
         }
@@ -537,22 +570,23 @@ class BilibiliBrowserRuntime(
     }
 
     private fun cleanupFailedLaunch(launched: Process) {
+        val children = launched.toHandle().descendants().toList().asReversed()
+        runCatching { browser?.call("Browser.close", timeoutSeconds = 3) }
         runCatching { browser?.close() }
         browser = null
         info = null
-        stopProcessTree(launched)
+        stopProcessTree(launched, children)
         if (process === launched) process = null
     }
 
-    private fun stopProcessTree(root: Process) {
-        val descendants = root.toHandle().descendants().toList().asReversed()
+    private fun stopProcessTree(root: Process, descendants: List<ProcessHandle> = root.toHandle().descendants().toList().asReversed()) {
         descendants.forEach { runCatching { it.destroy() } }
         runCatching { root.destroy() }
-        if (!runCatching { root.waitFor(2, TimeUnit.SECONDS) }.getOrDefault(true)) {
-            descendants.forEach { runCatching { it.destroyForcibly() } }
-            runCatching { root.destroyForcibly() }
-            runCatching { root.waitFor(3, TimeUnit.SECONDS) }
-        }
+        runCatching { root.waitFor(2, TimeUnit.SECONDS) }
+        // A dead parent does not imply that its children have exited.
+        descendants.filter { it.isAlive }.forEach { runCatching { it.destroyForcibly() } }
+        if (root.isAlive) runCatching { root.destroyForcibly() }
+        runCatching { root.waitFor(3, TimeUnit.SECONDS) }
     }
 
     private fun queryJson(url: String): Any {
@@ -577,15 +611,23 @@ class BilibiliBrowserRuntime(
         // manager before waiting for that lock so Spring shutdown cannot deadlock.
         manager.close()
         synchronized(lock) {
+            val children = process?.toHandle()?.descendants()?.toList()?.asReversed().orEmpty()
             runCatching { synchronizeCookiesFromBrowser("browser-shutdown") }
             synchronized(credentialPageLock) {
                 credentialPage?.let { runCatching { closePage(it) } }
                 credentialPage = null
             }
-            browser?.close(); browser = null
-            process?.let(::stopProcessTree)
-            process = null; info = null
-            observedCookies = emptyList()
+            try {
+                // Let Chrome flush its native profile before closing CDP.
+                runCatching { browser?.call("Browser.close", timeoutSeconds = 3) }
+                process?.let { runCatching { it.waitFor(5, TimeUnit.SECONDS) } }
+            } finally {
+                runCatching { browser?.close() }
+                browser = null
+                process?.let { stopProcessTree(it, children) }
+                process = null; info = null
+                observedCookies = emptyList()
+            }
         }
     }
 

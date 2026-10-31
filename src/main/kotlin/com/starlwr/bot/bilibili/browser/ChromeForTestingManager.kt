@@ -63,6 +63,11 @@ class BilibiliBrowserProperties {
 
     fun permitsCredentialHydration(): Boolean = credentialSyncMode.trim().lowercase(Locale.ROOT) in
         setOf("jvm-authoritative", "validated-bidirectional")
+
+    // A one-way account owner must never receive browser observations, even
+    // when an old configuration still enables browser-state persistence.
+    fun permitsBrowserPersistence(): Boolean = persistBrowserState &&
+        !credentialSyncMode.trim().equals("jvm-authoritative", ignoreCase = true)
     var credentialAuditIntervalSeconds: Long = 90
     var downloadConnectTimeoutSeconds: Long = 15
     var downloadTimeoutSeconds: Long = 300

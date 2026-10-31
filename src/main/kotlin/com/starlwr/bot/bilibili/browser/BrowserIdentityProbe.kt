@@ -229,7 +229,7 @@ class BrowserIdentityProbe(
     }
 
     private fun persist(result: IdentityProbeResult) {
-        if (!browserProperties.persistBrowserState) return
+        if (!browserProperties.permitsBrowserPersistence()) return
         credentialStore.update(critical = true) { envelope ->
             envelope.identityProbe = IdentityProbePersistence(
                 result.status.name, result.checkedAtEpochMillis,

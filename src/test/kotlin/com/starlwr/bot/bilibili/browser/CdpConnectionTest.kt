@@ -6,7 +6,10 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import java.net.http.WebSocket
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionException
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.TimeoutException
 
 class CdpConnectionTest {
@@ -18,11 +21,38 @@ class CdpConnectionTest {
         val socket = mock(WebSocket::class.java)
         val connection = CdpConnection(socket)
         `when`(socket.sendText(anyString(), eq(true))).thenReturn(CompletableFuture.failedFuture(IllegalStateException("send failed")))
-        repeat(10) { assertThrows(CompletionException::class.java) { connection.call("Runtime.enable") } }
+        repeat(10) { assertThrows(ExecutionException::class.java) { connection.call("Runtime.enable") } }
         assertTrue(pending(connection).isEmpty())
         `when`(socket.sendText(anyString(), eq(true))).thenThrow(IllegalStateException("synchronous send failed"))
         assertThrows(IllegalStateException::class.java) { connection.call("Runtime.enable") }
         assertTrue(pending(connection).isEmpty())
+    }
+
+    @Test fun `concurrent calls serialize outstanding sends and closed connections reject calls`() {
+        val socket = mock(WebSocket::class.java)
+        val connection = CdpConnection(socket)
+        val sending = AtomicInteger()
+        val executor = Executors.newScheduledThreadPool(8)
+        val callers = Executors.newFixedThreadPool(8)
+        `when`(socket.sendText(anyString(), eq(true))).thenAnswer {
+            assertEquals(1, sending.incrementAndGet(), "overlapping WebSocket sends")
+            val id = JSON.parseObject(it.getArgument<String>(0)).getLongValue("id")
+            val sent = CompletableFuture<WebSocket>()
+            executor.schedule({
+                sending.decrementAndGet()
+                sent.complete(socket)
+                connection.receive("""{"id":$id,"result":{"ok":true}}""")
+            }, 5, TimeUnit.MILLISECONDS)
+            sent
+        }
+        try {
+            val calls = (1..24).map { callers.submit<Boolean> { connection.call("Browser.getVersion").getBooleanValue("ok") } }
+            calls.forEach { assertTrue(it.get(5, TimeUnit.SECONDS)) }
+            connection.fail(IllegalStateException("disconnected"))
+            assertFalse(connection.isOpen)
+            assertThrows(IllegalStateException::class.java) { connection.call("Browser.getVersion") }
+            assertTrue(pending(connection).isEmpty())
+        } finally { callers.shutdownNow(); executor.shutdownNow() }
     }
     @Test fun `timeout and responses leave no pending requests`() {
         val socket = mock(WebSocket::class.java)

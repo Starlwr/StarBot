@@ -34,7 +34,7 @@ class BrowserWsHandshakeException(message: String, cause: Throwable? = null) : I
 /**
  * 浏览器桥 WebSocket 客户端。
  *
- * 弹幕令牌与浏览器 TLS 环境绑定, JVM 直连 wss:// 会在认证后被 TLS 层掐断(1006)。
+ * 用于对照 JVM 与浏览器通道的握手及认证行为；1006 本身不能证明 TLS 指纹或令牌绑定。
  * 本客户端把 WebSocket 的 TLS 拨号搬进受控 Chrome 的 live.bilibili.com 页面里执行:
  * 页面内以原生 WebSocket(真实浏览器指纹/Cookie/Origin)连接弹幕服务器, CDP 作为控制与字节管道。
  * 协议语义(认证/心跳/解包)仍由 JVM 侧连接器负责, 本类只做字节搬运。
@@ -62,10 +62,12 @@ open class BrowserLiveWsClient(
     }
 
     @Volatile private var pumpStarted = false
+    @Volatile private var closed = false
 
     private class PendingDial(val future: CompletableFuture<WebSocketSession>, val deadlineMillis: Long)
 
     open fun usable(): Boolean {
+        if (closed) return false
         val rt = runtime ?: return false
         return runCatching { rt.start(properties.network.userAgent) != null }.getOrDefault(false)
     }
@@ -78,15 +80,19 @@ open class BrowserLiveWsClient(
         val future = CompletableFuture<WebSocketSession>()
         return try {
             ensureBridgePage()
+            // Register before issuing dial: an already running pump may receive
+            // Chrome's open event before the dial command response arrives.
+            pendingDials[socketId] = PendingDial(future, System.currentTimeMillis() + dialTimeoutMillis())
+            sessions[socketId] = BrowserWebSocketSession(this, socketId, handler, uri, headers)
             val dialResult = evaluateOnPage(
                 "window.__starbotWsBridge.dial($socketId, ${JSON.toJSONString(uri.toString())})"
             )
             if (dialResult is JSONObject && dialResult.getBooleanValue("ok")) {
-                pendingDials[socketId] = PendingDial(future, System.currentTimeMillis() + dialTimeoutMillis())
-                sessions[socketId] = BrowserWebSocketSession(this, socketId, handler, uri, headers)
                 startPump()
                 future
             } else {
+                pendingDials.remove(socketId)
+                sessions.remove(socketId)
                 future.completeExceptionally(
                     BrowserWsHandshakeException("浏览器桥 dial 被页面拒绝: ${JSON.toJSONString(dialResult)}")
                 )
@@ -123,9 +129,9 @@ open class BrowserLiveWsClient(
         properties.getLive().getBrowserWsPollIntervalMillis().coerceIn(25, 2000).toLong()
 
     private fun startPump() {
-        if (pumpStarted) return
+        if (closed || pumpStarted) return
         synchronized(pump) {
-            if (pumpStarted) return
+            if (closed || pumpStarted) return
             pumpStarted = true
             pump.scheduleAtFixedRate({ runCatching { pumpOnce() }.onFailure {
                 log.debug("浏览器桥事件泵轮询异常(下一轮继续): {}", it.toString())
@@ -244,9 +250,9 @@ open class BrowserLiveWsClient(
         return evaluateOnPage(page, script)
     }
 
-    private fun evaluateOnPage(page: BrowserPage, script: String): Any? {
+    internal fun evaluateOnPage(page: BrowserPage, script: String): Any? {
         val result = page.connection.call("Runtime.evaluate", linkedMapOf(
-            "expression" to "(function(){ $script })()",
+            "expression" to script,
             "returnByValue" to true,
             "awaitPromise" to false,
         ), 10)
@@ -279,7 +285,12 @@ open class BrowserLiveWsClient(
 
     @PreDestroy
     fun shutdown() {
+        closed = true
         pump.shutdownNow()
+        pendingDials.values.forEach { it.future.completeExceptionally(BrowserWsHandshakeException("浏览器桥已关闭")) }
+        pendingDials.clear()
+        sessions.values.forEach { it.delegateOpen = false }
+        sessions.clear()
         synchronized(pageLock) {
             bridgePage?.let { page -> runtime?.let { runCatching { it.closePage(page) } } }
             bridgePage = null

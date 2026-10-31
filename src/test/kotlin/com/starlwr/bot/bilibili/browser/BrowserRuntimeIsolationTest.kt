@@ -89,4 +89,38 @@ class BrowserRuntimeIsolationTest {
         assertTrue(BilibiliBrowserRuntime.cookiePathMatches("/xlive", "/xlive/web-room"))
         assertTrue(BilibiliBrowserRuntime.cookiePathMatches("/", "/xlive"))
     }
+
+    @Test
+    fun `JVM authoritative mode cannot export browser state even with persistence enabled`() {
+        properties.credentialSyncMode = "jvm-authoritative"
+        properties.persistBrowserState = true
+        assertTrue(properties.permitsCredentialHydration())
+        assertFalse(properties.permitsBrowserPersistence())
+        cookies()
+        assertTrue(runtime.synchronizeCookiesFromBrowser())
+        runtime.setCookie(StoredCookie(name = "buvid3", value = "browser-only",
+            domain = ".bilibili.com", path = "/", secure = true))
+        assertFalse(runtime.synchronizeWebStorageFromPage(BrowserPage("test", connection)))
+        Mockito.verifyNoInteractions(store)
+    }
+
+    @Test fun `resolver phase never overwrites autonomous browser identity`() {
+        properties.credentialSyncMode = "jvm-authoritative"
+        runtime.enterResolverIdentity()
+        assertFalse(runtime.refreshCanonicalIdentity())
+        Mockito.verifyNoInteractions(connection, store)
+    }
+
+    @Test fun `resolver observations never persist even under a legacy bidirectional configuration`() {
+        properties.enabled = true
+        properties.credentialSyncMode = "validated-bidirectional"
+        properties.persistBrowserState = true
+        runtime.enterResolverIdentity()
+        cookies()
+        runtime.synchronizeCookiesFromBrowser()
+        assertFalse(runtime.synchronizeWebStorageFromPage(BrowserPage("test", connection)))
+        BrowserCredentialAuditService(properties, runtime, store,
+            Mockito.mock(BilibiliCredentialService::class.java)).monitorBidirectionalCandidate()
+        Mockito.verifyNoInteractions(store)
+    }
 }

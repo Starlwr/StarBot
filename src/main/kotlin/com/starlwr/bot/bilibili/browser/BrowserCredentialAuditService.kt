@@ -76,13 +76,14 @@ class BrowserCredentialAuditService(
             }
             persistAudit("DRIFT", fingerprint)
         }
+        if (runtime.resolverIdentityActive()) return
         if (syncMode() == "validated-bidirectional") tryPromote(browser, envelope.account)
         else if (browser.refreshTokenStorage.isNotBlank() || hasCoreAuthDrift(differences)) runtime.refreshCanonicalIdentity()
     }
 
     @Scheduled(fixedDelay = 5_000, initialDelay = 5_000)
     fun monitorBidirectionalCandidate() = synchronized(lock) {
-        if (!properties.enabled || syncMode() != "validated-bidirectional" || runtime.runtimeInfo() == null) return
+        if (!properties.enabled || runtime.resolverIdentityActive() || syncMode() != "validated-bidirectional" || runtime.runtimeInfo() == null) return
         val current = credentialStore.snapshot()?.account ?: return
         val first = runCatching { runtime.observeCredentialSnapshot() }.getOrNull() ?: return
         tryPromote(first, current)
@@ -216,7 +217,7 @@ class BrowserCredentialAuditService(
     )
 
     private fun persistAudit(status: String, fingerprint: String) {
-        if (!properties.persistBrowserState) return
+        if (runtime.resolverIdentityActive() || !properties.permitsBrowserPersistence()) return
         val current = credentialStore.snapshot()?.browser ?: return
         if (current.lastCredentialAuditStatus == status && current.lastCredentialAuditFingerprint == fingerprint) return
         credentialStore.update(critical = true) { envelope ->
