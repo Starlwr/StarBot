@@ -155,11 +155,17 @@ public class BilibiliDynamicPainter {
         BufferedImage icon = null;
         try {
             if (officialType == 0) {
-                icon = ImageIO.read(resourceLoader.getResource("classpath:images/dynamic/personal.png").getInputStream());
+                try (InputStream input = resourceLoader.getResource("classpath:images/dynamic/personal.png").getInputStream()) {
+                    icon = ImageIO.read(input);
+                }
             } else if (officialType == 1) {
-                icon = ImageIO.read(resourceLoader.getResource("classpath:images/dynamic/business.png").getInputStream());
+                try (InputStream input = resourceLoader.getResource("classpath:images/dynamic/business.png").getInputStream()) {
+                    icon = ImageIO.read(input);
+                }
             } else if (isVip) {
-                icon = ImageIO.read(resourceLoader.getResource("classpath:images/dynamic/vip.png").getInputStream());
+                try (InputStream input = resourceLoader.getResource("classpath:images/dynamic/vip.png").getInputStream()) {
+                    icon = ImageIO.read(input);
+                }
             }
         } catch (IOException e) {
             log.error("加载图标失败", e);
@@ -376,8 +382,8 @@ public class BilibiliDynamicPainter {
                     }
 
                     if (iconUrl != null) {
-                        try {
-                            BufferedImage icon = ImageUtil.resize(ImageIO.read(resourceLoader.getResource(iconUrl).getInputStream()), ICON_SIZE, ICON_SIZE);
+                        try (InputStream iconInput = resourceLoader.getResource(iconUrl).getInputStream()) {
+                            BufferedImage icon = ImageUtil.resize(ImageIO.read(iconInput), ICON_SIZE, ICON_SIZE);
                             if (currentPainter.isNeedWrap(icon, TEXT_MARGIN)) {
                                 images.add(currentPainter.getImage());
                                 currentPainter = factory.create(WIDTH - TEXT_MARGIN * 2, 40, true);
@@ -645,8 +651,8 @@ public class BilibiliDynamicPainter {
             String counts = stat.getString("play") + "观看   " + stat.getString("danmaku") + "弹幕";
             this.painter.drawText(counts, Color.WHITE, new Point(IMAGE_MARGIN + size.getLeft() + 53, this.painter.getY() + image.getHeight() - size.getRight() - 17));
 
-            try {
-                BufferedImage tv = ImageIO.read(resourceLoader.getResource("classpath:images/dynamic/tv.png").getInputStream());
+            try (InputStream tvInput = resourceLoader.getResource("classpath:images/dynamic/tv.png").getInputStream()) {
+                BufferedImage tv = ImageIO.read(tvInput);
                 this.painter.drawImage(tv, new Point(IMAGE_MARGIN + image.getWidth() - tv.getWidth() - 16, this.painter.getY() + image.getHeight() - tv.getHeight() - 13));
             } catch (IOException e) {
                 log.error("加载图标失败", e);
@@ -952,8 +958,8 @@ public class BilibiliDynamicPainter {
             imageWidth = image.getWidth();
             painter.drawImage(image);
 
-            try {
-                BufferedImage tv = ImageUtil.resizeByHeight(ImageIO.read(resourceLoader.getResource("classpath:images/dynamic/tv.png").getInputStream()), 60);
+            try (InputStream tvInput = resourceLoader.getResource("classpath:images/dynamic/tv.png").getInputStream()) {
+                BufferedImage tv = ImageUtil.resizeByHeight(ImageIO.read(tvInput), 60);
                 painter.drawImage(tv, new Point(image.getWidth() - tv.getWidth() - 16, this.painter.getY() + image.getHeight() - tv.getHeight() - 13));
             } catch (IOException e) {
                 log.error("加载图标失败", e);

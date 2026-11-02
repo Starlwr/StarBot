@@ -1,16 +1,17 @@
 package com.starlwr.bot.bilibili.datasource;
 
-import com.starlwr.bot.bilibili.api.model.Up;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.api.model.Up;
 import com.starlwr.bot.bilibili.dynamic.BilibiliDynamicService;
 import com.starlwr.bot.bilibili.live.connection.BilibiliLiveRoomService;
+import com.starlwr.bot.bilibili.report.LiveReportDemandService;
+import com.starlwr.bot.core.event.model.LivePlatform;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceAddEvent;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceUpdateEvent;
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
-import com.starlwr.bot.core.event.model.LivePlatform;
-import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.push.model.PushUser;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
@@ -28,13 +29,16 @@ public class BilibiliDataSourceEventListener {
 
     private final BilibiliDynamicService dynamicService;
 
+    private final LiveReportDemandService reportDemandService;
+
     private boolean loadCompleted = false;
 
     @Autowired
-    public BilibiliDataSourceEventListener(StarBotBilibiliProperties properties, BilibiliLiveRoomService liveRoomService, BilibiliDynamicService dynamicService) {
+    public BilibiliDataSourceEventListener(StarBotBilibiliProperties properties, BilibiliLiveRoomService liveRoomService, BilibiliDynamicService dynamicService, LiveReportDemandService reportDemandService) {
         this.properties = properties;
         this.liveRoomService = liveRoomService;
         this.dynamicService = dynamicService;
+        this.reportDemandService = reportDemandService;
     }
 
     /**
@@ -78,6 +82,9 @@ public class BilibiliDataSourceEventListener {
         if (!LivePlatform.BILIBILI.getName().equals(user.getPlatform())) {
             return;
         }
+
+        reportDemandService.deactivate(user.getUid());
+        dynamicService.deactivate(user.getUid());
 
         if (!properties.getLive().isEnableConnectLiveRoom()) {
             return;

@@ -64,6 +64,11 @@ public class BilibiliGiftService {
         return Optional.ofNullable(gifts.get(giftId));
     }
 
+    /** Resolve a gift image without exposing Lombok-generated model accessors to Kotlin compilation. */
+    public String getGiftImageUrl(@NonNull String giftId) {
+        return getGiftInfo(giftId).map(Gift::getUrl).orElse(null);
+    }
+
     /**
      * 获取大航海信息
      * @param type 大航海类型

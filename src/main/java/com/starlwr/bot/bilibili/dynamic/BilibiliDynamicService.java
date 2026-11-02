@@ -1,31 +1,38 @@
 package com.starlwr.bot.bilibili.dynamic;
+import com.starlwr.bot.bilibili.account.BilibiliAccountService;
 
 import com.alibaba.fastjson2.JSON;
-import com.starlwr.bot.bilibili.account.BilibiliAccountService;
-import com.starlwr.bot.bilibili.api.BilibiliApiService;
-import com.starlwr.bot.bilibili.api.model.Up;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
-import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
-import com.starlwr.bot.core.event.model.LivePlatform;
-import com.starlwr.bot.core.event.model.LiveStreamerInfo;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.bilibili.dynamic.BilibiliDynamicPainterFactory;
+import com.starlwr.bot.bilibili.dynamic.Dynamic;
+import com.starlwr.bot.bilibili.api.model.Up;
+import com.starlwr.bot.bilibili.dynamic.BilibiliDynamicPainter;
+import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.core.push.datasource.AbstractDataSource;
+import com.starlwr.bot.core.event.model.LivePlatform;
+import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
+import com.starlwr.bot.core.event.model.LiveStreamerInfo;
 import com.starlwr.bot.core.push.model.PushUser;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.FixedSizeSetQueue;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.collections4.SetUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.starlwr.bot.bilibili.log.BilibiliDebugFileLogger;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -34,8 +41,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @StarBotComponent
 public class BilibiliDynamicService {
-    private static final Logger dynamicLogger = LoggerFactory.getLogger("DynamicLogger");
-
     private final ApplicationEventPublisher eventPublisher;
 
     private final StarBotBilibiliProperties properties;
@@ -45,6 +50,10 @@ public class BilibiliDynamicService {
     private final BilibiliApiService bilibili;
 
     private final BilibiliAccountService accountService;
+
+    private final BilibiliDynamicPainterFactory factory;
+
+    private final BilibiliDebugFileLogger debugFileLog;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
@@ -56,13 +65,31 @@ public class BilibiliDynamicService {
 
     private final FixedSizeSetQueue<String> dynamicIds = new FixedSizeSetQueue<>(1000);
 
+    private final AtomicBoolean closing = new AtomicBoolean();
+
+    private final CountDownLatch stopSignal = new CountDownLatch(1);
+
+    @PreDestroy
+    public void close() {
+        if (!closing.compareAndSet(false, true)) {
+            return;
+        }
+        stopSignal.countDown();
+        scheduler.shutdown();
+        executor.shutdown();
+        awaitTermination(scheduler, "动态轮询", 5);
+        awaitTermination(executor, "自动关注", 5);
+    }
+
     @Autowired
-    public BilibiliDynamicService(ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, AbstractDataSource dataSource, BilibiliApiService bilibili, BilibiliAccountService accountService) {
+    public BilibiliDynamicService(ApplicationEventPublisher eventPublisher, StarBotBilibiliProperties properties, AbstractDataSource dataSource, BilibiliApiService bilibili, BilibiliAccountService accountService, BilibiliDynamicPainterFactory factory, BilibiliDebugFileLogger debugFileLog) {
         this.eventPublisher = eventPublisher;
         this.properties = properties;
         this.dataSource = dataSource;
         this.bilibili = bilibili;
         this.accountService = accountService;
+        this.factory = factory;
+        this.debugFileLog = debugFileLog;
     }
 
     /**
@@ -80,11 +107,21 @@ public class BilibiliDynamicService {
      * @param up UP 主
      */
     public void followUp(Up up) {
+        if (closing.get()) {
+            return;
+        }
         if (alreadyFollowUps.contains(up) || autoFollowQueue.contains(up)) {
             return;
         }
 
         autoFollowQueue.add(up);
+    }
+
+    /** Release mutable follow-up state when a datasource user is removed. */
+    public void deactivate(String uid) {
+        if (uid == null) return;
+        autoFollowQueue.removeIf(up -> uid.equals(up.getUid()));
+        alreadyFollowUps.removeIf(up -> uid.equals(up.getUid()));
     }
 
     /**
@@ -110,6 +147,10 @@ public class BilibiliDynamicService {
         scheduler.scheduleWithFixedDelay(() -> {
             Thread.currentThread().setName("dynamic-watcher");
 
+            if (closing.get()) {
+                return;
+            }
+
             try {
                 List<Dynamic> dynamics = bilibili.getDynamicUpdateList();
                 for (Dynamic dynamic: dynamics) {
@@ -120,7 +161,7 @@ public class BilibiliDynamicService {
                     dynamicIds.add(dynamic.getId());
 
                     if (properties.getDebug().isDynamicRawMessageLog()) {
-                        dynamicLogger.debug("{}: {}", dynamic.getType(), JSON.toJSONString(dynamic));
+                        debugFileLog.dynamic(dynamic.getType(), dynamic.getId(), JSON.toJSONString(dynamic));
                     }
 
                     if ("DYNAMIC_TYPE_LIVE_RCMD".equals(dynamic.getType())) {
@@ -158,7 +199,11 @@ public class BilibiliDynamicService {
                     }
                 }
             } catch (Exception e) {
-                log.error("动态推送抓取任务异常", e);
+                if (closing.get()) {
+                    log.debug("动态推送抓取任务已随应用关闭");
+                } else {
+                    log.error("动态推送抓取任务异常", e);
+                }
             }
         }, interval, interval, TimeUnit.SECONDS);
 
@@ -181,28 +226,41 @@ public class BilibiliDynamicService {
                 log.warn("检测到自动关注 UP 主的间隔时间设置过小, 可能会造成 API 访问被暂时封禁, 推荐将其设置为 30 以上的数值");
             }
 
-            while (!Thread.currentThread().isInterrupted()) {
+            while (!closing.get() && !Thread.currentThread().isInterrupted()) {
                 try {
-                    Up up = autoFollowQueue.take();
+                    Up up = autoFollowQueue.poll(1, TimeUnit.SECONDS);
+                    if (up == null) {
+                        continue;
+                    }
                     log.info("尝试关注 UP 主: {} ({})", up.getUname(), up.getUid());
                     bilibili.followUp(up.getUid());
                     alreadyFollowUps.add(up);
                     log.info("关注 {} ({}) 成功", up.getUname(), up.getUid());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    log.error("自动关注中断", e);
+                    if (closing.get()) {
+                        log.debug("自动关注线程已随应用关闭");
+                    } else {
+                        log.warn("自动关注线程被意外中断", e);
+                    }
                     return;
                 } catch (Exception e) {
                     log.error("自动关注异常", e);
                 }
 
                 try {
-                    if (CollectionUtils.isNotEmpty(autoFollowQueue)) {
+                    if (!autoFollowQueue.isEmpty()) {
                         log.info("即将在 {} 秒后关注下一个 UP 主, 自动关注队列中还剩余 {} 个 UP 主", properties.getDynamic().getAutoFollowInterval(), autoFollowQueue.size());
                     }
-                    Thread.sleep(properties.getDynamic().getAutoFollowInterval() * 1000L);
+                    if (stopSignal.await(properties.getDynamic().getAutoFollowInterval(), TimeUnit.SECONDS)) {
+                        return;
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    if (!closing.get()) {
+                        log.warn("自动关注等待被意外中断", e);
+                    }
+                    return;
                 }
             }
         });
@@ -212,7 +270,7 @@ public class BilibiliDynamicService {
                 .map(Up::new)
                 .toList();
 
-        if (CollectionUtils.isEmpty(needFollowUps)) {
+        if (needFollowUps.isEmpty()) {
             log.info("不存在打开了动态推送但未关注的 UP 主");
             return;
         }
@@ -220,9 +278,9 @@ public class BilibiliDynamicService {
         alreadyFollowUps.addAll(bilibili.getFollowingUps(accountService.getAccountInfo().getUid()));
         alreadyFollowUps.add(accountService.getAccountInfo());
 
-        List<Up> notFollowUps = new ArrayList<>(SetUtils.difference(new HashSet<>(needFollowUps), new HashSet<>(alreadyFollowUps)));
+        List<Up> notFollowUps = new ArrayList<>(org.apache.commons.collections4.SetUtils.difference(new HashSet<>(needFollowUps), new HashSet<>(alreadyFollowUps)));
 
-        if (CollectionUtils.isEmpty(notFollowUps)) {
+        if (notFollowUps.isEmpty()) {
             log.info("不存在打开了动态推送但未关注的 UP 主");
             return;
         }
@@ -230,5 +288,41 @@ public class BilibiliDynamicService {
         log.info("检测到 {} 个打开了动态推送但未关注的 UP 主: [{}], 开始自动关注", notFollowUps.size(), notFollowUps.stream().map(up -> up.getUname() + "(" + up.getUid() + ")").collect(Collectors.joining(", ")));
 
         autoFollowQueue.addAll(notFollowUps);
+    }
+
+    private void awaitTermination(ExecutorService service, String name, int seconds) {
+        try {
+            if (!service.awaitTermination(seconds, TimeUnit.SECONDS)) {
+                List<Runnable> cancelled = service.shutdownNow();
+                log.warn("{}服务未在 {} 秒内完成关闭, 已取消 {} 个待执行任务", name, seconds, cancelled.size());
+                service.awaitTermination(1, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException e) {
+            service.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * 绘制动态图片
+     * @param dynamic 动态
+     * @return 动态图片的 Base64 字符串
+     */
+    @Cacheable(value = "bilibiliDynamicImageCache", keyGenerator = "cacheKeyGenerator")
+    public Optional<String> paint(Dynamic dynamic) {
+        BilibiliDynamicPainter painter = factory.create(dynamic);
+
+        if (properties.getDynamic().isAutoSaveImage()) {
+            Path path = Paths.get("DynamicImage", dynamic.getId() + ".png");
+            try {
+                Files.createDirectories(path.getParent());
+            } catch (IOException e) {
+                log.error("创建动态图片保存目录失败: {}", path.getParent(), e);
+            }
+            String savePath = path.toString();
+            return painter.paint(savePath);
+        } else {
+            return painter.paint();
+        }
     }
 }

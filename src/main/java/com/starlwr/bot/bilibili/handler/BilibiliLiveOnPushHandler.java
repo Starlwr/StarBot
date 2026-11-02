@@ -1,20 +1,21 @@
 package com.starlwr.bot.bilibili.handler;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.api.BilibiliApiService;
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
 import com.starlwr.bot.bilibili.api.model.Room;
 import com.starlwr.bot.bilibili.api.model.Up;
-import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.message.Message;
+import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.core.message.PushTargetType;
-import com.starlwr.bot.core.message.StarBotMessageSender;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.push.handler.StarBotEventHandler;
+import com.starlwr.bot.core.push.handler.DefaultHandlerForEvent;
+import com.starlwr.bot.core.message.Message;
 import com.starlwr.bot.core.push.model.PushMessage;
 import com.starlwr.bot.core.push.model.PushTarget;
-import lombok.extern.slf4j.Slf4j;
+import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.message.StarBotMessageSender;
 import org.apache.commons.lang3.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
@@ -47,6 +48,7 @@ import java.util.List;
  */
 @Slf4j
 @StarBotComponent
+@DefaultHandlerForEvent(event = "com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent")
 public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
     private final BilibiliApiService bilibili;
 
@@ -120,7 +122,6 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
      *
      * @return 事件类型
      */
-    @Override
     public Class<? extends StarBotExternalBaseEvent> getEventType() {
         return BilibiliLiveOnEvent.class;
     }

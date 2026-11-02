@@ -2,31 +2,32 @@ package com.starlwr.bot.bilibili.report;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.huaban.analysis.jieba.SegToken;
-import com.starlwr.bot.bilibili.api.BilibiliApiService;
-import com.starlwr.bot.bilibili.api.model.Room;
-import com.starlwr.bot.bilibili.api.model.Up;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.live.gift.GuardOperateType;
 import com.starlwr.bot.bilibili.live.gift.GuardType;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.bilibili.report.BilibiliLiveReportConfig;
+import com.starlwr.bot.bilibili.api.model.Room;
+import com.starlwr.bot.bilibili.api.model.Up;
+import com.starlwr.bot.bilibili.api.BilibiliApiService;
+import com.starlwr.bot.bilibili.report.BilibiliWordCloudService;
 import com.starlwr.bot.core.event.model.LivePlatform;
-import com.starlwr.bot.core.event.model.UserInfo;
-import com.starlwr.bot.core.live.LiveDataService;
-import com.starlwr.bot.core.painter.ChartPainter;
-import com.starlwr.bot.core.painter.CommonPainter;
-import com.starlwr.bot.core.painter.FontService;
 import com.starlwr.bot.core.painter.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.painter.TextWithStyle;
+import com.starlwr.bot.core.event.model.UserInfo;
+import com.starlwr.bot.core.painter.ChartPainter;
+import com.starlwr.bot.core.painter.CommonPainter;
 import com.starlwr.bot.core.painter.WordCloudPainter;
+import com.starlwr.bot.core.live.LiveDataService;
+import com.starlwr.bot.core.live.LiveDataReadSession;
+import com.starlwr.bot.core.painter.FontService;
 import com.starlwr.bot.core.util.ImageUtil;
 import com.starlwr.bot.core.util.StringUtil;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.ResourceLoader;
+import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.util.CollectionUtils;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -52,15 +53,17 @@ import java.util.stream.Stream;
  */
 @Slf4j
 public class BilibiliLiveReportPainter {
-    private final StarBotCoreProperties coreProperties;
+    private final com.starlwr.bot.core.config.StarBotCoreProperties coreProperties;
 
-    private final StarBotBilibiliProperties bilibiliProperties;
+    private final StarBotBilibiliProperties properties;
 
     private final BilibiliApiService bilibili;
 
     private final LiveDataService liveDataService;
 
-    private final BilibiliWordCloudService wordCloudService;
+    private LiveDataReadSession reportSession;
+
+    private final BilibiliWordCloudService wordCloudUtil;
 
     private final Up up;
 
@@ -106,21 +109,23 @@ public class BilibiliLiveReportPainter {
             "giftAnalysis", this::drawGiftAnalysis,
             "superChatAnalysis", this::drawSuperChatAnalysis,
             "guardAnalysis", this::drawGuardAnalysis,
-            "enterRoomAnalysis", this::drawEnterRoomAnalysis
+            "enterRoomAnalysis", this::drawEnterRoomAnalysis,
+            "likeAnalysis", this::drawLikeAnalysis,
+            "shareAnalysis", this::drawShareAnalysis
     );
 
-    public BilibiliLiveReportPainter(StarBotCoreProperties coreProperties, StarBotBilibiliProperties bilibiliProperties, FontService fontService, BilibiliApiService bilibili, StarBotCommonPainterFactory factory, LiveDataService liveDataService, BilibiliWordCloudService wordCloudService, Up up, BilibiliLiveReportConfig config) {
+    public BilibiliLiveReportPainter(com.starlwr.bot.core.config.StarBotCoreProperties coreProperties, StarBotBilibiliProperties properties, FontService fontUtil, BilibiliApiService bilibili, StarBotCommonPainterFactory factory, LiveDataService liveDataService, BilibiliWordCloudService wordCloudUtil, Up up, BilibiliLiveReportConfig config) {
         this.coreProperties = coreProperties;
-        this.bilibiliProperties = bilibiliProperties;
+        this.properties = properties;
         this.bilibili = bilibili;
         this.liveDataService = liveDataService;
-        this.wordCloudService = wordCloudService;
+        this.wordCloudUtil = wordCloudUtil;
         this.up = up;
         this.config = config;
 
         this.resourceLoader = new DefaultResourceLoader(getClass().getClassLoader());
         this.painter = factory.create(WIDTH, 5000, true);
-        this.font = fontService.parseFont("内置").map(f -> f.deriveFont(Font.PLAIN, 25)).orElse(new Font(Font.SANS_SERIF, Font.PLAIN, 25));
+        this.font = fontUtil.parseFont("内置").map(f -> f.deriveFont(Font.PLAIN, 25)).orElse(new Font(Font.SANS_SERIF, Font.PLAIN, 25));
 
         config.getSequence().removeIf(part -> {
             boolean isUnsupportedModule = !drawMethods.containsKey(part);
@@ -145,7 +150,8 @@ public class BilibiliLiveReportPainter {
      * @return 直播报告图片的 Base64 字符串
      */
     public Optional<String> paint(String path) {
-        try {
+        try (LiveDataReadSession reading = liveDataService.openReadSession(LivePlatform.BILIBILI.getName(), up.getUid()).orElse(null)) {
+            reportSession = reading;
             drawLogo();
 
             List<String> sequence = new ArrayList<>();
@@ -160,6 +166,8 @@ public class BilibiliLiveReportPainter {
         } catch (Exception e) {
             log.error("绘制 {}(UID: {}, 房间号: {}) 的直播报告图片失败", up.getUname(), up.getUid(), up.getRoomIdString(), e);
             return Optional.empty();
+        } finally {
+            reportSession = null;
         }
 
         if (StringUtils.isBlank(path)) {
@@ -174,8 +182,11 @@ public class BilibiliLiveReportPainter {
      */
     private void drawLogo() {
         if (coreProperties.getPaint().isDrawLogo()) {
-            try (InputStream input = resourceLoader.getResource("classpath:logo.png").getInputStream()) {
-                BufferedImage logo = ImageIO.read(input);
+            try {
+                BufferedImage logo;
+                try (InputStream logoInput = resourceLoader.getResource("classpath:logo.png").getInputStream()) {
+                    logo = ImageIO.read(logoInput);
+                }
                 this.painter.drawImage(logo, new Point(200, 55)).setPos(MARGIN, 275);
             } catch (IOException e) {
                 log.error("加载 StarBot Logo 失败", e);
@@ -214,8 +225,8 @@ public class BilibiliLiveReportPainter {
 
         // 直播时长
         if (config.isShowLiveTime()) {
-            Optional<Long> optionalStartTime = liveDataService.getLiveStartTime(LivePlatform.BILIBILI.getName(), up.getUid());
-            Optional<Long> optionalEndTime = liveDataService.getLiveEndTime(LivePlatform.BILIBILI.getName(), up.getUid());
+            Optional<Long> optionalStartTime = reportStartTime();
+            Optional<Long> optionalEndTime = reportEndTime();
             String startTime = "?";
             String endTime = "?";
             if (optionalStartTime.isPresent()) {
@@ -243,7 +254,7 @@ public class BilibiliLiveReportPainter {
                 if (seconds > 0) {
                     time += seconds + " 秒";
                 }
-                time = time.strip();
+                time = time.trim();
             }
 
             if (StringUtils.isBlank(time)) {
@@ -430,12 +441,12 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         String uid = String.valueOf(up.getUid());
 
-        Integer beforeFansCount = liveDataService.getCustomObject(Integer.class, platform, "BeforeFansCount", uid).orElse(null);
-        Integer afterFansCount = liveDataService.getCustomObject(Integer.class, platform, "AfterFansCount", uid).orElse(null);
-        Integer beforeFansMedalCount = liveDataService.getCustomObject(Integer.class, platform, "BeforeFansMedalCount", uid).orElse(null);
-        Integer afterFansMedalCount = liveDataService.getCustomObject(Integer.class, platform, "AfterFansMedalCount", uid).orElse(null);
-        Integer beforeGuardCount = liveDataService.getCustomObject(Integer.class, platform, "BeforeGuardCount", uid).orElse(null);
-        Integer afterGuardCount = liveDataService.getCustomObject(Integer.class, platform, "AfterGuardCount", uid).orElse(null);
+        Integer beforeFansCount = reportCount(platform, "BeforeFansCount", uid).orElse(null);
+        Integer afterFansCount = reportCount(platform, "AfterFansCount", uid).orElse(null);
+        Integer beforeFansMedalCount = reportCount(platform, "BeforeFansMedalCount", uid).orElse(null);
+        Integer afterFansMedalCount = reportCount(platform, "AfterFansMedalCount", uid).orElse(null);
+        Integer beforeGuardCount = reportCount(platform, "BeforeGuardCount", uid).orElse(null);
+        Integer afterGuardCount = reportCount(platform, "AfterGuardCount", uid).orElse(null);
 
         if (config.isShowFansChange()) {
             drawChangeLine("粉丝", beforeFansCount, afterFansCount);
@@ -454,8 +465,8 @@ public class BilibiliLiveReportPainter {
      * 加载默认 B 站头像
      */
     private BufferedImage loadDefaultFace() {
-        try {
-            return ImageIO.read(resourceLoader.getResource("classpath:images/common/face.png").getInputStream());
+        try (InputStream input = resourceLoader.getResource("classpath:images/common/face.png").getInputStream()) {
+            return ImageIO.read(input);
         } catch (Exception e) {
             log.error("加载默认 B 站头像失败", e);
             return null;
@@ -511,8 +522,8 @@ public class BilibiliLiveReportPainter {
      * @return 时间范围，不可用时返回 null，单位：毫秒
      */
     private long[] getLiveRange() {
-        Optional<Long> optionalStartTime = liveDataService.getLiveStartTime(LivePlatform.BILIBILI.getName(), up.getUid());
-        Optional<Long> optionalEndTime = liveDataService.getLiveEndTime(LivePlatform.BILIBILI.getName(), up.getUid());
+        Optional<Long> optionalStartTime = reportStartTime();
+        Optional<Long> optionalEndTime = reportEndTime();
         if (optionalStartTime.isPresent() && optionalEndTime.isPresent() && optionalEndTime.get() > optionalStartTime.get()) {
             return new long[]{optionalStartTime.get(), optionalEndTime.get()};
         }
@@ -541,8 +552,8 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         String uid = up.getUid();
 
-        List<JSONObject> danmus = liveDataService.getDanmu(platform, uid, JSONObject.class);
-        List<JSONObject> emojis = liveDataService.getEmoji(platform, uid, JSONObject.class);
+        List<JSONObject> danmus = normalizeEventSenders(eventView(platform, uid, "Danmu", () -> liveDataService.getDanmu(platform, uid, JSONObject.class)));
+        List<JSONObject> emojis = normalizeEventSenders(eventView(platform, uid, "Emoji", () -> liveDataService.getEmoji(platform, uid, JSONObject.class)));
         List<JSONObject> all = Stream.concat(danmus.stream(), emojis.stream()).toList();
         int count = all.size();
 
@@ -624,10 +635,10 @@ public class BilibiliLiveReportPainter {
         // 弹幕词云
         if (config.isShowDanmuWordCloud()) {
             drawSection("弹幕词云");
-            int wordCloudLimit = bilibiliProperties.getLive().getWordCloudLimit();
+            int wordCloudLimit = properties.getLive().getWordCloudLimit();
             if (wordCloudLimit > 0) {
                 Map<String, Long> frequency = new HashMap<>();
-                boolean debugEnabled = bilibiliProperties.getDebug().isWordCloudDebug();
+                boolean debugEnabled = properties.getDebug().isWordCloudDebug();
                 StringBuilder debug = new StringBuilder();
                 long danmuCount = 0;
                 long totalTokens = 0;
@@ -639,7 +650,7 @@ public class BilibiliLiveReportPainter {
                     }
 
                     danmuCount++;
-                    List<SegToken> tokens = wordCloudService.segment(contentText);
+                    List<SegToken> tokens = wordCloudUtil.segment(contentText);
                     totalTokens += tokens.size();
 
                     if (debugEnabled) {
@@ -710,7 +721,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         String uid = up.getUid();
 
-        List<JSONObject> boxes = liveDataService.getRandomGift(platform, uid, JSONObject.class);
+        List<JSONObject> boxes = normalizeEventSenders(eventView(platform, uid, "RandomGift", () -> liveDataService.getRandomGift(platform, uid, JSONObject.class)));
         if (CollectionUtils.isEmpty(boxes)) {
             return;
         }
@@ -724,7 +735,7 @@ public class BilibiliLiveReportPainter {
             tips.add(new TextWithStyle(senderCount + " 人", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
         }
         if (config.isShowBoxProfitDetails()) {
-            if (CollectionUtils.isNotEmpty(tips)) {
+            if (!CollectionUtils.isEmpty(tips)) {
                 tips.add(new TextWithStyle(" / ", CommonPainter.TEXT_FONT_SIZE, COLOR_DEEP_PURPLE));
             }
 
@@ -894,9 +905,9 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         String uid = up.getUid();
 
-        List<JSONObject> freeGifts = liveDataService.getFreeGift(platform, uid, JSONObject.class);
-        List<JSONObject> paidGifts = liveDataService.getPaidGift(platform, uid, JSONObject.class);
-        List<JSONObject> boxes = liveDataService.getRandomGift(platform, uid, JSONObject.class);
+        List<JSONObject> freeGifts = normalizeEventSenders(eventView(platform, uid, "FreeGift", () -> liveDataService.getFreeGift(platform, uid, JSONObject.class)));
+        List<JSONObject> paidGifts = normalizeEventSenders(eventView(platform, uid, "PaidGift", () -> liveDataService.getPaidGift(platform, uid, JSONObject.class)));
+        List<JSONObject> boxes = normalizeEventSenders(eventView(platform, uid, "RandomGift", () -> liveDataService.getRandomGift(platform, uid, JSONObject.class)));
 
         if (CollectionUtils.isEmpty(freeGifts) && CollectionUtils.isEmpty(paidGifts) && CollectionUtils.isEmpty(boxes)) {
             return;
@@ -939,7 +950,7 @@ public class BilibiliLiveReportPainter {
 
         // 按需批量获取发送者用户信息
         Map<String, UserInfo> userInfos = config.getGiftRankingLimit() > 0
-                ? bilibili.getUserInfoByUids(valueBySender.keySet())
+                ? bilibili.getUserInfoByUids(valueBySender.keySet().stream().collect(Collectors.toSet()))
                 : Map.of();
 
         // 礼物排行榜
@@ -996,7 +1007,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         String uid = up.getUid();
 
-        List<JSONObject> superChats = liveDataService.getSuperChat(platform, uid, JSONObject.class);
+        List<JSONObject> superChats = normalizeEventSenders(eventView(platform, uid, "SuperChat", () -> liveDataService.getSuperChat(platform, uid, JSONObject.class)));
         if (CollectionUtils.isEmpty(superChats)) {
             return;
         }
@@ -1019,7 +1030,7 @@ public class BilibiliLiveReportPainter {
 
         // 按需批量获取发送者用户信息
         Map<String, UserInfo> userInfos = config.getSuperChatRankingLimit() > 0
-                ? bilibili.getUserInfoByUids(valueBySender.keySet())
+                ? bilibili.getUserInfoByUids(valueBySender.keySet().stream().collect(Collectors.toSet()))
                 : Map.of();
 
         // SC（醒目留言）排行榜
@@ -1059,7 +1070,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         String uid = up.getUid();
 
-        List<JSONObject> guards = liveDataService.getMemberShip(platform, uid, JSONObject.class);
+        List<JSONObject> guards = normalizeEventSenders(eventView(platform, uid, "Membership", () -> liveDataService.getMemberShip(platform, uid, JSONObject.class)));
         if (CollectionUtils.isEmpty(guards)) {
             return;
         }
@@ -1161,8 +1172,8 @@ public class BilibiliLiveReportPainter {
                     default -> null;
                 };
                 if (StringUtils.isNotBlank(resource)) {
-                    try {
-                        icons.put(type, ImageIO.read(resourceLoader.getResource(resource).getInputStream()));
+                    try (InputStream input = resourceLoader.getResource(resource).getInputStream()) {
+                        icons.put(type, ImageIO.read(input));
                     } catch (IOException e) {
                         log.error("加载 {} 大航海图标失败", type.getName(), e);
                     }
@@ -1201,7 +1212,7 @@ public class BilibiliLiveReportPainter {
                 }
                 BufferedImage icon = icons.get(type);
 
-                for (List<JSONObject> line : ListUtils.partition(list, lineCount)) {
+                for (List<JSONObject> line : org.apache.commons.collections4.ListUtils.partition(list, lineCount)) {
                     int margin = (CHART_WIDTH - iconSize * line.size()) / (line.size() + 1);
                     int y = this.painter.getY();
                     for (int j = 0; j < line.size(); j++) {
@@ -1314,7 +1325,7 @@ public class BilibiliLiveReportPainter {
         String platform = LivePlatform.BILIBILI.getName();
         String uid = up.getUid();
 
-        List<JSONObject> enters = liveDataService.getEnterRoom(platform, uid, JSONObject.class);
+        List<JSONObject> enters = normalizeEventSenders(eventView(platform, uid, "EnterRoom", () -> liveDataService.getEnterRoom(platform, uid, JSONObject.class)));
         if (CollectionUtils.isEmpty(enters)) {
             return;
         }
@@ -1349,6 +1360,113 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 绘制点赞分析模块
+     */
+    private void drawLikeAnalysis() {
+        if (!config.isEnableLikeAnalysis()) {
+            return;
+        }
+
+        String platform = LivePlatform.BILIBILI.getName();
+        String uid = up.getUid();
+
+        List<JSONObject> likes = normalizeEventSenders(eventView(platform, uid, "Like", () -> liveDataService.getLike(platform, uid, JSONObject.class)));
+        if (CollectionUtils.isEmpty(likes)) {
+            return;
+        }
+
+        if (config.isShowLikeDetails()) {
+            long senderCount = likes.stream().map(json -> json.getString("sender")).distinct().count();
+            String tip = likes.size() + " 次 / " + senderCount + " 人";
+            drawTitle("点赞分析", tip);
+        } else {
+            drawTitle("点赞分析");
+        }
+
+        // 按发送者分组统计点赞数
+        Map<String, Long> countBySender = likes.stream().collect(Collectors.groupingBy(json -> json.getString("sender"), Collectors.counting()));
+        List<Map.Entry<String, Double>> sorted = countBySender.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .map(entry -> Map.entry(entry.getKey(), (double) entry.getValue()))
+                .toList();
+
+        // 按需批量获取发送者用户信息
+        Map<String, UserInfo> userInfos = config.getLikeRankingLimit() > 0
+                ? bilibili.getUserInfoByUids(countBySender.keySet())
+                : Map.of();
+
+        // 点赞排行榜
+        if (config.getLikeRankingLimit() > 0) {
+            drawSenderRankingChart("点赞排行榜", sorted, config.getLikeRankingLimit(), userInfos);
+        }
+
+        if (config.isShowLikeGrowthChart() || config.isShowLikeInteractionChart()) {
+            List<ChartPainter.LinePoint> samples = likes.stream()
+                    .map(json -> new ChartPainter.LinePoint(json.getLongValue("timestamp"), 1))
+                    .toList();
+
+            // 点赞累计曲线图
+            if (config.isShowLikeGrowthChart()) {
+                drawSection("点赞累计曲线图");
+                drawLineChart(samples, true);
+            }
+
+            // 点赞互动曲线图
+            if (config.isShowLikeInteractionChart()) {
+                drawSection("点赞互动曲线图");
+                drawLineChart(samples, false);
+            }
+        }
+
+        this.painter.setPos(MARGIN, this.painter.getY() + 25);
+    }
+
+    /**
+     * 绘制分享分析模块
+     */
+    private void drawShareAnalysis() {
+        if (!config.isEnableShareAnalysis()) {
+            return;
+        }
+
+        String platform = LivePlatform.BILIBILI.getName();
+        String uid = up.getUid();
+
+        List<JSONObject> shares = normalizeEventSenders(eventView(platform, uid, "Share", () -> liveDataService.getShare(platform, uid, JSONObject.class)));
+        if (CollectionUtils.isEmpty(shares)) {
+            return;
+        }
+
+        if (config.isShowShareDetails()) {
+            long senderCount = shares.stream().map(json -> json.getString("sender")).distinct().count();
+            String tip = shares.size() + " 次 / " + senderCount + " 人";
+            drawTitle("分享分析", tip);
+        } else {
+            drawTitle("分享分析");
+        }
+
+        if (config.isShowShareGrowthChart() || config.isShowShareInteractionChart()) {
+            List<ChartPainter.LinePoint> samples = shares.stream()
+                    .map(json -> new ChartPainter.LinePoint(json.getLongValue("timestamp"), 1))
+                    .toList();
+
+            // 分享累计曲线图
+            if (config.isShowShareGrowthChart()) {
+                drawSection("分享累计曲线图");
+                drawLineChart(samples, true);
+            }
+
+            // 分享互动曲线图
+            if (config.isShowShareInteractionChart()) {
+                drawSection("分享互动曲线图");
+                drawLineChart(samples, false);
+            }
+        }
+
+        this.painter.setPos(MARGIN, this.painter.getY() + 25);
+    }
+
+    /**
      * 绘制底部版权信息
      */
     private void drawBottom() {
@@ -1358,6 +1476,58 @@ public class BilibiliLiveReportPainter {
         TextWithStyle text = new TextWithStyle("Designed by starbot-bilibili-plugin v" + currentPackage.getImplementationVersion(), CommonPainter.TEXT_FONT_SIZE, COLOR_PINK);
 
         this.painter.drawCopyright(List.of(List.of(text)), List.of(), MARGIN);
+    }
+
+    /**
+     * Core persists the complete sender object; historical report data stores only its UID.
+     * Create a compatibility view without mutating LiveDataService's cached event objects.
+     */
+    private List<JSONObject> normalizeEventSenders(List<JSONObject> events) {
+        if (CollectionUtils.isEmpty(events)) {
+            return events == null ? List.of() : events;
+        }
+        return events.stream().map(event -> {
+            Object sender = event.get("sender");
+            String senderUid = null;
+            if (sender instanceof JSONObject object) {
+                senderUid = object.getString("uid");
+            } else if (sender instanceof Map<?, ?> map) {
+                Object uid = map.get("uid");
+                senderUid = uid == null ? null : String.valueOf(uid);
+            }
+            if (StringUtils.isBlank(senderUid)) {
+                return event;
+            }
+            JSONObject compatible = new JSONObject(event);
+            compatible.put("sender", senderUid);
+            return compatible;
+        }).toList();
+    }
+
+    private List<JSONObject> eventView(String platform, String uid, String dataKey,
+                                       java.util.function.Supplier<List<JSONObject>> legacy) {
+        List<JSONObject> streamed = new ArrayList<>();
+        if (reportSession != null) {
+            reportSession.forEachEvent(dataKey, streamed::add);
+            return streamed;
+        }
+        liveDataService.forEachEvent(platform, uid, dataKey, streamed::add);
+        return streamed.isEmpty() ? legacy.get() : streamed;
+    }
+
+    private Optional<Long> reportStartTime() {
+        return reportSession == null ? liveDataService.getLiveStartTime(LivePlatform.BILIBILI.getName(), up.getUid())
+                : reportSession.getCustomObject(Long.class, "LiveStartTime", up.getUid().toString());
+    }
+
+    private Optional<Long> reportEndTime() {
+        return reportSession == null ? liveDataService.getLiveEndTime(LivePlatform.BILIBILI.getName(), up.getUid())
+                : reportSession.getCustomObject(Long.class, "LiveEndTime", up.getUid().toString());
+    }
+
+    private Optional<Integer> reportCount(String platform, String dataKey, String uid) {
+        return reportSession == null ? liveDataService.getCustomObject(Integer.class, platform, dataKey, uid)
+                : reportSession.getCustomObject(Integer.class, dataKey, uid);
     }
 
     /**

@@ -2,9 +2,14 @@ package com.starlwr.bot.bilibili.config;
 
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;
+import lombok.AccessLevel;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * StarBotBilibili 配置类
@@ -29,6 +34,22 @@ public class StarBotBilibiliProperties {
 
     @Getter
     private final Dynamic dynamic = new Dynamic();
+
+    @Getter
+    @Setter
+    public static class LiveReport {
+        /** Report renderer: legacy keeps the current Kotlin renderer; upstream uses the Java renderer. */
+        private String painter = "legacy";
+
+        public String getPainter() { return painter; }
+        public void setPainter(String value) { painter = value; }
+    }
+
+    @Getter(AccessLevel.NONE)
+    private final LiveReport liveReport = new LiveReport();
+
+    public LiveReport getLiveReport() { return liveReport; }
+
 
     /**
      * 线程相关
@@ -99,6 +120,48 @@ public class StarBotBilibiliProperties {
          * 接口请求重试间隔，单位：毫秒
          */
         private int apiRetryInterval = 3000;
+
+        /** Log Bilibili HTTP request and response exchanges at DEBUG. */
+        private boolean httpLogEnabled = false;
+
+        /** Log decoded WebSocket messages at DEBUG. */
+        private boolean websocketLogEnabled = false;
+
+        /** Include WebSocket heartbeat request and response messages. */
+        private boolean websocketHeartbeatLogEnabled = false;
+
+        /** Include request and response headers in HTTP diagnostics. */
+        private boolean logHeaders = true;
+
+        /** Preserve reusable credentials and tokens in DEBUG diagnostics. */
+        private boolean includeSensitiveData = false;
+
+        /** Maximum logged body characters; zero disables truncation. */
+        private int logMaxBodyLength = 16384;
+
+        /** DEBUG collection categories emitted to the console; use all to disable category filtering. */
+        private Set<String> consoleCategories = new LinkedHashSet<>(List.of("all"));
+
+        /** Suppress repeated DEBUG payloads while retaining change visibility. */
+        private boolean consoleDeduplicate = true;
+
+        /** Duplicate suppression window in seconds. */
+        private long consoleDeduplicateSeconds = 300;
+
+        /** Emit NOTICE/SUMMARY messages for suppressed duplicates. */
+        private boolean deduplicateNotices = false;
+
+        /** Raw debug file categories. Supports all, dynamic, live, and category:type selectors. */
+        private Set<String> fileCategories = new LinkedHashSet<>(List.of("all"));
+
+        /** Suppress repeated raw payloads in debug/Dynamic and debug/Live independently from the console. */
+        private boolean fileDeduplicate = true;
+
+        /** Raw debug file duplicate suppression window in seconds. */
+        private long fileDeduplicateSeconds = 900;
+
+        /** Emit the URL-encoded WBI query used by current Bilibili Web clients. */
+        private boolean wbiEncodedQuery = true;
     }
 
     /**
@@ -112,10 +175,32 @@ public class StarBotBilibiliProperties {
          */
         private boolean enableConnectLiveRoom = true;
 
+        /** WebSocket binary message/receive buffer size, in KiB. */
+        private int webSocketBufferSizeInKB = 8192;
+
+        public int getWebSocketBufferSizeBytes() {
+            if (webSocketBufferSizeInKB <= 0 || webSocketBufferSizeInKB > Integer.MAX_VALUE / 1024) {
+                throw new IllegalArgumentException("starbot.bilibili.live.web-socket-buffer-size-in-kb must be between 1 and "
+                        + Integer.MAX_VALUE / 1024);
+            }
+            return webSocketBufferSizeInKB * 1024;
+        }
+
         /**
          * 是否仅连接启用了直播推送的直播间
          */
         private boolean onlyConnectNecessaryRooms = false;
+
+        /**
+         * 弹幕 WebSocket 传输通道: jvm(JVM TLS 直连) / browser(浏览器桥,复用受控 Chrome 的真实 TLS 栈) /
+         * auto(默认 JVM, 出现 TLS 层异常断开后该房间自动改走浏览器桥)
+         */
+        private String wsTransport = "jvm";
+
+        /**
+         * 浏览器桥事件/帧泵的轮询间隔(毫秒)
+         */
+        private int browserWsPollIntervalMillis = 100;
 
         /**
          * 连接两个直播间之间的时间间隔，单位：毫秒
@@ -126,6 +211,38 @@ public class StarBotBilibiliProperties {
          * 直播间自动断线重连时间间隔，单位：毫秒
          */
         private int liveRoomReconnectInterval = 1000;
+
+        /** Whether concentrated live-room disconnects are summarized as one incident. */
+        private boolean disconnectSummaryEnabled = true;
+
+        /** Distinct rooms required to open a disconnect incident. */
+        private int disconnectSummaryRoomThreshold = 3;
+
+        /** Sliding window used to correlate disconnects, in seconds. */
+        private int disconnectSummaryWindowSeconds = 15;
+
+        /** Quiet time before the final incident summary, in seconds. */
+        private int disconnectSummaryQuietSeconds = 30;
+
+        /** Maximum room identifiers retained as incident samples. */
+        private int disconnectSummarySampleLimit = 10;
+
+        /** getDanmuInfo 连续 -352 失败多少次后进入弹幕连接熔断(仅明确的 -352 计入, 网络错误/超时不计) */
+        private int danmu352Threshold = 3;
+
+        /** 弹幕 -352 熔断探测间隔阶梯, 单位: 毫秒; 默认 1m→5m→15m→30m, 末位为上限循环 */
+        private long[] danmu352ProbeIntervals = {60_000, 300_000, 900_000, 1_800_000};
+
+        public int getDanmu352Threshold() { return danmu352Threshold; }
+        public void setDanmu352Threshold(int value) { danmu352Threshold = value; }
+        public long[] getDanmu352ProbeIntervals() { return danmu352ProbeIntervals; }
+        public void setDanmu352ProbeIntervals(long[] value) { danmu352ProbeIntervals = value; }
+        public long[] danmu352ProbeIntervalsMillis() {
+            long[] configured = danmu352ProbeIntervals;
+            long[] safe = configured == null || configured.length == 0 ? new long[]{60_000} : configured.clone();
+            for (int i = 0; i < safe.length; i++) safe[i] = Math.max(1, safe[i]);
+            return safe;
+        }
 
         /**
          * 礼物数据缓存时间，单位：秒

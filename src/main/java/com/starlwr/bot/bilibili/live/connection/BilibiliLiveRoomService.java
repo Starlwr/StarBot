@@ -1,18 +1,22 @@
 package com.starlwr.bot.bilibili.live.connection;
 
-import com.starlwr.bot.bilibili.api.BilibiliApiService;
-import com.starlwr.bot.bilibili.api.model.Up;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.live.connection.BilibiliLiveRoomConnectorFactory;
+import com.starlwr.bot.bilibili.api.model.Up;
+import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceUpdateEvent;
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.live.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
+import jakarta.annotation.PreDestroy;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
 
 /**
  * Bilibili 直播间服务
@@ -28,18 +32,23 @@ public class BilibiliLiveRoomService {
 
     private final BilibiliLiveRoomConnectTaskService taskService;
 
+    private final LiveDataService liveDataService;
+
     private final Map<String, Up> ups = new HashMap<>();
 
     private final Map<String, String> roomIdMap = new HashMap<>();
 
     private final Map<String, BilibiliLiveRoomConnector> connectors = new HashMap<>();
 
+    private boolean closed;
+
     @Autowired
-    public BilibiliLiveRoomService(StarBotBilibiliProperties properties, BilibiliApiService bilibili, BilibiliLiveRoomConnectorFactory connectorFactory, BilibiliLiveRoomConnectTaskService taskService) {
+    public BilibiliLiveRoomService(StarBotBilibiliProperties properties, BilibiliApiService bilibili, BilibiliLiveRoomConnectorFactory connectorFactory, BilibiliLiveRoomConnectTaskService taskService, LiveDataService liveDataService) {
         this.properties = properties;
         this.bilibili = bilibili;
         this.connectorFactory = connectorFactory;
         this.taskService = taskService;
+        this.liveDataService = liveDataService;
     }
 
     /**
@@ -48,7 +57,7 @@ public class BilibiliLiveRoomService {
      */
     @Order(0)
     @EventListener
-    public void onStarBotDataSourceUpdateEvent(StarBotDataSourceUpdateEvent event) {
+    public synchronized void onStarBotDataSourceUpdateEvent(StarBotDataSourceUpdateEvent event) {
         Up up = ups.get(event.getUser().getUid());
         if (up != null) {
             up.setUname(event.getUser().getUname());
@@ -61,7 +70,7 @@ public class BilibiliLiveRoomService {
      */
     @Order(-10000)
     @EventListener(StarBotDataSourceLoadCompleteEvent.class)
-    public void onStarBotDataSourceLoadCompleteEvent() {
+    public synchronized void onStarBotDataSourceLoadCompleteEvent() {
         if (ups.size() > 50 && properties.getLive().isAutoDetectLiveRoomRisk()) {
             log.warn("需要连接的直播间过多, 将不可避免的有部分直播间被数据风控, 建议关闭直播间数据风控检测功能, 避免持续尝试重新连接直播间导致更严重的风控");
         }
@@ -72,7 +81,7 @@ public class BilibiliLiveRoomService {
      * @param uid UID
      * @return 是否存在指定 UID 的 UP 主
      */
-    public boolean hasUp(String uid) {
+    public synchronized boolean hasUp(String uid) {
         return ups.containsKey(uid);
     }
 
@@ -132,6 +141,7 @@ public class BilibiliLiveRoomService {
      * @param up UP 主信息
      */
     private synchronized void addTask(Up up) {
+        if (closed) return;
         ups.put(up.getUid(), up);
         roomIdMap.put(up.getRoomId(), up.getUid());
 
@@ -186,13 +196,32 @@ public class BilibiliLiveRoomService {
      * @param up UP 主信息
      */
     private synchronized void removeTask(Up up) {
-        BilibiliLiveRoomConnector connector = connectors.get(up.getUid());
-        if (!taskService.remove(connector)) {
-            connector.disconnect();
-        }
-
+        BilibiliLiveRoomConnector connector = connectors.remove(up.getUid());
         ups.remove(up.getUid());
         roomIdMap.remove(up.getRoomId());
-        connectors.remove(up.getUid());
+        try {
+            taskService.remove(connector);
+            // A delayed reconnect can coexist with a live/closing session; cancellation alone is insufficient.
+            connector.disconnect();
+        } finally { liveDataService.deactivate("bilibili", up.getUid(), "datasource_removed"); }
+    }
+
+    @PreDestroy
+    public void close() {
+        List<BilibiliLiveRoomConnector> closing;
+        synchronized (this) {
+            if (closed) return;
+            closed = true;
+            closing = List.copyOf(connectors.values());
+            connectors.clear(); ups.clear(); roomIdMap.clear();
+        }
+        RuntimeException failure = null;
+        for (BilibiliLiveRoomConnector connector : closing) {
+            try { connector.disconnect(); }
+            catch (RuntimeException error) {
+                if (failure == null) failure = error; else failure.addSuppressed(error);
+            }
+        }
+        if (failure != null) throw failure;
     }
 }

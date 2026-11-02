@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.live.connection;
 
-import lombok.AllArgsConstructor;
+import com.starlwr.bot.bilibili.credential.RequestIdentitySnapshot;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -11,12 +11,21 @@ import java.util.List;
  */
 @Data
 @NoArgsConstructor
-@AllArgsConstructor
+
 public class ConnectInfo {
     /**
      * 直播间连接 Token
      */
     private String token;
+
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false, deserialize = false)
+    @lombok.ToString.Exclude
+    private RequestIdentitySnapshot identity;
+
+    public ConnectInfo(String token, List<ConnectAddress> addresses) {
+        this.token = token;
+        this.addresses = addresses;
+    }
 
     /**
      * 直播间连接地址

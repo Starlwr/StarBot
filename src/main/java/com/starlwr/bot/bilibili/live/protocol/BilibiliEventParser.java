@@ -1,20 +1,16 @@
 package com.starlwr.bot.bilibili.live.protocol;
+import com.starlwr.bot.bilibili.live.gift.BilibiliGiftService;
+import com.starlwr.bot.bilibili.service.BilibiliV2EventParser;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.api.BilibiliApiService;
-import com.starlwr.bot.bilibili.api.model.BilibiliEmojiInfo;
-import com.starlwr.bot.bilibili.api.model.BilibiliUserInfo;
-import com.starlwr.bot.bilibili.api.model.FansMedal;
-import com.starlwr.bot.bilibili.api.model.Gift;
-import com.starlwr.bot.bilibili.api.model.Guard;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
-import com.starlwr.bot.bilibili.event.live.*;
-import com.starlwr.bot.bilibili.live.gift.BilibiliGiftService;
+import com.starlwr.bot.bilibili.log.BilibiliDebugFileLogger;
 import com.starlwr.bot.bilibili.live.gift.GuardOperateType;
-import com.starlwr.bot.bilibili.live.protocol.protobuf.InteractWordV2;
-import com.starlwr.bot.bilibili.live.protocol.protobuf.SendGiftV2;
+import com.starlwr.bot.bilibili.event.live.*;
+import com.starlwr.bot.bilibili.api.model.*;
+import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.event.model.GiftInfo;
 import com.starlwr.bot.core.event.model.LiveStreamerInfo;
@@ -23,16 +19,10 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.MathUtil;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,158 +34,238 @@ import java.util.function.BiFunction;
 @Slf4j
 @StarBotComponent
 public class BilibiliEventParser {
-    private static final Logger liveMessageLogger = LoggerFactory.getLogger("LiveMessageLogger");
-
     private final StarBotBilibiliProperties properties;
 
     private final BilibiliApiService bilibili;
 
     private final BilibiliGiftService giftService;
 
-    private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, List<StarBotBaseLiveEvent>>> parsers = Map.ofEntries(
-            Map.entry("LIVE", BilibiliEventParser.this::parseLiveOnData),
-            Map.entry("PREPARING", BilibiliEventParser.this::parseLiveOffData),
-            Map.entry("INTERACT_WORD_V2", BilibiliEventParser.this::parseOperationData),
-            Map.entry("DANMU_MSG", BilibiliEventParser.this::parseMessageData),
-            Map.entry("SEND_GIFT_V2", BilibiliEventParser.this::parseGiftData),
-            Map.entry("SUPER_CHAT_MESSAGE", BilibiliEventParser.this::parseSuperChatData),
-            Map.entry("USER_TOAST_MSG_V2", BilibiliEventParser.this::parseGuardData),
-            Map.entry("LIKE_INFO_V3_CLICK", BilibiliEventParser.this::parseLikeData),
-            Map.entry("LIKE_INFO_V3_UPDATE", BilibiliEventParser.this::parseLikeUpdateData)
+    private final BilibiliDebugFileLogger debugFileLog;
+
+    private final BilibiliV2EventParser v2EventParser;
+
+    private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, StarBotBaseLiveEvent>> parsers = Map.of(
+            "LIVE", BilibiliEventParser.this::parseLiveOnData,
+            "PREPARING", BilibiliEventParser.this::parseLiveOffData,
+            "INTERACT_WORD", BilibiliEventParser.this::parseOperationData,
+            "DANMU_MSG", BilibiliEventParser.this::parseMessageData,
+            "SEND_GIFT", BilibiliEventParser.this::parseGiftData,
+            "SUPER_CHAT_MESSAGE", BilibiliEventParser.this::parseSuperChatData,
+            "USER_TOAST_MSG", BilibiliEventParser.this::parseGuardData,
+            "USER_TOAST_MSG_V2", BilibiliEventParser.this::parseGuardDataV2,
+            "LIKE_INFO_V3_CLICK", BilibiliEventParser.this::parseLikeData,
+            "LIKE_INFO_V3_UPDATE", BilibiliEventParser.this::parseLikeUpdateData
     );
 
     @Autowired
-    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliApiService bilibili, BilibiliGiftService giftService) {
+    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliApiService bilibili,
+                               BilibiliGiftService giftService, BilibiliDebugFileLogger debugFileLog,
+                               BilibiliV2EventParser v2EventParser) {
         this.properties = properties;
         this.bilibili = bilibili;
         this.giftService = giftService;
+        this.debugFileLog = debugFileLog;
+        this.v2EventParser = v2EventParser;
+    }
+
+    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliApiService bilibili,
+                               BilibiliGiftService giftService, BilibiliDebugFileLogger debugFileLog) {
+        this(properties, bilibili, giftService, debugFileLog,
+                new BilibiliV2EventParser(bilibili, giftService));
     }
 
     /**
-     * 将直播间收到的原始消息转换为事件列表
-     *
+     * 将直播间收到的原始消息转换为事件
      * @param data 原始消息
-     * @param source 主播信息
-     * @return 解析出的事件列表
+     * @return 解析成功返回事件，否则返回 null
      */
-    public List<StarBotBaseLiveEvent> parseEvents(JSONObject data, LiveStreamerInfo source) {
+    public Optional<StarBotBaseLiveEvent> parse(JSONObject data, LiveStreamerInfo source) {
         String type = data.getString("cmd");
+        if ("SEND_GIFT_V2".equals(type) || "INTERACT_WORD_V2".equals(type)
+                || "UNIVERSAL_EVENT_GIFT_V2".equals(type)) {
+            return parseMany(data, source).stream().findFirst();
+        }
         if (properties.getDebug().isLiveRoomRawMessageLog()) {
-            liveMessageLogger.debug("{}: {} -> {}", type, source.getRoomId(), data.toJSONString());
+            debugFileLog.live(type, source.getRoomId(), data.toJSONString());
         }
 
-        try {
-            BiFunction<JSONObject, LiveStreamerInfo, List<StarBotBaseLiveEvent>> parser = parsers.get(type);
-            if (parser != null) {
-                return parser.apply(data, source);
+        if (parsers.containsKey(type)) {
+            try {
+                return Optional.ofNullable(parsers.get(type).apply(data, source))
+                        .map(event -> com.starlwr.bot.bilibili.report.ReportEventIdentity.bindPacket(event, data));
+            } catch (Exception e) {
+                log.error("处理直播间 {} 的 {} 类型消息异常: {}", source.getRoomId(), type, data.toJSONString(), e);
             }
-        } catch (Exception e) {
-            log.error("处理直播间 {} 的 {} 类型消息异常: {}", source.getRoomId(), type, data.toJSONString(), e);
         }
 
-        return List.of();
+        return Optional.empty();
+    }
+
+    /** Parse commands which may expand to more than one event. */
+    public List<StarBotBaseLiveEvent> parseMany(JSONObject data, LiveStreamerInfo source) {
+        String type = data.getString("cmd");
+        if ("SEND_GIFT_V2".equals(type) || "INTERACT_WORD_V2".equals(type)
+                || "UNIVERSAL_EVENT_GIFT_V2".equals(type)) {
+            if (properties.getDebug().isLiveRoomRawMessageLog()) {
+                debugFileLog.live(type, source.getRoomId(), data.toJSONString());
+            }
+            return switch (type) {
+                case "SEND_GIFT_V2" -> v2EventParser.parseGifts(data, source, properties.getLive().isCompleteEvent());
+                case "INTERACT_WORD_V2" -> v2EventParser.parseInteraction(data, source, properties.getLive().isCompleteEvent());
+                default -> List.of(new BilibiliRawLiveEvent(source, type, data.toJSONString()));
+            };
+        }
+        return parse(data, source).stream().toList();
     }
 
     /**
      * 解析原始直播间开播数据（LIVE）
      * @param data 原始直播间开播数据
      * @param source 主播信息
-     * @return 事件列表
+     * @return 事件
      */
-    private List<StarBotBaseLiveEvent> parseLiveOnData(JSONObject data, LiveStreamerInfo source) {
+    private StarBotBaseLiveEvent parseLiveOnData(JSONObject data, LiveStreamerInfo source) {
         Long liveTime = data.getLong("live_time");
 
         if (liveTime != null) {
             Instant timestamp = Instant.ofEpochSecond(liveTime);
-            return List.of(new BilibiliLiveOnEvent(source, timestamp));
+            return new BilibiliLiveOnEvent(source, timestamp);
         }
 
-        return List.of();
+        return null;
     }
 
     /**
      * 解析原始直播间下播数据（PREPARING）
      * @param data 原始直播间下播数据
      * @param source 主播信息
-     * @return 事件列表
+     * @return 事件
      */
-    private List<StarBotBaseLiveEvent> parseLiveOffData(JSONObject data, LiveStreamerInfo source) {
+    private StarBotBaseLiveEvent parseLiveOffData(JSONObject data, LiveStreamerInfo source) {
         Instant timestamp = Instant.ofEpochMilli(data.getLong("send_time"));
 
-        return List.of(new BilibiliLiveOffEvent(source, timestamp));
+        return new BilibiliLiveOffEvent(source, timestamp);
     }
 
     /**
-     * 解析原始直播间操作数据（INTERACT_WORD_V2）
-     * @param data 原始新版直播间操作数据
+     * 解析原始直播间操作数据（INTERACT_WORD）
+     * @param data 原始直播间操作数据
      * @param source 主播信息
-     * @return 事件列表
+     * @return 事件
      */
-    private List<StarBotBaseLiveEvent> parseOperationData(JSONObject data, LiveStreamerInfo source) {
-        JSONObject metaData = data.getJSONObject("data");
-        String encodedPayload = metaData.getString("pb");
-
-        InteractWordV2 payload;
-        try {
-            payload = InteractWordV2.parseFrom(Base64.getDecoder().decode(encodedPayload));
-        } catch (IOException | IllegalArgumentException e) {
-            log.error("解析直播间 {} 的 INTERACT_WORD_V2 消息异常, 内容: {}", source.getRoomId(), data.toJSONString(), e);
-            return List.of();
-        }
-
+    private StarBotBaseLiveEvent parseOperationData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
-        InteractWordV2.UserInfo userInfo = payload.getUserInfo();
 
-        String senderUid = payload.getUid();
-        String senderUname = payload.getUname();
-        String senderFace = userInfo.getBase().getFace();
+        JSONObject metaData = data.getJSONObject("data");
+
+        JSONObject senderInfo = metaData.getJSONObject("uinfo");
+        JSONObject senderBaseInfo = senderInfo.getJSONObject("base");
+        String senderUid = metaData.getString("uid");
+        String senderUname = metaData.getString("uname");
+        String senderFace = senderBaseInfo.getString("face");
 
         FansMedal fansMedal = null;
-        InteractWordV2.FansMedalInfo medalInfo = payload.getFansMedal();
-        if (medalInfo.isPresent()) {
+        JSONObject fansMedalInfo = metaData.getJSONObject("fans_medal");
+        if (fansMedalInfo != null && fansMedalInfo.getLong("target_id") != 0L) {
+            String fansMedalUid = fansMedalInfo.getString("target_id");
+            String fansMedalRoomId = fansMedalInfo.getString("anchor_roomid");
+            String fansMedalName = fansMedalInfo.getString("medal_name");
+            Integer fansMedalLevel = fansMedalInfo.getInteger("medal_level");
+            Boolean fansMedalLighted = fansMedalInfo.getInteger("is_lighted") == 1;
             if (completeEvent) {
-                String fansMedalUname = completeUname(medalInfo.getTargetId(), source).orElse(null);
-                String fansMedalRoomId = completeRoomId(medalInfo.getTargetId(), source).orElse(null);
-                String fansMedalFace = completeFace(medalInfo.getTargetId(), source).orElse(null);
-                fansMedal = new FansMedal(medalInfo.getTargetId(), fansMedalUname, fansMedalRoomId, fansMedalFace, medalInfo.getName(), medalInfo.getLevel(), medalInfo.isLighted());
+                String fansMedalUname = completeUname(fansMedalUid, source).orElse(null);
+                String fansMedalFace = completeFace(fansMedalUid, source).orElse(null);
+                fansMedal = new FansMedal(fansMedalUid, fansMedalUname, fansMedalRoomId, fansMedalFace, fansMedalName, fansMedalLevel, fansMedalLighted);
             } else {
-                fansMedal = new FansMedal(medalInfo.getTargetId(), null, null, medalInfo.getName(), medalInfo.getLevel(), medalInfo.isLighted());
+                fansMedal = new FansMedal(fansMedalUid, null, fansMedalRoomId, fansMedalName, fansMedalLevel, fansMedalLighted);
             }
         }
 
-        Guard guard = payload.getPrivilegeType() == 0 ? null : new Guard(payload.getPrivilegeType());
+        JSONObject guardInfo = senderInfo.getJSONObject("medal");
+        Guard guard = (guardInfo != null && guardInfo.getInteger("guard_level") != 0)
+                ? new Guard(guardInfo.getInteger("guard_level"), guardInfo.getString("guard_icon"))
+                : null;
 
-        BilibiliUserInfo sender = new BilibiliUserInfo(senderUid, senderUname, senderFace, fansMedal, guard, userInfo.getWealthLevel());
-        Instant timestamp = Instant.ofEpochSecond(payload.getTimestamp());
-        int msgType = payload.getMsgType();
+        Integer honorLevel = Optional.ofNullable(senderInfo.getJSONObject("wealth"))
+                .map(wealth -> wealth.getInteger("level"))
+                .orElse(null);
+
+        BilibiliUserInfo sender = new BilibiliUserInfo(senderUid, senderUname, senderFace, fansMedal, guard, honorLevel);
+
+        Instant timestamp = Instant.ofEpochSecond(metaData.getLong("timestamp"));
+
+        Integer msgType = metaData.getInteger("msg_type");
         switch (msgType) {
             case 1 -> {
-                String promotionSource = payload.getSpreadDesc();
-                if (StringUtils.isBlank(promotionSource)) {
-                    promotionSource = null;
-                }
-                return List.of(new BilibiliEnterRoomEvent(source, sender, payload.isSpread(), promotionSource, timestamp));
+                boolean fromPromotion = metaData.getInteger("is_spread") == 1;
+                String promotionSource = Optional.of(metaData.getString("spread_desc"))
+                        .filter(s -> !s.isBlank())
+                        .orElse(null);
+
+                return new BilibiliEnterRoomEvent(source, sender, fromPromotion, promotionSource, timestamp);
             }
             case 2 -> {
-                return List.of(new BilibiliFollowEvent(source, sender, timestamp));
+                return new BilibiliFollowEvent(source, sender, timestamp);
             }
             case 3 -> {
-                return List.of(new BilibiliShareEvent(source, sender, timestamp));
+                return new BilibiliShareEvent(source, sender, timestamp);
             }
             default -> {
                 log.warn("未处理的直播间操作消息类型: {}, 内容: {}", msgType, data.toJSONString());
-                return List.of();
+                return null;
             }
         }
+    }
+
+    private Instant parseGuardTimestamp(JSONObject data, JSONObject metaData) {
+        Long timestamp = metaData.getLong("start_time");
+        if (isPositive(timestamp)) {
+            log.debug("USER_TOAST_MSG 使用 data.start_time 作为大航海事件时间");
+            return normalizeEpochTimestamp(timestamp);
+        }
+
+        timestamp = data.getLong("send_time");
+        if (isPositive(timestamp)) {
+            log.debug("USER_TOAST_MSG 缺少 data.start_time，使用 send_time 作为事件时间");
+            return normalizeEpochTimestamp(timestamp);
+        }
+
+        String[] fallbackFields = {"end_time", "timestamp"};
+        for (String field : fallbackFields) {
+            timestamp = metaData.getLong(field);
+            if (isPositive(timestamp)) {
+                log.debug("USER_TOAST_MSG 缺少 send_time，使用 data.{} 作为事件时间", field);
+                return normalizeEpochTimestamp(timestamp);
+            }
+        }
+
+        timestamp = data.getLong("timestamp");
+        if (isPositive(timestamp)) {
+            log.debug("USER_TOAST_MSG 缺少 send_time，使用顶层 timestamp 作为事件时间");
+            return normalizeEpochTimestamp(timestamp);
+        }
+
+        log.warn("USER_TOAST_MSG 缺少可用的服务器时间，使用本机接收时间: {}", data.toJSONString());
+        return Instant.now();
+    }
+
+    private boolean isPositive(Long value) {
+        return value != null && value > 0;
+    }
+
+    private Instant normalizeEpochTimestamp(long value) {
+        return value >= 100_000_000_000L
+                ? Instant.ofEpochMilli(value)
+                : Instant.ofEpochSecond(value);
     }
 
     /**
      * 解析原始直播间消息数据（DANMU_MSG）
      * @param data 原始直播间消息数据
      * @param source 主播信息
-     * @return 事件列表
+     * @return 事件
      */
-    private List<StarBotBaseLiveEvent> parseMessageData(JSONObject data, LiveStreamerInfo source) {
+    private StarBotBaseLiveEvent parseMessageData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONArray info = data.getJSONArray("info");
@@ -220,7 +290,7 @@ public class BilibiliEventParser {
 
         FansMedal fansMedal = null;
         JSONArray fansMedalInfo = info.getJSONArray(3);
-        if (CollectionUtils.isNotEmpty(fansMedalInfo)) {
+        if (!fansMedalInfo.isEmpty()) {
             String fansMedalUid = fansMedalInfo.getString(12);
             String fansMedalUname = fansMedalInfo.getString(2);
             String fansMedalRoomId = fansMedalInfo.getString(3);
@@ -281,10 +351,10 @@ public class BilibiliEventParser {
                     emojis.add(emoji);
                 }
 
-                return List.of(new BilibiliDanmuEvent(source, sender, reply, content, contentText, emojis, timestamp));
+                return new BilibiliDanmuEvent(source, sender, reply, content, contentText, emojis, timestamp);
             }
 
-            return List.of(new BilibiliDanmuEvent(source, sender, reply, content, timestamp));
+            return new BilibiliDanmuEvent(source, sender, reply, content, timestamp);
         } else {
             JSONObject emojiInfo = primaryInfo.getJSONObject(13);
             String emojiId = emojiInfo.getString("emoticon_unique");
@@ -294,74 +364,85 @@ public class BilibiliEventParser {
             Integer emojiHeight = emojiInfo.getInteger("height");
             BilibiliEmojiInfo emoji = new BilibiliEmojiInfo(emojiId, emojiName, emojiUrl, emojiWidth, emojiHeight);
 
-            return List.of(new BilibiliEmojiEvent(source, sender, emoji, timestamp));
+            return new BilibiliEmojiEvent(source, sender, emoji, timestamp);
         }
     }
 
     /**
-     * 解析原始直播间礼物数据（SEND_GIFT_V2）
-     * @param data 原始新版直播间礼物数据
+     * 解析原始直播间礼物数据（SEND_GIFT）
+     * @param data 原始直播间礼物数据
      * @param source 主播信息
-     * @return 事件列表
+     * @return 事件
      */
-    private List<StarBotBaseLiveEvent> parseGiftData(JSONObject data, LiveStreamerInfo source) {
+    private StarBotBaseLiveEvent parseGiftData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONObject metaData = data.getJSONObject("data");
-        String encodedPayload = metaData.getString("pb");
 
-        SendGiftV2 payload;
-        try {
-            payload = SendGiftV2.parseFrom(Base64.getDecoder().decode(encodedPayload));
-        } catch (IOException | IllegalArgumentException e) {
-            log.error("解析直播间 {} 的 SEND_GIFT_V2 消息异常, 内容: {}", source.getRoomId(), data.toJSONString(), e);
-            return List.of();
-        }
-
-        SendGiftV2.Medal medal = payload.getSenderInfo().getMedal();
+        String senderUid = metaData.getString("uid");
+        String senderUname = metaData.getString("uname");
+        String senderFace = metaData.getString("face");
 
         FansMedal fansMedal = null;
-        if (medal.isPresent()) {
+        JSONObject senderUinfo = metaData.getJSONObject("sender_uinfo");
+        JSONObject fansMedalInfo = senderUinfo == null ? null : senderUinfo.getJSONObject("medal");
+        if (fansMedalInfo != null) {
+            String fansMedalUid = fansMedalInfo.getString("ruid");
+            String fansMedalName = fansMedalInfo.getString("name");
+            Integer fansMedalLevel = fansMedalInfo.getInteger("level");
+            Boolean fansMedalLighted = fansMedalInfo.getInteger("is_light") == 1;
             if (completeEvent) {
-                String fansMedalUname = completeUname(medal.getRuid(), source).orElse(null);
-                String fansMedalRoomId = completeRoomId(medal.getRuid(), source).orElse(null);
-                String fansMedalFace = completeFace(medal.getRuid(), source).orElse(null);
-                fansMedal = new FansMedal(medal.getRuid(), fansMedalUname, fansMedalRoomId, fansMedalFace, medal.getName(), medal.getLevel(), medal.isLighted());
+                String fansMedalUname = completeUname(fansMedalUid, source).orElse(null);
+                String fansMedalRoomId = completeRoomId(fansMedalUid, source).orElse(null);
+                String fansMedalFace = completeFace(fansMedalUid, source).orElse(null);
+                fansMedal = new FansMedal(fansMedalUid, fansMedalUname, fansMedalRoomId, fansMedalFace, fansMedalName, fansMedalLevel, fansMedalLighted);
             } else {
-                fansMedal = new FansMedal(medal.getRuid(), null, null, medal.getName(), medal.getLevel(), medal.isLighted());
+                fansMedal = new FansMedal(fansMedalUid, null, null, fansMedalName, fansMedalLevel, fansMedalLighted);
             }
         }
 
-        Guard guard = payload.getGuardLevel() == 0 ? null : new Guard(payload.getGuardLevel(), medal.getGuardIcon());
-        Integer honorLevel = payload.getWealthInfo().getLevel();
-        BilibiliUserInfo sender = new BilibiliUserInfo(payload.getUid(), payload.getUname(), payload.getFace(), fansMedal, guard, honorLevel);
+        Guard guard = (fansMedalInfo != null && fansMedalInfo.getInteger("guard_level") != 0)
+                ? new Guard(fansMedalInfo.getInteger("guard_level"), fansMedalInfo.getString("guard_icon"))
+                : null;
 
-        SendGiftV2.BlindGift blindGift = payload.getBlindGift();
-        List<StarBotBaseLiveEvent> events = new ArrayList<>(payload.getGifts().size());
-        for (SendGiftV2.GiftItem item : payload.getGifts()) {
-            Instant timestamp = Instant.ofEpochSecond(item.getTimestamp());
-            GiftInfo gift = new GiftInfo(item.getId(), item.getName(), MathUtil.divide(item.getDiscountPrice(), 1000.0), item.getCount(), item.getImageUrl());
+        Integer honorLevel = metaData.getInteger("wealth_level");
 
-            GiftInfo randomGift = null;
-            if (blindGift.isPresent()) {
+        BilibiliUserInfo sender = new BilibiliUserInfo(senderUid, senderUname, senderFace, fansMedal, guard, honorLevel);
+
+        Instant timestamp = Instant.ofEpochSecond(metaData.getLong("timestamp"));
+
+        String giftId = metaData.getString("giftId");
+        String giftName = metaData.getString("giftName");
+        Long discountPrice = metaData.getLong("discount_price");
+        double giftPrice = MathUtil.divide(discountPrice == null ? 0L : discountPrice, 1000.0);
+        Integer giftCount = metaData.getInteger("num");
+        String giftUrl = metaData.getJSONObject("gift_info").getString("img_basic");
+        GiftInfo gift = new GiftInfo(giftId, giftName, giftPrice, giftCount, giftUrl);
+
+        String coinType = metaData.getString("coin_type");
+        JSONObject randomGiftInfo = metaData.getJSONObject("blind_gift");
+        if ("silver".equals(coinType)) {
+            return new BilibiliFreeGiftEvent(source, sender, gift, timestamp);
+        } else if ("gold".equals(coinType)) {
+            if (randomGiftInfo == null) {
+                return new BilibiliPaidGiftEvent(source, sender, gift, timestamp);
+            } else {
+                String randomGiftId = randomGiftInfo.getString("original_gift_id");
+                String randomGiftName = randomGiftInfo.getString("original_gift_name");
+                Long originalPrice = randomGiftInfo.getLong("original_gift_price");
+                double randomGiftPrice = MathUtil.divide(originalPrice == null ? 0L : originalPrice, 1000.0);
                 String randomGiftUrl = null;
                 if (completeEvent) {
-                    randomGiftUrl = giftService.getGiftInfo(blindGift.getId()).map(Gift::getUrl).orElse(null);
+                    randomGiftUrl = giftService.getGiftInfo(randomGiftId).map(Gift::getUrl).orElse(null);
                 }
-                randomGift = new GiftInfo(blindGift.getId(), blindGift.getName(), MathUtil.divide(blindGift.getPrice(), 1000.0), item.getCount(), randomGiftUrl);
-            }
+                GiftInfo randomGift = new GiftInfo(randomGiftId, randomGiftName, randomGiftPrice, giftCount, randomGiftUrl);
 
-            if ("silver".equals(item.getCoinType())) {
-                events.add(new BilibiliFreeGiftEvent(source, sender, gift, timestamp));
-            } else if ("gold".equals(item.getCoinType())) {
-                events.add(randomGift == null
-                        ? new BilibiliPaidGiftEvent(source, sender, gift, timestamp)
-                        : new BilibiliRandomGiftEvent(source, sender, randomGift, gift, timestamp));
-            } else {
-                log.warn("未处理的直播间礼物消息, 内容: {}", data.toJSONString());
+                return new BilibiliRandomGiftEvent(source, sender, randomGift, gift, timestamp);
             }
         }
-        return events;
+
+        log.warn("未处理的直播间礼物消息, 内容: {}", data.toJSONString());
+        return null;
     }
 
     /**
@@ -370,7 +451,7 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 事件
      */
-    private List<StarBotBaseLiveEvent> parseSuperChatData(JSONObject data, LiveStreamerInfo source) {
+    private StarBotBaseLiveEvent parseSuperChatData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONObject metaData = data.getJSONObject("data");
@@ -410,63 +491,116 @@ public class BilibiliEventParser {
 
         Instant timestamp = Instant.ofEpochMilli(data.getLong("send_time"));
 
-        return List.of(new BilibiliSuperChatEvent(source, sender, content, value, timestamp));
+        return new BilibiliSuperChatEvent(source, sender, content, value, timestamp);
     }
 
     /**
-     * 解析原始直播间大航海数据（USER_TOAST_MSG_V2）
+     * 解析原始直播间大航海数据（USER_TOAST_MSG）
      * @param data 原始直播间大航海数据
      * @param source 主播信息
      * @return 事件
      */
-    private List<StarBotBaseLiveEvent> parseGuardData(JSONObject data, LiveStreamerInfo source) {
+    private StarBotBaseLiveEvent parseGuardData(JSONObject data, LiveStreamerInfo source) {
+        boolean completeEvent = properties.getLive().isCompleteEvent();
+
+        JSONObject metaData = data.getJSONObject("data");
+
+        String senderUid = metaData.getString("uid");
+        String senderUname = metaData.getString("username");
+        String senderFace = null;
+        if (completeEvent) {
+            senderFace = completeFace(senderUid, source).orElse(null);
+        }
+
+        Integer guardLevel = metaData.getInteger("guard_level");
+        String guardIcon = null;
+        if (completeEvent) {
+            guardIcon = giftService.getGuardIcon(metaData.getString("role_name")).orElse(null);
+        }
+        Guard guard = new Guard(guardLevel, guardIcon);
+
+        BilibiliUserInfo sender = new BilibiliUserInfo(senderUid, senderUname, senderFace, null, guard, null);
+
+        GuardOperateType operateType = GuardOperateType.of(metaData.getInteger("op_type"));
+
+        double price = MathUtil.divide(metaData.getInteger("price"), 1000.0);
+
+        Integer count = metaData.getInteger("num");
+
+        String unit = metaData.getString("unit");
+
+        Instant timestamp = parseGuardTimestamp(data, metaData);
+
+        switch (guardLevel) {
+            case 1 -> {
+                return new BilibiliGovernorEvent(source, sender, operateType, price, count, unit, timestamp);
+            }
+            case 2 -> {
+                return new BilibiliCommanderEvent(source, sender, operateType, price, count, unit, timestamp);
+            }
+            case 3 -> {
+                return new BilibiliCaptainEvent(source, sender, operateType, price, count, unit, timestamp);
+            }
+            default -> {
+                log.warn("未处理的直播间大航海消息类型: {}, 内容: {}", guardLevel, data.toJSONString());
+                return null;
+            }
+        }
+    }
+
+    /**
+     * 解析新版大航海开通消息（USER_TOAST_MSG_V2，纯 JSON 结构）
+     * 结构: data.sender_uinfo{uid, base.name}、data.guard_info{guard_level, role_name, op_type, start_time}、data.pay_info{price, num, unit}
+     * 时间戳沿用本地多级 fallback（start_time → send_time → end_time/timestamp → 顶层 timestamp）
+     * @param data 原始直播间数据
+     * @param source 主播信息
+     * @return 事件
+     */
+    private StarBotBaseLiveEvent parseGuardDataV2(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONObject metaData = data.getJSONObject("data");
 
         JSONObject senderInfo = metaData.getJSONObject("sender_uinfo");
-        JSONObject senderBaseInfo = senderInfo.getJSONObject("base");
-        String senderUid = senderInfo.getString("uid");
-        String senderUname = senderBaseInfo.getString("name");
+        String senderUid = senderInfo == null ? null : senderInfo.getString("uid");
+        String senderUname = senderInfo == null ? null : senderInfo.getJSONObject("base").getString("name");
         String senderFace = null;
         if (completeEvent) {
             senderFace = completeFace(senderUid, source).orElse(null);
         }
 
         JSONObject guardInfo = metaData.getJSONObject("guard_info");
-        Integer guardLevel = guardInfo.getInteger("guard_level");
+        Integer guardLevel = guardInfo == null ? null : guardInfo.getInteger("guard_level");
         String guardIcon = null;
         if (completeEvent) {
-            guardIcon = giftService.getGuardIcon(guardInfo.getString("role_name")).orElse(null);
+            guardIcon = giftService.getGuardIcon(guardInfo == null ? null : guardInfo.getString("role_name")).orElse(null);
         }
         Guard guard = new Guard(guardLevel, guardIcon);
 
         BilibiliUserInfo sender = new BilibiliUserInfo(senderUid, senderUname, senderFace, null, guard, null);
 
-        GuardOperateType operateType = GuardOperateType.of(guardInfo.getInteger("op_type"));
+        GuardOperateType operateType = GuardOperateType.of(guardInfo == null ? null : guardInfo.getInteger("op_type"));
 
         JSONObject payInfo = metaData.getJSONObject("pay_info");
-        double price = MathUtil.divide(payInfo.getInteger("price"), 1000.0);
+        double price = payInfo == null ? 0.0 : MathUtil.divide(payInfo.getInteger("price"), 1000.0);
+        Integer count = payInfo == null ? null : payInfo.getInteger("num");
+        String unit = payInfo == null ? null : payInfo.getString("unit");
 
-        Integer count = payInfo.getInteger("num");
+        Instant timestamp = parseGuardTimestamp(data, guardInfo == null ? new JSONObject() : guardInfo);
 
-        String unit = payInfo.getString("unit");
-
-        Instant timestamp = Instant.ofEpochSecond(guardInfo.getLong("start_time"));
-
-        switch (guardLevel) {
+        switch (guardLevel == null ? -1 : guardLevel) {
             case 1 -> {
-                return List.of(new BilibiliGovernorEvent(source, sender, operateType, price, count, unit, timestamp));
+                return new BilibiliGovernorEvent(source, sender, operateType, price, count, unit, timestamp);
             }
             case 2 -> {
-                return List.of(new BilibiliCommanderEvent(source, sender, operateType, price, count, unit, timestamp));
+                return new BilibiliCommanderEvent(source, sender, operateType, price, count, unit, timestamp);
             }
             case 3 -> {
-                return List.of(new BilibiliCaptainEvent(source, sender, operateType, price, count, unit, timestamp));
+                return new BilibiliCaptainEvent(source, sender, operateType, price, count, unit, timestamp);
             }
             default -> {
-                log.warn("未处理的直播间大航海消息类型: {}, 内容: {}", guardLevel, data.toJSONString());
-                return List.of();
+                log.warn("未处理的直播间大航海消息类型 (USER_TOAST_MSG_V2): {}, 内容: {}", guardLevel, data.toJSONString());
+                return null;
             }
         }
     }
@@ -477,16 +611,17 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 事件
      */
-    private List<StarBotBaseLiveEvent> parseLikeData(JSONObject data, LiveStreamerInfo source) {
+    private StarBotBaseLiveEvent parseLikeData(JSONObject data, LiveStreamerInfo source) {
         boolean completeEvent = properties.getLive().isCompleteEvent();
 
         JSONObject metaData = data.getJSONObject("data");
 
         JSONObject senderInfo = metaData.getJSONObject("uinfo");
         if (senderInfo == null) {
-            return List.of();
+            // 异常点赞消息（如"神秘人"）不携带 uinfo，直接丢弃以避免 NPE（对齐上游 d6ecc75）
+            log.debug("LIKE_INFO_V3_CLICK 消息缺少 uinfo, 已丢弃: {}", data.toJSONString());
+            return null;
         }
-
         JSONObject senderBaseInfo = senderInfo.getJSONObject("base");
         String senderUid = senderInfo.getString("uid");
         String senderUname = senderBaseInfo.getString("name");
@@ -515,7 +650,7 @@ public class BilibiliEventParser {
 
         BilibiliUserInfo sender = new BilibiliUserInfo(senderUid, senderUname, senderFace, fansMedal, guard, null);
 
-        return List.of(new BilibiliLikeEvent(source, sender));
+        return new BilibiliLikeEvent(source, sender);
     }
 
     /**
@@ -524,10 +659,10 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 事件
      */
-    private List<StarBotBaseLiveEvent> parseLikeUpdateData(JSONObject data, LiveStreamerInfo source) {
+    private StarBotBaseLiveEvent parseLikeUpdateData(JSONObject data, LiveStreamerInfo source) {
         Integer count = data.getJSONObject("data").getInteger("click_count");
 
-        return List.of(new BilibiliLikeUpdateEvent(source, count));
+        return new BilibiliLikeUpdateEvent(source, count);
     }
 
     /**
