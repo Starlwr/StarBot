@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 
@@ -63,6 +64,16 @@ public class BilibiliDynamicService {
         this.dataSource = dataSource;
         this.bilibili = bilibili;
         this.accountService = accountService;
+    }
+
+    /**
+     * 停止自动关注与动态抓取
+     */
+    @Order(0)
+    @EventListener(ContextClosedEvent.class)
+    public void close() {
+        scheduler.shutdownNow();
+        executor.shutdownNow();
     }
 
     /**
@@ -190,7 +201,6 @@ public class BilibiliDynamicService {
                     log.info("关注 {} ({}) 成功", up.getUname(), up.getUid());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    log.error("自动关注中断", e);
                     return;
                 } catch (Exception e) {
                     log.error("自动关注异常", e);

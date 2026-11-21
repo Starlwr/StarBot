@@ -121,8 +121,9 @@ public class BilibiliAccountService {
             try {
                 Thread.sleep(3000);
             } catch (InterruptedException e) {
+                SpringApplication.exit(context);
                 Thread.currentThread().interrupt();
-                log.error("扫码登录中断", e);
+                System.exit(0);
             }
 
             Boolean loginStatus;

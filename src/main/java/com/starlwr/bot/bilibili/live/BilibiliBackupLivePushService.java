@@ -18,6 +18,7 @@ import com.starlwr.bot.core.push.model.PushUser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 
@@ -52,6 +53,15 @@ public class BilibiliBackupLivePushService {
         this.properties = properties;
         this.bilibili = bilibili;
         this.liveDataService = liveDataService;
+    }
+
+    /**
+     * 停止备用直播推送
+     */
+    @Order(0)
+    @EventListener(ContextClosedEvent.class)
+    public void close() {
+        scheduler.shutdownNow();
     }
 
     /**

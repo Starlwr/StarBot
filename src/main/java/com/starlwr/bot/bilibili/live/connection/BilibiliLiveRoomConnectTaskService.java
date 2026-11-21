@@ -6,6 +6,7 @@ import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadComplete
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 
@@ -29,6 +30,15 @@ public class BilibiliLiveRoomConnectTaskService {
     @Autowired
     public BilibiliLiveRoomConnectTaskService(StarBotBilibiliProperties properties) {
         this.properties = properties;
+    }
+
+    /**
+     * 停止直播间连接任务
+     */
+    @Order(0)
+    @EventListener(ContextClosedEvent.class)
+    public void close() {
+        executor.shutdownNow();
     }
 
     /**
@@ -68,6 +78,10 @@ public class BilibiliLiveRoomConnectTaskService {
      * @return 是否添加成功
      */
     public synchronized boolean add(BilibiliLiveRoomConnector connector) {
+        if (executor.isShutdown()) {
+            return false;
+        }
+
         Up up = connector.getUp();
 
         ConnectTask task = new ConnectTask(connector);
