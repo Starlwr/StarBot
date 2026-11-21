@@ -49,14 +49,14 @@ public class BilibiliTicketUtil {
      * @return 十六进制字符串
      */
     private static String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder();
+        StringBuilder hexBuilder = new StringBuilder();
         for (byte b : bytes) {
             String hex = Integer.toHexString(0xff & b);
             if (hex.length() == 1) {
-                sb.append('0');
+                hexBuilder.append('0');
             }
-            sb.append(hex);
+            hexBuilder.append(hex);
         }
-        return sb.toString();
+        return hexBuilder.toString();
     }
 }

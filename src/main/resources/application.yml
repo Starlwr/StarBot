@@ -1,8 +1,0 @@
-server:
-  port: 7827
-
-starbot:
-  core:
-    log:
-      console: INFO
-      file: INFO

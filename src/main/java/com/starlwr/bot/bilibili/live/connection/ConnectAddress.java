@@ -15,22 +15,22 @@ public class ConnectAddress {
     /**
      * 连接地址
      */
-    String host;
+    private String host;
 
     /**
      * 端口
      */
-    int port;
+    private int port;
 
     /**
      * wss 端口
      */
     @JSONField(name = "wss_port")
-    int wssPort;
+    private int wssPort;
 
     /**
      * ws 端口
      */
     @JSONField(name = "ws_port")
-    int wsPort;
+    private int wsPort;
 }

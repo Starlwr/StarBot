@@ -1,0 +1,389 @@
+{
+  "title": "Bilibili",
+  "description": "Bilibili 直播平台接入设置，包括直播事件、动态轮询、直播报告等",
+  "configurationClass": "com.starlwr.bot.bilibili.config.StarBotBilibiliProperties",
+  "basePath": [
+    "starbot",
+    "bilibili"
+  ],
+  "conditions": {
+    "live-room-connect-enabled": {
+      "scope": "parent",
+      "path": [
+        "enable-connect-live-room"
+      ],
+      "op": "=",
+      "value": true
+    },
+    "live-room-risk-detection-enabled": {
+      "all": [
+        {
+          "scope": "parent",
+          "path": [
+            "enable-connect-live-room"
+          ],
+          "op": "=",
+          "value": true
+        },
+        {
+          "scope": "parent",
+          "path": [
+            "auto-detect-live-room-risk"
+          ],
+          "op": "=",
+          "value": true
+        }
+      ]
+    },
+    "backup-live-push-enabled": {
+      "scope": "parent",
+      "path": [
+        "backup-live-push"
+      ],
+      "op": "=",
+      "value": true
+    },
+    "auto-follow-enabled": {
+      "scope": "parent",
+      "path": [
+        "auto-follow"
+      ],
+      "op": "=",
+      "value": true
+    }
+  },
+  "groups": [
+    {
+      "id": "debug",
+      "title": "调试",
+      "description": "记录直播消息、动态内容和词云分词的调试日志",
+      "path": [
+        "debug"
+      ],
+      "fields": [
+        {
+          "key": "live-room-raw-message-log",
+          "label": "记录直播间原始消息",
+          "description": "将直播间收到的原始消息记录到 debug 目录，如需反馈问题，请打开此开关以便排查问题",
+          "type": "boolean"
+        },
+        {
+          "key": "dynamic-raw-message-log",
+          "label": "记录原始动态",
+          "description": "将动态接口返回的原始内容记录到 debug 目录，如需反馈问题，请打开此开关以便排查问题",
+          "type": "boolean"
+        },
+        {
+          "key": "word-cloud-debug",
+          "label": "词云分词调试",
+          "description": "将弹幕词云分词结果记录到 debug 目录，如需反馈问题，请打开此开关以便排查问题",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "id": "network",
+      "title": "网络",
+      "description": "设置访问 Bilibili 接口的请求参数和重试策略",
+      "path": [
+        "network"
+      ],
+      "restartRequired": true,
+      "fields": [
+        {
+          "key": "user-agent",
+          "label": "User-Agent",
+          "description": "访问 Bilibili 接口时使用的浏览器标识，填写真实浏览器信息有助于减少风控",
+          "type": "string",
+          "restartRequired": false,
+          "nonBlank": true,
+          "ui": {
+            "widget": "textarea"
+          }
+        },
+        {
+          "key": "api-retry-max-times",
+          "label": "Bilibili 接口请求最大重试次数",
+          "description": "接口请求失败后最多重试的次数，0 表示不重试",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        {
+          "key": "api-retry-interval",
+          "label": "Bilibili 接口请求重试间隔",
+          "description": "接口请求失败后，等待多少毫秒再重试",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000,
+          "ui": {
+            "unit": "毫秒"
+          }
+        }
+      ]
+    },
+    {
+      "id": "thread",
+      "title": "线程池",
+      "description": "调整 Bilibili 事件处理的线程池参数",
+      "path": [
+        "bilibili-thread"
+      ],
+      "restartRequired": true,
+      "fields": [
+        {
+          "key": "core-pool-size",
+          "label": "核心线程数",
+          "description": "通常保留的工作线程数，任务较多时可适当增加",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024,
+          "validators": [
+            {
+              "rule": "compare",
+              "scope": "parent",
+              "path": [
+                "max-pool-size"
+              ],
+              "op": "<=",
+              "message": "核心线程数不能超过最大线程数"
+            }
+          ]
+        },
+        {
+          "key": "max-pool-size",
+          "label": "最大线程数",
+          "description": "任务繁忙时最多创建的线程数，不能小于核心线程数",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        {
+          "key": "queue-capacity",
+          "label": "队列容量",
+          "description": "线程繁忙时最多排队等待的任务数，0 表示不排队，直接创建新线程",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        {
+          "key": "keep-alive-seconds",
+          "label": "非核心线程存活时间",
+          "description": "非核心空闲线程的存活时间",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600,
+          "ui": {
+            "unit": "秒"
+          }
+        }
+      ]
+    },
+    {
+      "id": "live",
+      "title": "直播",
+      "description": "管理直播间连接、风控检测、备用推送和直播报告参数",
+      "path": [
+        "live"
+      ],
+      "fields": [
+        {
+          "key": "enable-connect-live-room",
+          "label": "启用直播间连接",
+          "description": "连接直播间以接收弹幕、礼物等实时消息，被风控时可以关闭",
+          "type": "boolean",
+          "restartRequired": true
+        },
+        {
+          "key": "only-connect-necessary-rooms",
+          "label": "仅连接启用了直播推送的直播间",
+          "description": "仅连接到启用了直播推送的直播间，减少不必要的连接，有助于减少风控",
+          "type": "boolean",
+          "restartRequired": true,
+          "visibleWhen": "live-room-connect-enabled",
+          "validateWhen": "live-room-connect-enabled"
+        },
+        {
+          "key": "live-room-connect-interval",
+          "label": "直播间连接间隔",
+          "description": "依次连接多个直播间时，每次连接之间等待的毫秒数",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000,
+          "ui": {
+            "unit": "毫秒"
+          },
+          "visibleWhen": "live-room-connect-enabled",
+          "validateWhen": "live-room-connect-enabled"
+        },
+        {
+          "key": "live-room-reconnect-interval",
+          "label": "直播间重连间隔",
+          "description": "直播间连接异常断开后，等待多少毫秒再重新连接",
+          "type": "integer",
+          "restartRequired": true,
+          "minimum": 0,
+          "maximum": 600000,
+          "ui": {
+            "unit": "毫秒"
+          },
+          "visibleWhen": "live-room-connect-enabled",
+          "validateWhen": "live-room-connect-enabled"
+        },
+        {
+          "key": "gift-cache-expire",
+          "label": "礼物缓存时间",
+          "description": "礼物名称、价格等信息缓存的秒数，过期后会重新获取",
+          "type": "integer",
+          "restartRequired": true,
+          "minimum": 0,
+          "maximum": 86400,
+          "ui": {
+            "unit": "秒"
+          },
+          "visibleWhen": "live-room-connect-enabled",
+          "validateWhen": "live-room-connect-enabled"
+        },
+        {
+          "key": "complete-event",
+          "label": "自动补全事件信息",
+          "description": "收到信息不完整的事件时，额外请求接口补全用户信息等内容，开启后可能会因网络请求耗时导致事件延迟发布，基于本插件二次开发时可按需开启",
+          "type": "boolean",
+          "visibleWhen": "live-room-connect-enabled",
+          "validateWhen": "live-room-connect-enabled"
+        },
+        {
+          "key": "auto-detect-live-room-risk",
+          "label": "自动检测直播间数据风控",
+          "description": "直播间数据风控会导致直播间连接收到的消息大幅减少，通过检查消息是否存在明显遗漏进行风控检测，检测到后会自动重新连接直播间",
+          "type": "boolean",
+          "restartRequired": true,
+          "visibleWhen": "live-room-connect-enabled",
+          "validateWhen": "live-room-connect-enabled"
+        },
+        {
+          "key": "auto-detect-live-room-risk-interval",
+          "label": "直播间数据风控检测间隔",
+          "description": "每隔多少秒检查一次直播间的数据接收情况",
+          "type": "integer",
+          "restartRequired": true,
+          "minimum": 10,
+          "maximum": 86400,
+          "ui": {
+            "unit": "秒"
+          },
+          "visibleWhen": "live-room-risk-detection-enabled",
+          "validateWhen": "live-room-risk-detection-enabled"
+        },
+        {
+          "key": "auto-detect-live-room-risk-ratio",
+          "label": "直播间数据风控检测阈值",
+          "description": "直播间连接实际收到消息的最低百分比，低于该比例时判定数据接收异常，数值越高检测越严格",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "ui": {
+            "widget": "slider",
+            "unit": "%"
+          },
+          "visibleWhen": "live-room-risk-detection-enabled",
+          "validateWhen": "live-room-risk-detection-enabled"
+        },
+        {
+          "key": "backup-live-push",
+          "label": "启用备用直播推送",
+          "description": "通过接口轮询方式发布直播事件，仅支持开播下播事件，不支持弹幕、礼物等实时消息，不会与直播间连接产生冲突，建议保持开启状态",
+          "type": "boolean",
+          "restartRequired": true
+        },
+        {
+          "key": "backup-live-push-interval",
+          "label": "备用直播推送检测间隔",
+          "description": "备用直播推送每隔多少秒检查一次直播状态，检查过于频繁可能会导致风控",
+          "type": "integer",
+          "restartRequired": true,
+          "minimum": 5,
+          "maximum": 600,
+          "ui": {
+            "unit": "秒"
+          },
+          "visibleWhen": "backup-live-push-enabled",
+          "validateWhen": "backup-live-push-enabled"
+        },
+        {
+          "key": "word-cloud-limit",
+          "label": "弹幕词云最多绘制的词条数量",
+          "description": "生成弹幕词云时最多显示多少个词语",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        {
+          "key": "auto-save-live-report-image",
+          "label": "自动保存直播报告图片",
+          "description": "将生成的直播报告图片同时保存到本地",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "id": "dynamic",
+      "title": "动态",
+      "description": "配置自动关注和动态抓取参数",
+      "path": [
+        "dynamic"
+      ],
+      "fields": [
+        {
+          "key": "auto-follow",
+          "label": "自动关注开启了动态推送的 UP 主",
+          "description": "动态推送需要先关注对应 UP 主，未关注的 UP 主的动态将无法被推送，建议保持开启状态，关闭后需要手动关注所有需要动态推送的 UP 主",
+          "type": "boolean",
+          "restartRequired": true
+        },
+        {
+          "key": "auto-follow-interval",
+          "label": "自动关注间隔",
+          "description": "依次关注多个 UP 主时，每次操作之间等待的秒数，关注过于频繁可能会导致风控",
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 3600,
+          "ui": {
+            "unit": "秒"
+          },
+          "visibleWhen": "auto-follow-enabled",
+          "validateWhen": "auto-follow-enabled"
+        },
+        {
+          "key": "api-request-interval",
+          "label": "动态抓取间隔",
+          "description": "每隔多少秒抓取一次动态，抓取过于频繁可能会导致风控",
+          "type": "integer",
+          "restartRequired": true,
+          "minimum": 10,
+          "maximum": 3600,
+          "ui": {
+            "unit": "秒"
+          }
+        },
+        {
+          "key": "auto-save-image",
+          "label": "自动保存动态图片",
+          "description": "将生成的动态图片同时保存到本地",
+          "type": "boolean"
+        },
+        {
+          "key": "push-minutes",
+          "label": "动态推送时间范围",
+          "description": "仅推送最近多少分钟内发布的动态，超时不再推送，避免首次启动时推送大量动态的情况，0 表示不限制发布时间",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 43200,
+          "ui": {
+            "unit": "分钟"
+          }
+        }
+      ]
+    }
+  ]
+}

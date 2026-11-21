@@ -1,23 +1,18 @@
 package com.starlwr.bot.bilibili.config;
 
+import com.starlwr.bot.core.config.StarBotConfiguration;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;
 import lombok.Setter;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.context.annotation.Configuration;
 
 /**
  * StarBotBilibili 配置类
  */
 @Getter
 @Setter
-@Configuration
 @StarBotComponent
-@ConfigurationProperties(prefix = "starbot.bilibili")
+@StarBotConfiguration(prefix = "starbot.bilibili")
 public class StarBotBilibiliProperties {
-    @Getter
-    private final BilibiliThread bilibiliThread = new BilibiliThread();
-
     @Getter
     private final Debug debug = new Debug();
 
@@ -25,37 +20,13 @@ public class StarBotBilibiliProperties {
     private final Network network = new Network();
 
     @Getter
+    private final BilibiliThread bilibiliThread = new BilibiliThread();
+
+    @Getter
     private final Live live = new Live();
 
     @Getter
     private final Dynamic dynamic = new Dynamic();
-
-    /**
-     * 线程相关
-     */
-    @Getter
-    @Setter
-    public static class BilibiliThread {
-        /**
-         * 线程池核心线程数
-         */
-        private int corePoolSize = 10;
-
-        /**
-         * 线程池最大线程数
-         */
-        private int maxPoolSize = 100;
-
-        /**
-         * 线程池任务队列容量
-         */
-        private int queueCapacity = 0;
-
-        /**
-         * 非核心线程存活时间，单位：秒
-         */
-        private int keepAliveSeconds = 300;
-    }
 
     /**
      * 调试相关
@@ -66,12 +37,12 @@ public class StarBotBilibiliProperties {
         /**
          * 是否记录直播间原始消息日志
          */
-        private boolean liveRoomRawMessageLog = false;
+        private boolean liveRoomRawMessageLog = true;
 
         /**
          * 是否记录原始动态信息日志
          */
-        private boolean dynamicRawMessageLog = false;
+        private boolean dynamicRawMessageLog = true;
 
         /**
          * 是否输出弹幕词云分词调试结果
@@ -102,6 +73,33 @@ public class StarBotBilibiliProperties {
     }
 
     /**
+     * 线程相关
+     */
+    @Getter
+    @Setter
+    public static class BilibiliThread {
+        /**
+         * 线程池核心线程数
+         */
+        private int corePoolSize = 10;
+
+        /**
+         * 线程池最大线程数
+         */
+        private int maxPoolSize = 100;
+
+        /**
+         * 线程池任务队列容量
+         */
+        private int queueCapacity = 0;
+
+        /**
+         * 非核心线程存活时间，单位：秒
+         */
+        private int keepAliveSeconds = 300;
+    }
+
+    /**
      * 直播相关
      */
     @Getter
@@ -120,7 +118,7 @@ public class StarBotBilibiliProperties {
         /**
          * 连接两个直播间之间的时间间隔，单位：毫秒
          */
-        private int liveRoomConnectInterval = 1000;
+        private int liveRoomConnectInterval = 10000;
 
         /**
          * 直播间自动断线重连时间间隔，单位：毫秒
@@ -140,7 +138,7 @@ public class StarBotBilibiliProperties {
         /**
          * 是否自动检测直播间数据风控，检测到后会自动重新连接直播间
          */
-        private boolean autoDetectLiveRoomRisk = true;
+        private boolean autoDetectLiveRoomRisk = false;
 
         /**
          * 自动检测直播间数据风控的时间间隔，单位：秒
