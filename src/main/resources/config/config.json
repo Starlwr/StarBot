@@ -160,7 +160,7 @@
         },
         {
           "key": "queue-capacity",
-          "label": "队列容量",
+          "label": "任务队列容量",
           "description": "线程繁忙时最多排队等待的任务数，0 表示不排队，直接创建新线程",
           "type": "integer",
           "minimum": 0,

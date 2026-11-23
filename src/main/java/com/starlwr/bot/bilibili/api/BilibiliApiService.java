@@ -25,8 +25,8 @@ import com.starlwr.bot.bilibili.dynamic.Dynamic;
 import com.starlwr.bot.bilibili.live.connection.ConnectAddress;
 import com.starlwr.bot.bilibili.live.connection.ConnectInfo;
 import com.starlwr.bot.core.event.model.UserInfo;
+import com.starlwr.bot.core.http.HttpService;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.support.http.HttpService;
 import com.starlwr.bot.core.util.MathUtil;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
@@ -896,7 +896,7 @@ public class BilibiliApiService {
             infos.put(uid, new UserInfo(uid, "昵称获取失败"));
         }
 
-        List<List<String>> parts = ListUtils.partition(new ArrayList<>(uids), 10);
+        List<List<String>> parts = ListUtils.partition(new ArrayList<>(uids), 50);
         for (List<String> part: parts) {
             String param = part.stream().map(String::valueOf).collect(Collectors.joining(","));
             String api = "https://api.vc.bilibili.com/account/v1/user/cards?uids=" + param;
