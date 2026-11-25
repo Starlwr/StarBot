@@ -90,6 +90,20 @@ public class BilibiliProfileCache {
     }
 
     /**
+     * 清空昵称缓存
+     */
+    public void clearUnameCache() {
+        unames.invalidateAll();
+    }
+
+    /**
+     * 清空头像缓存
+     */
+    public void clearFaceCache() {
+        faces.invalidateAll();
+    }
+
+    /**
      * 更新缓存中的用户资料并重新计算有效期
      * @param user 用户信息
      */

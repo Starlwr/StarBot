@@ -7,14 +7,6 @@
     "bilibili"
   ],
   "conditions": {
-    "profile-event-cache-enabled": {
-      "scope": "parent",
-      "path": [
-        "cache-profile-from-events"
-      ],
-      "op": "=",
-      "value": true
-    },
     "live-room-connect-enabled": {
       "scope": "parent",
       "path": [
@@ -192,6 +184,20 @@
       "title": "缓存",
       "path": ["cache"],
       "restartRequired": true,
+      "actions": [
+        {
+          "id": "clear-uname-cache",
+          "label": "清空昵称缓存",
+          "handlerBean": "bilibiliClearUnameCacheAction",
+          "confirmation": "确认清空昵称缓存？"
+        },
+        {
+          "id": "clear-face-cache",
+          "label": "清空头像缓存",
+          "handlerBean": "bilibiliClearFaceCacheAction",
+          "confirmation": "确认清空头像缓存？"
+        }
+      ],
       "fields": [
         {
           "key": "gift-cache-expire-minutes",
@@ -218,8 +224,6 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 10080,
-          "visibleWhen": "profile-event-cache-enabled",
-          "validateWhen": "profile-event-cache-enabled",
           "ui": {
             "unit": "分钟"
           }
@@ -231,9 +235,7 @@
           "type": "integer",
           "nullable": true,
           "minimum": 1,
-          "maximum": 2147483647,
-          "visibleWhen": "profile-event-cache-enabled",
-          "validateWhen": "profile-event-cache-enabled"
+          "maximum": 2147483647
         }
       ]
     },

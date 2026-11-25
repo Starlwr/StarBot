@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.cache;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
@@ -116,6 +117,33 @@ class BilibiliProfileCacheTest {
         assertEquals(Map.of("2", "观众"), profileCache.getUnames(uids));
         verify(http).getJson(eq(api), anyMap());
         verifyNoMoreInteractions(http);
+    }
+
+    /**
+     * 验证昵称和头像清理动作各自只清除对应的缓存
+     */
+    @Test
+    void clearsNicknameAndAvatarCachesIndependently() {
+        UserInfo user = new UserInfo("2", "缓存昵称", "缓存头像");
+        String api = "https://api.vc.bilibili.com/account/v1/user/cards?uids=2";
+        when(http.getJson(eq(api), anyMap())).thenReturn(JSON.parseObject("""
+                {"code":0,"data":[]}
+                """));
+
+        // 清除昵称后，头像仍可直接从缓存读取
+        profileCache.cacheUserProfile(user);
+        assertEquals("已清空昵称缓存", new BilibiliClearUnameCacheAction(profileCache).execute(new JSONObject()));
+        assertEquals("缓存头像", profileCache.getFace("2").orElseThrow());
+        verifyNoInteractions(http);
+        assertTrue(profileCache.getUname("2").isEmpty());
+
+        // 清空头像后，昵称仍可直接从缓存读取
+        profileCache.cacheUserProfile(user);
+        assertEquals("已清空头像缓存", new BilibiliClearFaceCacheAction(profileCache).execute(new JSONObject()));
+        assertEquals("缓存昵称", profileCache.getUname("2").orElseThrow());
+        verify(http).getJson(eq(api), anyMap());
+        assertTrue(profileCache.getFace("2").isEmpty());
+        verify(http, times(2)).getJson(eq(api), anyMap());
     }
 
     /**
