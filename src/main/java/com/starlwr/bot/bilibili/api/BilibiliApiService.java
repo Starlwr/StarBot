@@ -24,6 +24,10 @@ import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.dynamic.Dynamic;
 import com.starlwr.bot.bilibili.live.connection.ConnectAddress;
 import com.starlwr.bot.bilibili.live.connection.ConnectInfo;
+import com.starlwr.bot.core.cache.StarBotCache;
+import com.starlwr.bot.core.cache.StarBotCacheDefinition;
+import com.starlwr.bot.core.cache.StarBotCacheSerializer;
+import com.starlwr.bot.core.cache.StarBotCacheService;
 import com.starlwr.bot.core.event.model.UserInfo;
 import com.starlwr.bot.core.http.HttpService;
 import com.starlwr.bot.core.plugin.StarBotComponent;
@@ -37,9 +41,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
-import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.classify.BinaryExceptionClassifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -54,6 +56,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -68,14 +71,26 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * API 请求服务
+ * Bilibili API 请求服务
  */
 @Slf4j
 @StarBotComponent
 public class BilibiliApiService {
+    private static final StarBotCacheSerializer<Up> UP_SERIALIZER = StarBotCacheSerializer.json(Up.class);
+
+    private static final StarBotCacheSerializer<Gift> GIFT_SERIALIZER = StarBotCacheSerializer.json(Gift.class);
+
     private final StarBotBilibiliProperties properties;
 
     private final HttpService http;
+
+    private final StarBotCache<String, Up> upInfoByUidCache;
+
+    private final StarBotCache<String, Up> upInfoByRoomIdCache;
+
+    private final StarBotCache<String, Gift> giftCache;
+
+    private final StarBotCache<String, String> guardCache;
 
     private final RetryTemplate retryTemplate = new RetryTemplate();
 
@@ -90,9 +105,14 @@ public class BilibiliApiService {
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Autowired
-    public BilibiliApiService(StarBotBilibiliProperties properties, HttpService http) {
+    public BilibiliApiService(StarBotBilibiliProperties properties, HttpService http, StarBotCacheService cacheService) {
         this.properties = properties;
         this.http = http;
+        upInfoByUidCache = cacheService.getCache(new StarBotCacheDefinition<>("bilibili.api.getUpInfoByUid", String.class, Up.class, Duration.ofMinutes(5), 10000L, StarBotCacheSerializer.STRING, UP_SERIALIZER));
+        upInfoByRoomIdCache = cacheService.getCache(new StarBotCacheDefinition<>("bilibili.api.getUpInfoByRoomId", String.class, Up.class, Duration.ofMinutes(5), 10000L, StarBotCacheSerializer.STRING, UP_SERIALIZER));
+        Duration giftTtl = Duration.ofMinutes(properties.getCache().getGiftCacheExpireMinutes());
+        giftCache = cacheService.getCache(new StarBotCacheDefinition<>("bilibili.gift", String.class, Gift.class, giftTtl, null, StarBotCacheSerializer.STRING, GIFT_SERIALIZER));
+        guardCache = cacheService.getCache(new StarBotCacheDefinition<>("bilibili.guard", String.class, String.class, null, null, StarBotCacheSerializer.STRING, StarBotCacheSerializer.STRING));
     }
 
     @PostConstruct
@@ -577,16 +597,17 @@ public class BilibiliApiService {
      * @param uid UID
      * @return UP 主信息
      */
-    @Cacheable(value = "bilibiliApiCache", keyGenerator = "cacheKeyGenerator")
     public Up getUpInfoByUid(@NonNull String uid) {
-        String api = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + uid;
-        JSONObject result = requestBilibiliApi(api);
+        return upInfoByUidCache.get(uid).orElseGet(() -> {
+            String api = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + uid;
+            JSONObject result = requestBilibiliApi(api);
 
-        JSONObject info = result.getJSONObject("info");
-        String uname = info.getString("uname");
-        String roomId = result.getString("room_id");
-        String face = info.getString("face");
-        return new Up(uid, uname, "0".equals(roomId) ? null : roomId, face);
+            JSONObject info = result.getJSONObject("info");
+            String roomId = result.getString("room_id");
+            Up up = new Up(uid, info.getString("uname"), "0".equals(roomId) ? null : roomId, info.getString("face"));
+            upInfoByUidCache.put(uid, up);
+            return up;
+        });
     }
 
     /**
@@ -594,16 +615,18 @@ public class BilibiliApiService {
      * @param roomId 房间号
      * @return UP 主信息
      */
-    @Cacheable(value = "bilibiliApiCache", keyGenerator = "cacheKeyGenerator")
     public Up getUpInfoByRoomId(@NonNull String roomId) {
         if ("0".equals(roomId)) {
             throw new IllegalArgumentException("房间号不能为 0");
         }
 
-        String api = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=" + roomId;
-        JSONObject result = requestBilibiliApi(api);
-        String uid = result.getString("uid");
-        return getUpInfoByUid(uid);
+        return upInfoByRoomIdCache.get(roomId).orElseGet(() -> {
+            String api = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=" + roomId;
+            JSONObject result = requestBilibiliApi(api);
+            Up up = getUpInfoByUid(result.getString("uid"));
+            upInfoByRoomIdCache.put(roomId, up);
+            return up;
+        });
     }
 
     /**
@@ -613,7 +636,7 @@ public class BilibiliApiService {
      */
     public Optional<String> getUnameByUid(@NonNull String uid) {
         try {
-            return Optional.ofNullable(((BilibiliApiService) AopContext.currentProxy()).getUpInfoByUid(uid).getUname());
+            return Optional.ofNullable(getUpInfoByUid(uid).getUname());
         } catch (Exception e) {
             log.error("获取昵称失败", e);
             return Optional.empty();
@@ -627,7 +650,7 @@ public class BilibiliApiService {
      */
     public Optional<String> getRoomIdByUid(@NonNull String uid) {
         try {
-            return Optional.ofNullable(((BilibiliApiService) AopContext.currentProxy()).getUpInfoByUid(uid).getRoomId());
+            return Optional.ofNullable(getUpInfoByUid(uid).getRoomId());
         } catch (Exception e) {
             log.error("获取房间号失败", e);
             return Optional.empty();
@@ -641,7 +664,7 @@ public class BilibiliApiService {
      */
     public Optional<String> getFaceByUid(@NonNull String uid) {
         try {
-            return Optional.ofNullable(((BilibiliApiService) AopContext.currentProxy()).getUpInfoByUid(uid).getFace());
+            return Optional.ofNullable(getUpInfoByUid(uid).getFace());
         } catch (Exception e) {
             log.error("获取头像失败", e);
             return Optional.empty();
@@ -817,6 +840,21 @@ public class BilibiliApiService {
     }
 
     /**
+     * 根据礼物 ID 获取礼物信息
+     * @param giftId 礼物 ID
+     * @return 礼物信息
+     */
+    public Optional<Gift> getGiftInfo(@NonNull String giftId) {
+        return giftCache.get(giftId).or(() -> {
+            Map<String, Gift> gifts = getGiftInfos().stream()
+                    .filter(gift -> gift.getId() != null)
+                    .collect(Collectors.toMap(Gift::getId, gift -> gift));
+            giftCache.putAll(gifts);
+            return Optional.ofNullable(gifts.get(giftId));
+        });
+    }
+
+    /**
      * 获取大航海信息
      * @return 大航海信息
      */
@@ -832,6 +870,20 @@ public class BilibiliApiService {
         }
 
         return guards;
+    }
+
+    /**
+     * 根据大航海类型获取图标
+     * @param type 大航海类型
+     * @return 大航海图标
+     */
+    public Optional<String> getGuardIcon(@NonNull String type) {
+        return guardCache.get(type).or(() -> {
+            Map<String, String> guards = getGuardInfos();
+            guards.entrySet().removeIf(guard -> guard.getKey() == null || guard.getValue() == null);
+            guardCache.putAll(guards);
+            return Optional.ofNullable(guards.get(type));
+        });
     }
 
     /**
@@ -891,22 +943,12 @@ public class BilibiliApiService {
         }
 
         Map<String, UserInfo> infos = new HashMap<>();
-
-        for (String uid : uids) {
-            infos.put(uid, new UserInfo(uid, "昵称获取失败"));
-        }
-
-        List<List<String>> parts = ListUtils.partition(new ArrayList<>(uids), 50);
-        for (List<String> part: parts) {
-            String param = part.stream().map(String::valueOf).collect(Collectors.joining(","));
-            String api = "https://api.vc.bilibili.com/account/v1/user/cards?uids=" + param;
+        for (List<String> part : ListUtils.partition(new ArrayList<>(uids), 50)) {
+            String api = "https://api.vc.bilibili.com/account/v1/user/cards?uids=" + String.join(",", part);
             JSONArray results = requestBilibiliApiForArray(api);
-            for (Object result : results) {
-                JSONObject info = (JSONObject) result;
+            for (JSONObject info : results.toList(JSONObject.class)) {
                 String uid = info.getString("mid");
-                String uname = info.getString("name");
-                String face = info.getString("face");
-                infos.put(uid, new UserInfo(uid, uname, face));
+                infos.put(uid, new UserInfo(uid, info.getString("name"), info.getString("face")));
             }
         }
 

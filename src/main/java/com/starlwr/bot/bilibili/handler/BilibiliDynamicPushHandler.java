@@ -2,12 +2,14 @@ package com.starlwr.bot.bilibili.handler;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.dynamic.BilibiliDynamicPainter;
 import com.starlwr.bot.bilibili.dynamic.BilibiliDynamicPainterFactory;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
+import com.starlwr.bot.core.cache.StarBotCache;
+import com.starlwr.bot.core.cache.StarBotCacheDefinition;
+import com.starlwr.bot.core.cache.StarBotCacheSerializer;
+import com.starlwr.bot.core.cache.StarBotCacheService;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.message.Message;
 import com.starlwr.bot.core.message.PushTargetType;
@@ -24,11 +26,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 /**
  * <h3>Bilibili 动态推送处理器</h3>
@@ -69,17 +71,14 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
 
     private final BilibiliDynamicPainterFactory factory;
 
-    private final Cache<String, String> dynamicImageCache =
-            Caffeine.newBuilder()
-                    .maximumSize(10)
-                    .expireAfterWrite(1, TimeUnit.MINUTES)
-                    .build();
+    private final StarBotCache<String, String> dynamicImageCache;
 
     @Autowired
-    public BilibiliDynamicPushHandler(StarBotBilibiliProperties properties, StarBotMessageSender sender, BilibiliDynamicPainterFactory factory) {
+    public BilibiliDynamicPushHandler(StarBotBilibiliProperties properties, StarBotMessageSender sender, BilibiliDynamicPainterFactory factory, StarBotCacheService cacheService) {
         this.properties = properties;
         this.sender = sender;
         this.factory = factory;
+        dynamicImageCache = cacheService.getCache(new StarBotCacheDefinition<>("bilibili.image.dynamic", String.class, String.class, Duration.ofMinutes(3), 10L, StarBotCacheSerializer.STRING, StarBotCacheSerializer.STRING));
     }
 
     /**
@@ -127,7 +126,7 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
         }
 
         String cacheKey = event.getSource().getUid() + "|" + event.getDynamic().getId();
-        String base64 = dynamicImageCache.getIfPresent(cacheKey);
+        String base64 = dynamicImageCache.get(cacheKey).orElse(null);
 
         if (base64 == null) {
             BilibiliDynamicPainter dynamicPainter = factory.create(event.getDynamic());

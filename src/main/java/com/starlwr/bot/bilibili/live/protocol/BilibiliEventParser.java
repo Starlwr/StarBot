@@ -11,7 +11,6 @@ import com.starlwr.bot.bilibili.api.model.Gift;
 import com.starlwr.bot.bilibili.api.model.Guard;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.live.*;
-import com.starlwr.bot.bilibili.live.gift.BilibiliGiftService;
 import com.starlwr.bot.bilibili.live.gift.GuardOperateType;
 import com.starlwr.bot.bilibili.live.protocol.protobuf.InteractWordV2;
 import com.starlwr.bot.bilibili.live.protocol.protobuf.SendGiftV2;
@@ -50,8 +49,6 @@ public class BilibiliEventParser {
 
     private final BilibiliApiService bilibili;
 
-    private final BilibiliGiftService giftService;
-
     private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, List<StarBotBaseLiveEvent>>> parsers = Map.ofEntries(
             Map.entry("LIVE", BilibiliEventParser.this::parseLiveOnData),
             Map.entry("PREPARING", BilibiliEventParser.this::parseLiveOffData),
@@ -65,10 +62,9 @@ public class BilibiliEventParser {
     );
 
     @Autowired
-    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliApiService bilibili, BilibiliGiftService giftService) {
+    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliApiService bilibili) {
         this.properties = properties;
         this.bilibili = bilibili;
-        this.giftService = giftService;
     }
 
     /**
@@ -346,7 +342,7 @@ public class BilibiliEventParser {
             if (blindGift.isPresent()) {
                 String randomGiftUrl = null;
                 if (completeEvent) {
-                    randomGiftUrl = giftService.getGiftInfo(blindGift.getId()).map(Gift::getUrl).orElse(null);
+                    randomGiftUrl = bilibili.getGiftInfo(blindGift.getId()).map(Gift::getUrl).orElse(null);
                 }
                 randomGift = new GiftInfo(blindGift.getId(), blindGift.getName(), MathUtil.divide(blindGift.getPrice(), 1000.0), item.getCount(), randomGiftUrl);
             }
@@ -437,7 +433,7 @@ public class BilibiliEventParser {
         Integer guardLevel = guardInfo.getInteger("guard_level");
         String guardIcon = null;
         if (completeEvent) {
-            guardIcon = giftService.getGuardIcon(guardInfo.getString("role_name")).orElse(null);
+            guardIcon = bilibili.getGuardIcon(guardInfo.getString("role_name")).orElse(null);
         }
         Guard guard = new Guard(guardLevel, guardIcon);
 

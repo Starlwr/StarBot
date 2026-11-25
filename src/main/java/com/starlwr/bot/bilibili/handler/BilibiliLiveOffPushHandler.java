@@ -1,8 +1,6 @@
 package com.starlwr.bot.bilibili.handler;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.bilibili.api.model.Up;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
@@ -10,6 +8,10 @@ import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.report.BilibiliLiveReportConfig;
 import com.starlwr.bot.bilibili.report.BilibiliLiveReportPainter;
 import com.starlwr.bot.bilibili.report.BilibiliLiveReportPainterFactory;
+import com.starlwr.bot.core.cache.StarBotCache;
+import com.starlwr.bot.core.cache.StarBotCacheDefinition;
+import com.starlwr.bot.core.cache.StarBotCacheSerializer;
+import com.starlwr.bot.core.cache.StarBotCacheService;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.live.LiveDataService;
 import com.starlwr.bot.core.message.Message;
@@ -27,11 +29,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 /**
  * <h3>Bilibili 下播推送处理器</h3>
@@ -123,19 +125,16 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
 
     private final BilibiliLiveReportPainterFactory factory;
 
-    private final Cache<String, String> liveReportCache =
-            Caffeine.newBuilder()
-                    .maximumSize(10)
-                    .expireAfterWrite(1, TimeUnit.MINUTES)
-                    .build();
+    private final StarBotCache<String, String> liveReportCache;
 
     @Autowired
-    public BilibiliLiveOffPushHandler(StarBotBilibiliProperties properties, BilibiliApiService bilibili, StarBotMessageSender sender, LiveDataService liveDataService, BilibiliLiveReportPainterFactory factory) {
+    public BilibiliLiveOffPushHandler(StarBotBilibiliProperties properties, BilibiliApiService bilibili, StarBotMessageSender sender, LiveDataService liveDataService, BilibiliLiveReportPainterFactory factory, StarBotCacheService cacheService) {
         this.properties = properties;
         this.bilibili = bilibili;
         this.sender = sender;
         this.liveDataService = liveDataService;
         this.factory = factory;
+        liveReportCache = cacheService.getCache(new StarBotCacheDefinition<>("bilibili.image.report", String.class, String.class, Duration.ofMinutes(3), 10L, StarBotCacheSerializer.STRING, StarBotCacheSerializer.STRING));
     }
 
     /**
@@ -204,7 +203,7 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
                 content = content.replace("{picture}", "");
             } else {
                 String cacheKey = up.getUid() + "|" + event.getTimestamp() + "|" + params.getJSONObject("modules").toJSONString();
-                String base64 = liveReportCache.getIfPresent(cacheKey);
+                String base64 = liveReportCache.get(cacheKey).orElse(null);
 
                 if (base64 == null) {
                     BilibiliLiveReportPainter reportPainter = factory.create(up, config);

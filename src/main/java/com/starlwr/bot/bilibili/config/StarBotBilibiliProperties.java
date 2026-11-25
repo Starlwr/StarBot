@@ -23,6 +23,9 @@ public class StarBotBilibiliProperties {
     private final BilibiliThread bilibiliThread = new BilibiliThread();
 
     @Getter
+    private final Cache cache = new Cache();
+
+    @Getter
     private final Live live = new Live();
 
     @Getter
@@ -100,6 +103,33 @@ public class StarBotBilibiliProperties {
     }
 
     /**
+     * 缓存相关
+     */
+    @Getter
+    @Setter
+    public static class Cache {
+        /**
+         * 礼物数据缓存时间，单位：分钟
+         */
+        private int giftCacheExpireMinutes = 60;
+
+        /**
+         * 是否从直播间事件中缓存用户资料
+         */
+        private boolean cacheProfileFromEvents = true;
+
+        /**
+         * 用户资料缓存时间，单位：分钟
+         */
+        private int profileCacheExpireMinutes = 2160;
+
+        /**
+         * 用户资料缓存容量
+         */
+        private Long profileCacheMaxSize = 50000L;
+    }
+
+    /**
      * 直播相关
      */
     @Getter
@@ -124,11 +154,6 @@ public class StarBotBilibiliProperties {
          * 直播间自动断线重连时间间隔，单位：毫秒
          */
         private int liveRoomReconnectInterval = 1000;
-
-        /**
-         * 礼物数据缓存时间，单位：秒
-         */
-        private int giftCacheExpire = 3600;
 
         /**
          * 是否自动补全事件中缺失的信息，开启后可能会因网络请求耗时导致事件延迟发布

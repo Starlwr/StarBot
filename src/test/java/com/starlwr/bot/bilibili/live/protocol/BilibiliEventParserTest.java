@@ -12,7 +12,6 @@ import com.starlwr.bot.bilibili.event.live.BilibiliFreeGiftEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliPaidGiftEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliRandomGiftEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliShareEvent;
-import com.starlwr.bot.bilibili.live.gift.BilibiliGiftService;
 import com.starlwr.bot.bilibili.live.gift.GuardOperateType;
 import com.starlwr.bot.bilibili.live.gift.GuardType;
 import com.starlwr.bot.bilibili.live.protocol.protobuf.InteractWordV2;
@@ -41,7 +40,7 @@ import static org.mockito.Mockito.when;
  * <p>
  * 通过手动构造 INTERACT_WORD_V2 与 SEND_GIFT_V2 protobuf 数据验证字段解析与事件转换，
  * 同时使用真实数据覆盖进房、关注、分享、付费礼物、免费礼物和一条消息包含多个盲盒结果的场景。
- * BilibiliApiService 与 BilibiliGiftService 使用 Mockito mock，避免测试依赖网络请求
+ * BilibiliApiService 使用 Mockito mock，避免测试依赖网络请求
  */
 class BilibiliEventParserTest {
     /**
@@ -90,7 +89,7 @@ class BilibiliEventParserTest {
     void setUp() {
         StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
         properties.getLive().setCompleteEvent(false);
-        parser = new BilibiliEventParser(properties, mock(BilibiliApiService.class), mock(BilibiliGiftService.class));
+        parser = new BilibiliEventParser(properties, mock(BilibiliApiService.class));
         source = new LiveStreamerInfo("1000", "主播", "2000");
     }
 
@@ -133,7 +132,7 @@ class BilibiliEventParserTest {
     void parsesInteractWordV2FromDirectPbField() throws IOException {
         StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
         properties.getLive().setCompleteEvent(true);
-        parser = new BilibiliEventParser(properties, mock(BilibiliApiService.class), mock(BilibiliGiftService.class));
+        parser = new BilibiliEventParser(properties, mock(BilibiliApiService.class));
 
         List<StarBotBaseLiveEvent> events = parser.parseEvents(
                 command("INTERACT_WORD_V2", interaction(1, true, "流量包推广")), source);
@@ -168,7 +167,7 @@ class BilibiliEventParserTest {
     void parsesPaidGiftFromDirectPbField() throws IOException {
         StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
         properties.getLive().setCompleteEvent(true);
-        parser = new BilibiliEventParser(properties, mock(BilibiliApiService.class), mock(BilibiliGiftService.class));
+        parser = new BilibiliEventParser(properties, mock(BilibiliApiService.class));
 
         byte[] senderMedal = message(output -> {
             output.writeString(1, "星星");
@@ -342,10 +341,9 @@ class BilibiliEventParserTest {
         StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
         properties.getLive().setCompleteEvent(true);
         BilibiliApiService bilibili = mock(BilibiliApiService.class);
-        BilibiliGiftService giftService = mock(BilibiliGiftService.class);
         when(bilibili.getFaceByUid("404239497")).thenReturn(Optional.of("https://example.com/sender-face.png"));
-        when(giftService.getGuardIcon("舰长")).thenReturn(Optional.of("https://example.com/guard-icon.png"));
-        parser = new BilibiliEventParser(properties, bilibili, giftService);
+        when(bilibili.getGuardIcon("舰长")).thenReturn(Optional.of("https://example.com/guard-icon.png"));
+        parser = new BilibiliEventParser(properties, bilibili);
 
         List<StarBotBaseLiveEvent> events = parser.parseEvents(JSONObject.parseObject(REAL_GUARD), source);
 

@@ -5,12 +5,12 @@ import com.huaban.analysis.jieba.SegToken;
 import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.bilibili.api.model.Room;
 import com.starlwr.bot.bilibili.api.model.Up;
+import com.starlwr.bot.bilibili.cache.BilibiliProfileCache;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.live.gift.GuardOperateType;
 import com.starlwr.bot.bilibili.live.gift.GuardType;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.event.model.LivePlatform;
-import com.starlwr.bot.core.event.model.UserInfo;
 import com.starlwr.bot.core.live.LiveDataService;
 import com.starlwr.bot.core.painter.ChartPainter;
 import com.starlwr.bot.core.painter.CommonPainter;
@@ -52,11 +52,15 @@ import java.util.stream.Stream;
  */
 @Slf4j
 public class BilibiliLiveReportPainter {
+    private static final String MISSING_UNAME = "昵称获取失败";
+
     private final StarBotCoreProperties coreProperties;
 
     private final StarBotBilibiliProperties bilibiliProperties;
 
     private final BilibiliApiService bilibili;
+
+    private final BilibiliProfileCache profileCache;
 
     private final LiveDataService liveDataService;
 
@@ -109,10 +113,11 @@ public class BilibiliLiveReportPainter {
             "enterRoomAnalysis", this::drawEnterRoomAnalysis
     );
 
-    public BilibiliLiveReportPainter(StarBotCoreProperties coreProperties, StarBotBilibiliProperties bilibiliProperties, FontService fontService, BilibiliApiService bilibili, StarBotCommonPainterFactory factory, LiveDataService liveDataService, BilibiliWordCloudService wordCloudService, Up up, BilibiliLiveReportConfig config) {
+    public BilibiliLiveReportPainter(StarBotCoreProperties coreProperties, StarBotBilibiliProperties bilibiliProperties, FontService fontService, BilibiliApiService bilibili, BilibiliProfileCache profileCache, StarBotCommonPainterFactory factory, LiveDataService liveDataService, BilibiliWordCloudService wordCloudService, Up up, BilibiliLiveReportConfig config) {
         this.coreProperties = coreProperties;
         this.bilibiliProperties = bilibiliProperties;
         this.bilibili = bilibili;
+        this.profileCache = profileCache;
         this.liveDataService = liveDataService;
         this.wordCloudService = wordCloudService;
         this.up = up;
@@ -468,10 +473,11 @@ public class BilibiliLiveReportPainter {
      * @param sectionTitle 小节标题
      * @param sorted       按数值降序排序的发送者统计
      * @param limit        展示前多少名
-     * @param userInfos    用户信息
+     * @param unames       昵称映射
+     * @param faces        头像 URL 映射
      */
-    private void drawSenderRankingChart(String sectionTitle, List<Map.Entry<String, Double>> sorted, int limit, Map<String, UserInfo> userInfos) {
-        drawSenderRankingChart(sectionTitle, sorted, limit, userInfos, null, null);
+    private void drawSenderRankingChart(String sectionTitle, List<Map.Entry<String, Double>> sorted, int limit, Map<String, String> unames, Map<String, String> faces) {
+        drawSenderRankingChart(sectionTitle, sorted, limit, unames, faces, null, null);
     }
 
     /**
@@ -480,11 +486,12 @@ public class BilibiliLiveReportPainter {
      * @param sectionTitle  小节标题
      * @param sorted        按数值降序排序的发送者统计
      * @param limit         展示前多少名
-     * @param userInfos     用户信息
+     * @param unames        昵称映射
+     * @param faces         头像 URL 映射
      * @param barStartColor 条形渐变起始颜色
      * @param barEndColor   条形渐变终止颜色
      */
-    private void drawSenderRankingChart(String sectionTitle, List<Map.Entry<String, Double>> sorted, int limit, Map<String, UserInfo> userInfos, Color barStartColor, Color barEndColor) {
+    private void drawSenderRankingChart(String sectionTitle, List<Map.Entry<String, Double>> sorted, int limit, Map<String, String> unames, Map<String, String> faces, Color barStartColor, Color barEndColor) {
         List<Map.Entry<String, Double>> top = sorted.stream().limit(limit).toList();
         drawSection(sectionTitle + " (Top " + top.size() + ")");
 
@@ -493,14 +500,14 @@ public class BilibiliLiveReportPainter {
         for (Map.Entry<String, Double> entry : top) {
             String senderUid = entry.getKey();
             topUids.add(senderUid);
-            faceUrls.add(userInfos.get(senderUid).getFace());
+            faceUrls.add(faces.get(senderUid));
         }
-        List<Optional<BufferedImage>> faces = bilibili.asyncGetBilibiliImages(faceUrls).join();
+        List<Optional<BufferedImage>> faceImages = bilibili.asyncGetBilibiliImages(faceUrls).join();
         BufferedImage defaultFace = loadDefaultFace();
 
         List<ChartPainter.RankingItem> items = new ArrayList<>();
         for (int i = 0; i < top.size(); i++) {
-            items.add(new ChartPainter.RankingItem(faces.get(i).orElse(defaultFace), userInfos.get(topUids.get(i)).getUname(), top.get(i).getValue()));
+            items.add(new ChartPainter.RankingItem(faceImages.get(i).orElse(defaultFace), unames.getOrDefault(topUids.get(i), MISSING_UNAME), top.get(i).getValue()));
         }
         ChartPainter.renderRankingChart(items, CHART_WIDTH, font, barStartColor, barEndColor, null, null).ifPresent(this.painter::drawImage);
     }
@@ -564,14 +571,17 @@ public class BilibiliLiveReportPainter {
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                 .toList();
 
-        // 按需批量获取发送者用户信息
-        Map<String, UserInfo> userInfos = config.getDanmuRankingLimit() > 0 || config.isShowDanmuSenderDistributionChart()
-                ? bilibili.getUserInfoByUids(countBySender.keySet())
-                : Map.of();
+        // 批量获取排行榜和分布图需要展示的用户资料
+        Set<String> rankingUids = sorted.stream().limit(Math.max(0, config.getDanmuRankingLimit())).map(Map.Entry::getKey).collect(Collectors.toSet());
+        Set<String> shownUids = new HashSet<>(rankingUids);
+        if (config.isShowDanmuSenderDistributionChart()) {
+            sorted.stream().filter(entry -> (double) entry.getValue() / all.size() > 0.05).map(Map.Entry::getKey).forEach(shownUids::add);
+        }
+        Pair<Map<String, String>, Map<String, String>> profiles = queryUserProfiles(shownUids, rankingUids);
 
         // 弹幕排行榜
         if (config.getDanmuRankingLimit() > 0) {
-            drawSenderRankingChart("弹幕排行榜", sorted.stream().map(entry -> Map.entry(entry.getKey(), (double) entry.getValue())).toList(), config.getDanmuRankingLimit(), userInfos);
+            drawSenderRankingChart("弹幕排行榜", sorted.stream().map(entry -> Map.entry(entry.getKey(), (double) entry.getValue())).toList(), config.getDanmuRankingLimit(), profiles.getLeft(), profiles.getRight());
         }
 
         if (config.isShowDanmuGrowthChart() || config.isShowDanmuInteractionChart()) {
@@ -608,7 +618,7 @@ public class BilibiliLiveReportPainter {
             long otherCount = 0;
             for (Map.Entry<String, Long> entry : sorted) {
                 if ((double) entry.getValue() / all.size() > 0.05) {
-                    slices.add(new ChartPainter.DistributionSlice(userInfos.get(entry.getKey()).getUname(), entry.getValue()));
+                    slices.add(new ChartPainter.DistributionSlice(profiles.getLeft().getOrDefault(entry.getKey(), MISSING_UNAME), entry.getValue()));
                 } else {
                     otherCount += entry.getValue();
                 }
@@ -759,14 +769,13 @@ public class BilibiliLiveReportPainter {
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue().doubleValue()))
                 .toList();
 
-        // 按需批量获取发送者用户信息
-        Map<String, UserInfo> userInfos = config.getBoxRankingLimit() > 0 || config.getBoxProfitRankingLimit() > 0
-                ? bilibili.getUserInfoByUids(countBySender.keySet())
-                : Map.of();
+        // 批量获取两个排行榜需要展示的用户资料
+        Set<String> shownUids = Stream.concat(sortedCount.stream().limit(Math.max(0, config.getBoxRankingLimit())), sortedProfit.stream().limit(Math.max(0, config.getBoxProfitRankingLimit()))).map(Map.Entry::getKey).collect(Collectors.toSet());
+        Pair<Map<String, String>, Map<String, String>> profiles = queryUserProfiles(shownUids, shownUids);
 
         // 盲盒数量排行榜
         if (config.getBoxRankingLimit() > 0) {
-            drawSenderRankingChart("盲盒数量排行榜", sortedCount, config.getBoxRankingLimit(), userInfos);
+            drawSenderRankingChart("盲盒数量排行榜", sortedCount, config.getBoxRankingLimit(), profiles.getLeft(), profiles.getRight());
         }
 
         // 盲盒盈亏排行榜
@@ -782,7 +791,7 @@ public class BilibiliLiveReportPainter {
                 barStartColor = ChartPainter.COLOR_DEEP_GREEN;
                 barEndColor = ChartPainter.COLOR_LIGHT_GREEN;
             }
-            drawSenderRankingChart("盲盒盈亏排行榜", sortedProfit, config.getBoxProfitRankingLimit(), userInfos, barStartColor, barEndColor);
+            drawSenderRankingChart("盲盒盈亏排行榜", sortedProfit, config.getBoxProfitRankingLimit(), profiles.getLeft(), profiles.getRight(), barStartColor, barEndColor);
         }
 
         if (config.isShowBoxGrowthChart() || config.isShowBoxInteractionChart()) {
@@ -937,14 +946,11 @@ public class BilibiliLiveReportPainter {
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue().doubleValue()))
                 .toList();
 
-        // 按需批量获取发送者用户信息
-        Map<String, UserInfo> userInfos = config.getGiftRankingLimit() > 0
-                ? bilibili.getUserInfoByUids(valueBySender.keySet())
-                : Map.of();
-
         // 礼物排行榜
         if (config.getGiftRankingLimit() > 0) {
-            drawSenderRankingChart("礼物排行榜", sorted, config.getGiftRankingLimit(), userInfos);
+            Set<String> rankingUids = sorted.stream().limit(config.getGiftRankingLimit()).map(Map.Entry::getKey).collect(Collectors.toSet());
+            Pair<Map<String, String>, Map<String, String>> profiles = queryUserProfiles(rankingUids, rankingUids);
+            drawSenderRankingChart("礼物排行榜", sorted, config.getGiftRankingLimit(), profiles.getLeft(), profiles.getRight());
         }
 
         if (config.isShowGiftGrowthChart() || config.isShowGiftInteractionChart()) {
@@ -1017,14 +1023,11 @@ public class BilibiliLiveReportPainter {
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue().doubleValue()))
                 .toList();
 
-        // 按需批量获取发送者用户信息
-        Map<String, UserInfo> userInfos = config.getSuperChatRankingLimit() > 0
-                ? bilibili.getUserInfoByUids(valueBySender.keySet())
-                : Map.of();
-
         // SC（醒目留言）排行榜
         if (config.getSuperChatRankingLimit() > 0) {
-            drawSenderRankingChart("SC（醒目留言）排行榜", sorted, config.getSuperChatRankingLimit(), userInfos);
+            Set<String> rankingUids = sorted.stream().limit(config.getSuperChatRankingLimit()).map(Map.Entry::getKey).collect(Collectors.toSet());
+            Pair<Map<String, String>, Map<String, String>> profiles = queryUserProfiles(rankingUids, rankingUids);
+            drawSenderRankingChart("SC（醒目留言）排行榜", sorted, config.getSuperChatRankingLimit(), profiles.getLeft(), profiles.getRight());
         }
 
         if (config.isShowSuperChatGrowthChart() || config.isShowSuperChatInteractionChart()) {
@@ -1193,8 +1196,11 @@ public class BilibiliLiveReportPainter {
                     default -> Color.BLACK;
                 };
 
-                Map<String, UserInfo> userInfos = bilibili.getUserInfoByUids(list.stream().map(json -> json.getString("sender")).collect(Collectors.toSet()));
-                List<Optional<BufferedImage>> faces = bilibili.asyncGetBilibiliImages(list.stream().map(json -> userInfos.get(json.getString("sender")).getFace()).toList()).join();
+                Set<String> shownUids = list.stream().map(json -> json.getString("sender")).collect(Collectors.toSet());
+                Pair<Map<String, String>, Map<String, String>> profiles = queryUserProfiles(shownUids, shownUids);
+                Map<String, String> unames = profiles.getLeft();
+                Map<String, String> faceUrls = profiles.getRight();
+                List<Optional<BufferedImage>> faces = bilibili.asyncGetBilibiliImages(list.stream().map(json -> faceUrls.get(json.getString("sender"))).toList()).join();
                 Map<String, Optional<BufferedImage>> facesByUid = new HashMap<>();
                 for (int i = 0; i < list.size(); i++) {
                     facesByUid.put(list.get(i).getString("sender"), faces.get(i));
@@ -1215,37 +1221,34 @@ public class BilibiliLiveReportPainter {
                         if (icon != null) {
                             this.painter.drawImage(ImageUtil.resize(icon, iconSize, iconSize), new Point(x, y));
                         }
-                        UserInfo userInfo = userInfos.get(guard.getString("sender"));
-                        if (userInfo != null) {
-                            String uname = StringUtil.getOmitString(userInfo.getUname(), 8);
-                            String countText = guard.getLongValue("count") + " 月";
-                            String operateType = guard.getString("operateType");
-                            String badgeText;
-                            Color badgeColor;
-                            if (GuardOperateType.ACTIVATION.name().equals(operateType)) {
-                                badgeText = GuardOperateType.ACTIVATION.getName();
-                                badgeColor = COLOR_GUARD_ACTIVATION;
-                            } else if (GuardOperateType.RENEWAL.name().equals(operateType)) {
-                                badgeText = GuardOperateType.RENEWAL.getName();
-                                badgeColor = COLOR_GUARD_RENEWAL;
-                            } else {
-                                badgeText = GuardOperateType.UNKNOWN.getName();
-                                badgeColor = Color.GRAY;
-                            }
-                            Pair<Integer, Integer> unameSize = this.painter.getStringWidthAndHeight(uname, textSize);
-                            Pair<Integer, Integer> countSize = this.painter.getStringWidthAndHeight(countText, textSize);
-                            Pair<Integer, Integer> badgeTextBounds = this.painter.getStringWidthAndHeight(badgeText, badgeTextSize);
-                            int badgeWidth = badgeTextBounds.getLeft() + badgeHorizontalPadding * 2;
-                            int badgeHeight = badgeTextBounds.getRight() + badgeVerticalPadding * 2;
-                            int infoWidth = badgeWidth + badgeGap + countSize.getLeft();
-                            int textY = y + iconSize + 10;
-                            this.painter.drawTextWithStyle(List.of(new TextWithStyle(uname, textSize, color)), new Point(x + (iconSize - unameSize.getLeft()) / 2, textY));
-                            int infoX = x + (iconSize - infoWidth) / 2;
-                            int infoY = textY + unameSize.getRight() + 10;
-                            this.painter.drawRoundedRectangle(infoX, infoY, badgeWidth, badgeHeight, badgeHeight, badgeColor);
-                            this.painter.drawTextWithStyle(List.of(new TextWithStyle(badgeText, badgeTextSize, Color.WHITE)), new Point(infoX + badgeHorizontalPadding, infoY + badgeVerticalPadding));
-                            this.painter.drawTextWithStyle(List.of(new TextWithStyle(countText, textSize, Color.BLACK)), new Point(infoX + badgeWidth + badgeGap, infoY + (badgeHeight - countSize.getRight()) / 2));
+                        String uname = StringUtil.getOmitString(unames.getOrDefault(guard.getString("sender"), MISSING_UNAME), 8);
+                        String countText = guard.getLongValue("count") + " 月";
+                        String operateType = guard.getString("operateType");
+                        String badgeText;
+                        Color badgeColor;
+                        if (GuardOperateType.ACTIVATION.name().equals(operateType)) {
+                            badgeText = GuardOperateType.ACTIVATION.getName();
+                            badgeColor = COLOR_GUARD_ACTIVATION;
+                        } else if (GuardOperateType.RENEWAL.name().equals(operateType)) {
+                            badgeText = GuardOperateType.RENEWAL.getName();
+                            badgeColor = COLOR_GUARD_RENEWAL;
+                        } else {
+                            badgeText = GuardOperateType.UNKNOWN.getName();
+                            badgeColor = Color.GRAY;
                         }
+                        Pair<Integer, Integer> unameSize = this.painter.getStringWidthAndHeight(uname, textSize);
+                        Pair<Integer, Integer> countSize = this.painter.getStringWidthAndHeight(countText, textSize);
+                        Pair<Integer, Integer> badgeTextBounds = this.painter.getStringWidthAndHeight(badgeText, badgeTextSize);
+                        int badgeWidth = badgeTextBounds.getLeft() + badgeHorizontalPadding * 2;
+                        int badgeHeight = badgeTextBounds.getRight() + badgeVerticalPadding * 2;
+                        int infoWidth = badgeWidth + badgeGap + countSize.getLeft();
+                        int textY = y + iconSize + 10;
+                        this.painter.drawTextWithStyle(List.of(new TextWithStyle(uname, textSize, color)), new Point(x + (iconSize - unameSize.getLeft()) / 2, textY));
+                        int infoX = x + (iconSize - infoWidth) / 2;
+                        int infoY = textY + unameSize.getRight() + 10;
+                        this.painter.drawRoundedRectangle(infoX, infoY, badgeWidth, badgeHeight, badgeHeight, badgeColor);
+                        this.painter.drawTextWithStyle(List.of(new TextWithStyle(badgeText, badgeTextSize, Color.WHITE)), new Point(infoX + badgeHorizontalPadding, infoY + badgeVerticalPadding));
+                        this.painter.drawTextWithStyle(List.of(new TextWithStyle(countText, textSize, Color.BLACK)), new Point(infoX + badgeWidth + badgeGap, infoY + (badgeHeight - countSize.getRight()) / 2));
                     }
                     this.painter.setPos(MARGIN, y + iconSize + textSize * 2 + 44 + this.painter.getRowSpace());
                 }
@@ -1365,5 +1368,20 @@ public class BilibiliLiveReportPainter {
      */
     private void drawBackground() {
         this.painter.createSolidRoundedRectangleBackground(Color.WHITE, 35);
+    }
+
+    /**
+     * 查询直播报告所需的昵称和头像
+     * @param unameUids 需要昵称的用户 UID 集合
+     * @param faceUids 需要头像的用户 UID 集合
+     * @return 用户昵称映射和用户头像 URL 映射
+     */
+    private Pair<Map<String, String>, Map<String, String>> queryUserProfiles(Set<String> unameUids, Set<String> faceUids) {
+        try {
+            return Pair.of(profileCache.getUnames(unameUids), profileCache.getFaces(faceUids));
+        } catch (Exception e) {
+            log.error("获取直播报告用户资料失败", e);
+            return Pair.of(Collections.emptyMap(), Collections.emptyMap());
+        }
     }
 }

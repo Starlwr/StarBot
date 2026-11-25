@@ -5,7 +5,10 @@ import com.huaban.analysis.jieba.SegToken;
 import com.starlwr.bot.bilibili.api.BilibiliApiService;
 import com.starlwr.bot.bilibili.api.model.Room;
 import com.starlwr.bot.bilibili.api.model.Up;
+import com.starlwr.bot.bilibili.cache.BilibiliProfileCache;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.core.cache.StarBotCacheService;
+import com.starlwr.bot.core.cache.StarBotCaffeineCacheFactory;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.event.model.UserInfo;
 import com.starlwr.bot.core.live.LiveDataService;
@@ -40,7 +43,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -149,7 +154,8 @@ public class BilibiliLiveReportPainterTest {
 
         // BilibiliApiService：头像、房间信息、批量用户信息、批量头像
         BilibiliApiService bilibili = mock(BilibiliApiService.class);
-        BufferedImage face = ImageIO.read(BilibiliLiveReportPainterTest.class.getResourceAsStream("/images/common/face.png"));
+        BufferedImage face = ImageIO.read(Objects.requireNonNull(
+                BilibiliLiveReportPainterTest.class.getResource("/images/common/face.png"), "找不到测试头像资源"));
         assertNotNull(face, "测试头像图片加载失败");
         when(bilibili.getBilibiliImage(anyString())).thenReturn(Optional.of(face));
         when(bilibili.asyncGetBilibiliImages(anyList())).thenAnswer(invocation -> {
@@ -229,7 +235,7 @@ public class BilibiliLiveReportPainterTest {
         BilibiliWordCloudService wordCloudService = new BilibiliWordCloudService();
         ReflectionTestUtils.invokeMethod(wordCloudService, "init");
         BilibiliLiveReportPainter painter = new BilibiliLiveReportPainter(
-                coreProperties, bilibiliProperties, fontService, bilibili, factory, liveDataService, wordCloudService, up, config);
+                coreProperties, bilibiliProperties, fontService, bilibili, createProfileCache(bilibili), factory, liveDataService, wordCloudService, up, config);
 
         Optional<String> result;
         if (SAVE_IMAGE) {
@@ -332,7 +338,7 @@ public class BilibiliLiveReportPainterTest {
 
         ReflectionTestUtils.invokeMethod(report, "drawBoxAnalysis");
 
-        ArgumentCaptor<List<TextWithStyle>> texts = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<TextWithStyle>> texts = ArgumentCaptor.captor();
         verify(commonPainter).drawTextWithStyle(texts.capture(), any(Point.class));
         assertEquals(expected, texts.getValue().stream().map(TextWithStyle::getText).collect(Collectors.joining()));
     }
@@ -377,7 +383,7 @@ public class BilibiliLiveReportPainterTest {
         try (MockedStatic<ChartPainter> charts = mockStatic(ChartPainter.class)) {
             ReflectionTestUtils.invokeMethod(report, method);
 
-            ArgumentCaptor<List<ChartPainter.RankingItem>> items = ArgumentCaptor.forClass(List.class);
+            ArgumentCaptor<List<ChartPainter.RankingItem>> items = ArgumentCaptor.captor();
             charts.verify(() -> ChartPainter.renderRankingChart(items.capture(), eq(900), any(Font.class),
                     nullable(Color.class), nullable(Color.class), isNull(), isNull()));
             assertEquals(1, items.getValue().size());
@@ -462,12 +468,12 @@ public class BilibiliLiveReportPainterTest {
         config.setShowGuardOperateTypeMonthDistributionChart(true);
         config.setShowGuardOperateTypeUserDistributionChart(true);
         BilibiliLiveReportPainter report = new BilibiliLiveReportPainter(coreProperties, new StarBotBilibiliProperties(), fontService,
-                bilibili, guardFactory, liveDataService, mock(BilibiliWordCloudService.class), new Up(UID, "测试主播", ROOM_ID), config);
+                bilibili, createProfileCache(bilibili), guardFactory, liveDataService, mock(BilibiliWordCloudService.class), new Up(UID, "测试主播", ROOM_ID), config);
 
         try (MockedStatic<ChartPainter> charts = mockStatic(ChartPainter.class)) {
             ReflectionTestUtils.invokeMethod(report, "drawGuardAnalysis");
 
-            ArgumentCaptor<List<TextWithStyle>> texts = ArgumentCaptor.forClass(List.class);
+            ArgumentCaptor<List<TextWithStyle>> texts = ArgumentCaptor.captor();
             verify(commonPainter, atLeastOnce()).drawTextWithStyle(texts.capture(), any(Point.class));
             List<String> renderedTexts = texts.getAllValues().stream().flatMap(List::stream).map(TextWithStyle::getText).toList();
             assertEquals(List.of(
@@ -478,7 +484,7 @@ public class BilibiliLiveReportPainterTest {
             assertEquals(List.of(new Color(255, 0, 255), new Color(255, 0, 255),
                     new Color(0, 191, 255), new Color(0, 191, 255), new Color(0, 191, 255)), userColors);
 
-            ArgumentCaptor<List<ChartPainter.DistributionSlice>> slices = ArgumentCaptor.forClass(List.class);
+            ArgumentCaptor<List<ChartPainter.DistributionSlice>> slices = ArgumentCaptor.captor();
             charts.verify(() -> ChartPainter.renderDistributionChart(slices.capture(), eq(900), any(Font.class)), times(2));
             assertEquals(List.of(16.0, 17.0), slices.getAllValues().get(0).stream().map(ChartPainter.DistributionSlice::getValue).toList());
             assertEquals(List.of(2.0, 1.0), slices.getAllValues().get(1).stream().map(ChartPainter.DistributionSlice::getValue).toList());
@@ -501,6 +507,35 @@ public class BilibiliLiveReportPainterTest {
     }
 
     /**
+     * 验证用户资料查询失败后可以继续查询
+     */
+    @Test
+    void userInfoFailureReturnsEmptyProfilesAndAllowsLaterQueries() {
+        CommonPainter commonPainter = mock(CommonPainter.class, RETURNS_SELF);
+        StarBotCommonPainterFactory reportFactory = mock(StarBotCommonPainterFactory.class);
+        when(reportFactory.create(anyInt(), anyInt(), anyBoolean())).thenReturn(commonPainter);
+        BilibiliApiService bilibili = mock(BilibiliApiService.class);
+        Set<String> failedUids = Set.of("1", "2");
+        when(bilibili.getUserInfoByUids(failedUids)).thenThrow(new IllegalStateException("查询失败"));
+        Set<String> nextUids = Set.of("3");
+        when(bilibili.getUserInfoByUids(nextUids))
+                .thenReturn(Map.of("3", new UserInfo("3", "观众", "头像")));
+        BilibiliLiveReportPainter report = new BilibiliLiveReportPainter(coreProperties, new StarBotBilibiliProperties(),
+                fontService, bilibili, createProfileCache(bilibili), reportFactory, mock(LiveDataService.class), mock(BilibiliWordCloudService.class),
+                new Up(UID, "测试主播", ROOM_ID), new BilibiliLiveReportConfig());
+
+        Pair<Map<String, String>, Map<String, String>> missing = Objects.requireNonNull(
+                ReflectionTestUtils.invokeMethod(report, "queryUserProfiles", failedUids, failedUids));
+        assertTrue(missing.getLeft().isEmpty());
+        assertTrue(missing.getRight().isEmpty());
+        Pair<Map<String, String>, Map<String, String>> next = Objects.requireNonNull(
+                ReflectionTestUtils.invokeMethod(report, "queryUserProfiles", nextUids, nextUids));
+        assertEquals(Map.of("3", "观众"), next.getLeft());
+        assertEquals(Map.of("3", "头像"), next.getRight());
+        verify(bilibili).getUserInfoByUids(nextUids);
+    }
+
+    /**
      * 创建用于验证金额文字和排行榜数据的直播报告绘图器
      *
      * @param commonPainter   通用绘图器
@@ -518,8 +553,18 @@ public class BilibiliLiveReportPainterTest {
         when(bilibili.getUserInfoByUids(anySet())).thenReturn(Map.of("1", new UserInfo("1", "测试观众", "face")));
         when(bilibili.asyncGetBilibiliImages(anyList())).thenReturn(CompletableFuture.completedFuture(List.of(Optional.empty())));
 
-        return new BilibiliLiveReportPainter(coreProperties, new StarBotBilibiliProperties(), fontService, bilibili, amountFactory,
+        return new BilibiliLiveReportPainter(coreProperties, new StarBotBilibiliProperties(), fontService, bilibili, createProfileCache(bilibili), amountFactory,
                 liveDataService, mock(BilibiliWordCloudService.class), new Up(UID, "测试主播", ROOM_ID), config);
+    }
+
+    /**
+     * 创建用户资料缓存
+     * @param bilibili Bilibili API 请求服务
+     * @return Bilibili 用户资料缓存
+     */
+    private BilibiliProfileCache createProfileCache(BilibiliApiService bilibili) {
+        StarBotCacheService cacheService = new StarBotCacheService(coreProperties, List.of(new StarBotCaffeineCacheFactory()));
+        return new BilibiliProfileCache(cacheService, new StarBotBilibiliProperties(), bilibili);
     }
 
     /**

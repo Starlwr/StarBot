@@ -7,6 +7,14 @@
     "bilibili"
   ],
   "conditions": {
+    "profile-event-cache-enabled": {
+      "scope": "parent",
+      "path": [
+        "cache-profile-from-events"
+      ],
+      "op": "=",
+      "value": true
+    },
     "live-room-connect-enabled": {
       "scope": "parent",
       "path": [
@@ -180,6 +188,56 @@
       ]
     },
     {
+      "id": "cache",
+      "title": "缓存",
+      "path": ["cache"],
+      "restartRequired": true,
+      "fields": [
+        {
+          "key": "gift-cache-expire-minutes",
+          "label": "礼物数据缓存时间",
+          "description": "礼物数据缓存有效期",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440,
+          "ui": {
+            "unit": "分钟"
+          }
+        },
+        {
+          "key": "cache-profile-from-events",
+          "label": "从直播间事件缓存用户资料",
+          "description": "从直播间连接中收到的事件中缓存主播和观众的用户资料，可减少接口请求次数，有助于减少风控",
+          "type": "boolean",
+          "restartRequired": false
+        },
+        {
+          "key": "profile-cache-expire-minutes",
+          "label": "用户资料缓存时间",
+          "description": "用户资料缓存有效期",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10080,
+          "visibleWhen": "profile-event-cache-enabled",
+          "validateWhen": "profile-event-cache-enabled",
+          "ui": {
+            "unit": "分钟"
+          }
+        },
+        {
+          "key": "profile-cache-max-size",
+          "label": "用户资料缓存容量",
+          "description": "清除设置后不限制缓存容量，设置过大可能导致内存占用升高",
+          "type": "integer",
+          "nullable": true,
+          "minimum": 1,
+          "maximum": 2147483647,
+          "visibleWhen": "profile-event-cache-enabled",
+          "validateWhen": "profile-event-cache-enabled"
+        }
+      ]
+    },
+    {
       "id": "live",
       "title": "直播",
       "description": "管理直播间连接、风控检测、备用推送和直播报告参数",
@@ -226,20 +284,6 @@
           "maximum": 600000,
           "ui": {
             "unit": "毫秒"
-          },
-          "visibleWhen": "live-room-connect-enabled",
-          "validateWhen": "live-room-connect-enabled"
-        },
-        {
-          "key": "gift-cache-expire",
-          "label": "礼物缓存时间",
-          "description": "礼物名称、价格等信息缓存的秒数，过期后会重新获取",
-          "type": "integer",
-          "restartRequired": true,
-          "minimum": 0,
-          "maximum": 86400,
-          "ui": {
-            "unit": "秒"
           },
           "visibleWhen": "live-room-connect-enabled",
           "validateWhen": "live-room-connect-enabled"
