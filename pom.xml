@@ -12,7 +12,7 @@
 
     <groupId>com.starlwr</groupId>
     <artifactId>starbot-bilibili</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.0.0</version>
     <name>StarBotBilibili</name>
     <description>Bilibili For StarBot</description>
     <url>https://bot.starlwr.com</url>
@@ -55,7 +55,7 @@
         <dependency>
             <groupId>com.starlwr</groupId>
             <artifactId>starbot-core</artifactId>
-            <version>3.0.0</version>
+            <version>3.0.0.0</version>
         </dependency>
 
         <dependency>
@@ -93,7 +93,7 @@
             <plugin>
                 <groupId>com.starlwr</groupId>
                 <artifactId>starbot-plugin-processor</artifactId>
-                <version>1.0.0</version>
+                <version>1.0.0.0</version>
                 <executions>
                     <execution>
                         <goals>
